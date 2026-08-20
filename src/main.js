@@ -1,0 +1,519 @@
+import { setIcon } from './icons.js';
+import { MODES, THEMES } from './themes.js';
+import { AudioEngine } from './audio.js';
+import { Renderer } from './visualizers.js';
+import { fmtTime, pickRandom } from './utils.js';
+
+const $ = (id) => document.getElementById(id);
+
+const engine = new AudioEngine();
+const renderer = new Renderer($('viz-canvas'));
+
+const SETTINGS_KEY = 'audiovisor.settings.v1';
+
+const state = {
+  modeId: 'bars',
+  themeId: 'lime',
+  autopilot: false,
+  autopilotTimer: null,
+  drawerOpen: true,
+  fx: { reverb: false, limiter: false, lowpass: false, speed: false },
+};
+
+/* ---------- toasts ---------- */
+
+const toasts = $('toasts');
+function toast(msg, opts = {}) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = msg;
+  toasts.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('is-visible'));
+  setTimeout(() => {
+    el.classList.remove('is-visible');
+    el.classList.add('is-leaving');
+    setTimeout(() => el.remove(), 350);
+  }, opts.duration || 2400);
+  while (toasts.children.length > 3) toasts.firstChild.remove();
+}
+
+/* ---------- icons ---------- */
+
+document.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
+
+/* ---------- drawer sections ---------- */
+
+const modeList = $('mode-list');
+MODES.forEach((m) => {
+  const btn = document.createElement('button');
+  btn.className = 'mode-card' + (m.id === state.modeId ? ' is-active' : '');
+  btn.innerHTML = `
+    <div class="mode-preview"><span class="ic" data-icon="${m.icon}"></span></div>
+    <span class="mode-name">${m.name}</span>`;
+  btn.addEventListener('click', () => setMode(m.id));
+  modeList.appendChild(btn);
+});
+modeList.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
+
+const themeRow = $('theme-row');
+THEMES.forEach((t) => {
+  const btn = document.createElement('button');
+  btn.className = 'theme-dot' + (t.id === state.themeId ? ' is-active' : '');
+  btn.style.background = t.css;
+  btn.title = t.name;
+  btn.addEventListener('click', () => setTheme(t.id));
+  themeRow.appendChild(btn);
+});
+
+const SLIDERS = [
+  { id: 'sensitivity', label: 'Sensitivity', min: 0.4, max: 2.4, step: 0.05, value: 1.4, fmt: (v) => `x${v.toFixed(2)}` },
+  { id: 'bass-focus', label: 'Bass Focus', min: 0, max: 1, step: 0.05, value: 0.5, fmt: (v) => `${Math.round(v * 100)}%` },
+  { id: 'smoothing', label: 'Smoothing', min: 0, max: 0.95, step: 0.01, value: 0.82, fmt: (v) => v.toFixed(2) },
+];
+const slidersWrap = $('sliders');
+const sliderEls = {};
+SLIDERS.forEach((cfg) => {
+  const group = document.createElement('div');
+  group.className = 'slider-group';
+  group.innerHTML = `
+    <div class="slider-head">
+      <label class="slider-label mono">${cfg.label}</label>
+      <span class="slider-value" id="sl-val-${cfg.id}">${cfg.fmt(cfg.value)}</span>
+    </div>
+    <input type="range" class="ctrl-slider" id="sl-${cfg.id}" min="${cfg.min}" max="${cfg.max}" step="${cfg.step}" value="${cfg.value}">`;
+  slidersWrap.appendChild(group);
+  const input = group.querySelector('input');
+  sliderEls[cfg.id] = input;
+  input.addEventListener('input', () => {
+    const v = parseFloat(input.value);
+    group.querySelector('.slider-value').textContent = cfg.fmt(v);
+    applySlider(cfg.id, v);
+    saveSettings();
+  });
+});
+
+function applySlider(id, v) {
+  if (id === 'sensitivity') {
+    engine.sensitivity = v;
+    renderer.setSensitivity(v);
+  } else if (id === 'bass-focus') {
+    engine.bassFocus = v;
+    renderer.setBassFocus(v);
+  } else if (id === 'smoothing') {
+    engine.setSmoothing(v);
+  }
+}
+
+const FX = ['reverb', 'limiter', 'lowpass', 'speed'];
+const fxRow = $('fx-row');
+const fxEls = {};
+FX.forEach((fx) => {
+  const btn = document.createElement('button');
+  btn.className = 'fx-chip';
+  btn.innerHTML = `<span class="chip-dot"></span><span class="chip-txt">${fx.toUpperCase()}</span>`;
+  btn.addEventListener('click', () => {
+    const on = !btn.classList.contains('is-active');
+    btn.classList.toggle('is-active', on);
+    engine.setFx(fx, on);
+    state.fx[fx] = on;
+    saveSettings();
+    toast(`FX <b>${fx.toUpperCase()}</b> ${on ? 'engaged' : 'bypassed'}`, { duration: 1400 });
+  });
+  fxRow.appendChild(btn);
+  fxEls[fx] = btn;
+});
+
+/* ---------- mode / theme switching ---------- */
+
+function setMode(id) {
+  state.modeId = id;
+  renderer.setMode(id);
+  [...modeList.children].forEach((c, i) => c.classList.toggle('is-active', MODES[i].id === id));
+  saveSettings();
+}
+
+function setTheme(id) {
+  state.themeId = id;
+  renderer.setTheme(THEMES.find((t) => t.id === id));
+  [...themeRow.children].forEach((c, i) => c.classList.toggle('is-active', THEMES[i].id === id));
+  saveSettings();
+}
+
+function randomizeLook() {
+  setMode(pickRandom(MODES).id);
+  setTheme(pickRandom(THEMES).id);
+}
+
+/* ---------- autopilot ---------- */
+
+function setAutopilot(on, opts = {}) {
+  state.autopilot = on;
+  $('autopilot-chip').classList.toggle('is-active', on);
+  $('shuffle-btn').classList.toggle('is-on', on);
+  if (on) {
+    state.autopilotTimer = setInterval(randomizeLook, 12000);
+    randomizeLook();
+    if (!opts.silent) toast('AUTOPILOT <b>ON</b> — cycling modes &amp; themes', { duration: 1800 });
+  } else if (state.autopilotTimer) {
+    clearInterval(state.autopilotTimer);
+    state.autopilotTimer = null;
+    if (!opts.silent) toast('AUTOPILOT <b>OFF</b>', { duration: 1400 });
+  }
+  saveSettings();
+}
+$('autopilot-chip').addEventListener('click', () => setAutopilot(!state.autopilot));
+$('shuffle-btn').addEventListener('click', () => setAutopilot(!state.autopilot));
+
+/* ---------- persistence ---------- */
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      mode: state.modeId,
+      theme: state.themeId,
+      autopilot: state.autopilot,
+      fx: state.fx,
+      sliders: {
+        sensitivity: parseFloat(sliderEls.sensitivity.value),
+        'bass-focus': parseFloat(sliderEls['bass-focus'].value),
+        smoothing: parseFloat(sliderEls.smoothing.value),
+      },
+      volume: engine.volume,
+      loop: engine.loop,
+    }));
+  } catch {}
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (MODES.some((m) => m.id === s.mode)) setMode(s.mode);
+    if (THEMES.some((t) => t.id === s.theme)) setTheme(s.theme);
+    for (const [key, val] of Object.entries(s.sliders || {})) {
+      const input = sliderEls[key];
+      if (!input) continue;
+      input.value = val;
+      const cfg = SLIDERS.find((c) => c.id === key);
+      const group = input.closest('.slider-group');
+      group.querySelector('.slider-value').textContent = cfg.fmt(parseFloat(val));
+      applySlider(key, parseFloat(val));
+    }
+    for (const [name, on] of Object.entries(s.fx || {})) {
+      if (fxEls[name] && on) {
+        fxEls[name].classList.add('is-active');
+        engine.setFx(name, true);
+        state.fx[name] = true;
+      }
+    }
+    if (typeof s.volume === 'number') {
+      engine.setVolume(s.volume);
+      $('volume-fill').style.width = `${s.volume * 100}%`;
+    }
+    if (s.loop) {
+      engine.loop = true;
+      $('loop-btn').classList.add('is-on');
+    }
+    if (s.autopilot) setAutopilot(true, { silent: true });
+  } catch {}
+}
+
+/* ---------- play state sync ---------- */
+
+function refreshStatus() {
+  const playing = engine.playing;
+  const icon = playing ? 'pause' : 'play';
+  setIcon($('play-pause-icon'), icon);
+  setIcon($('header-play-icon'), icon);
+  $('track-info').classList.toggle('is-playing', playing);
+  const text = engine.micActive
+    ? 'Engine: Live · MIC'
+    : playing
+      ? 'Engine: Live'
+      : engine.hasTrack
+        ? 'Engine: Paused'
+        : 'Engine: Idle';
+  $('status-text').textContent = text;
+}
+
+engine.onStateChange = refreshStatus;
+
+/* ---------- file loading ---------- */
+
+const fileInput = $('file-input');
+const dropzone = $('dropzone');
+
+async function loadFiles(files) {
+  if (!files || !files.length) return;
+  const audioFiles = [...files].filter((f) => f.type.startsWith('audio/') || /\.(mp3|wav|flac|ogg|m4a|aac|opus|webm)$/i.test(f.name));
+  if (!audioFiles.length) {
+    toast('<b>Unsupported</b> — drop an audio file');
+    return;
+  }
+  $('status-text').textContent = 'Engine: Decoding';
+  try {
+    await engine.addToQueue(audioFiles);
+    dropzone.classList.add('is-hidden');
+    refreshTrackInfo();
+    engine.play();
+    updateMediaSession();
+    toast(audioFiles.length > 1
+      ? `Loaded <b>${audioFiles.length} tracks</b> — queue playing`
+      : `Loaded <b>${engine.track.name}</b>`);
+  } catch (err) {
+    console.error(err);
+    $('status-text').textContent = 'Engine: Decode Failed';
+    toast('<b>Decode failed</b> — file may be corrupted', { duration: 3000 });
+  }
+}
+
+function refreshTrackInfo() {
+  const t = engine.track;
+  if (!t) return;
+  const idx = engine.queue.length > 1 ? ` · ${engine.queueIndex + 1}/${engine.queue.length}` : '';
+  $('track-name').textContent = t.name + idx;
+  $('track-spec').textContent = `${(t.sampleRate / 1000).toFixed(1)}kHz / ${t.channels === 1 ? 'MONO' : 'STEREO'} · ${t.ext}`;
+  $('time-total').textContent = fmtTime(t.duration);
+}
+
+engine.onQueueChange = () => {
+  refreshTrackInfo();
+  updateMediaSession();
+};
+
+fileInput.addEventListener('change', () => {
+  loadFiles(fileInput.files);
+  fileInput.value = '';
+});
+
+dropzone.addEventListener('click', () => fileInput.click());
+$('stage').addEventListener('click', (e) => {
+  if (dropzone.classList.contains('is-hidden')) return;
+  if (e.target.closest('.dropzone')) return;
+  fileInput.click();
+});
+
+['dragenter', 'dragover'].forEach((ev) =>
+  window.addEventListener(ev, (e) => {
+    e.preventDefault();
+    dropzone.querySelector('.dropzone').classList.add('drag-over');
+  })
+);
+window.addEventListener('dragleave', (e) => {
+  if (!e.relatedTarget) dropzone.querySelector('.dropzone').classList.remove('drag-over');
+});
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropzone.querySelector('.dropzone').classList.remove('drag-over');
+  loadFiles(e.dataTransfer.files);
+});
+
+/* ---------- media session ---------- */
+
+function updateMediaSession() {
+  if (!('mediaSession' in navigator) || !engine.track) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: engine.track.name,
+      artist: 'AUDIOVISOR',
+      album: 'Local File',
+    });
+  } catch {}
+}
+
+if ('mediaSession' in navigator) {
+  const ms = navigator.mediaSession;
+  try {
+    ms.setActionHandler('play', () => engine.play());
+    ms.setActionHandler('pause', () => engine.pause());
+    ms.setActionHandler('seekbackward', (d) => engine.skip(-(d.seekOffset || 10)));
+    ms.setActionHandler('seekforward', (d) => engine.skip(d.seekOffset || 10));
+    ms.setActionHandler('previoustrack', () => engine.prevTrack());
+    ms.setActionHandler('nexttrack', () => engine.nextTrack());
+  } catch {}
+}
+
+/* ---------- transport ---------- */
+
+const playPauseBtn = $('play-pause-btn');
+const headerPlayBtn = $('header-play-btn');
+
+[playPauseBtn, headerPlayBtn].forEach((btn) =>
+  btn.addEventListener('click', () => {
+    if (!engine.hasTrack) {
+      fileInput.click();
+      return;
+    }
+    engine.toggle();
+  })
+);
+
+$('prev-btn').addEventListener('click', () => engine.prevTrack());
+$('next-btn').addEventListener('click', () => engine.nextTrack());
+$('loop-btn').addEventListener('click', () => {
+  engine.loop = !engine.loop;
+  $('loop-btn').classList.toggle('is-on', engine.loop);
+  saveSettings();
+  toast(engine.loop ? 'LOOP <b>ON</b>' : 'LOOP <b>OFF</b>', { duration: 1200 });
+});
+
+const seekTrack = $('seek-track');
+function seekFromEvent(e) {
+  if (!engine.hasTrack) return;
+  const rect = seekTrack.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  engine.seek(ratio * engine.getDuration());
+}
+let seeking = false;
+seekTrack.addEventListener('mousedown', (e) => { seeking = true; seekFromEvent(e); });
+window.addEventListener('mousemove', (e) => { if (seeking) seekFromEvent(e); });
+window.addEventListener('mouseup', () => { seeking = false; });
+
+const volumeTrack = $('volume-track');
+function volumeFromEvent(e) {
+  const rect = volumeTrack.getBoundingClientRect();
+  const v = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  engine.setVolume(v);
+  $('volume-fill').style.width = `${v * 100}%`;
+}
+let volDragging = false;
+volumeTrack.addEventListener('mousedown', (e) => { volDragging = true; volumeFromEvent(e); });
+window.addEventListener('mousemove', (e) => { if (volDragging) volumeFromEvent(e); });
+window.addEventListener('mouseup', () => { volDragging = false; saveSettings(); });
+
+$('fullscreen-btn').addEventListener('click', () => {
+  const shell = $('shell');
+  if (document.fullscreenElement) document.exitFullscreen();
+  else shell.requestFullscreen?.();
+});
+
+/* ---------- mic ---------- */
+
+$('mic-btn').addEventListener('click', async () => {
+  try {
+    const on = await engine.toggleMic();
+    $('mic-btn').classList.toggle('is-on', on);
+    refreshStatus();
+    toast(on ? 'MIC <b>LIVE</b> — engine listening' : 'MIC <b>OFF</b>', { duration: 1600 });
+  } catch (err) {
+    console.error(err);
+    toast('<b>Mic blocked</b> — allow microphone access', { duration: 3000 });
+  }
+});
+
+/* ---------- nav ---------- */
+
+const aboutPanel = document.createElement('div');
+aboutPanel.className = 'about-panel';
+aboutPanel.innerHTML = `
+  <div class="about-card">
+    <h2>AUDIOVISOR</h2>
+    <div class="about-tag mono">Real-time audio visualizer</div>
+    <p>Drop in a track or go live with your mic — six stage modes, five theme moods, a full FX chain and a beat tracker, all rendered live from the frequency spectrum.</p>
+    <div class="about-keys">
+      <div class="about-key"><kbd>SPACE</kbd><span>Play / Pause</span></div>
+      <div class="about-key"><kbd>← →</kbd><span>Seek 10s</span></div>
+      <div class="about-key"><kbd>M</kbd><span>Cycle Mode</span></div>
+      <div class="about-key"><kbd>T</kbd><span>Cycle Theme</span></div>
+      <div class="about-key"><kbd>F</kbd><span>Fullscreen</span></div>
+    </div>
+  </div>`;
+$('shell').appendChild(aboutPanel);
+
+$('nav-about').addEventListener('click', () => {
+  aboutPanel.classList.toggle('is-open');
+});
+aboutPanel.addEventListener('click', (e) => {
+  if (e.target === aboutPanel) aboutPanel.classList.remove('is-open');
+});
+
+const drawer = $('drawer');
+$('nav-settings').addEventListener('click', () => {
+  state.drawerOpen = !state.drawerOpen;
+  drawer.classList.toggle('is-closed', !state.drawerOpen);
+  $('nav-settings').classList.toggle('is-active', state.drawerOpen);
+});
+
+/* ---------- keyboard ---------- */
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  switch (e.code) {
+    case 'Space':
+      e.preventDefault();
+      if (engine.hasTrack) engine.toggle();
+      break;
+    case 'ArrowLeft':
+      engine.skip(-10);
+      break;
+    case 'ArrowRight':
+      engine.skip(10);
+      break;
+    case 'KeyM': {
+      const i = (MODES.findIndex((m) => m.id === state.modeId) + 1) % MODES.length;
+      setMode(MODES[i].id);
+      break;
+    }
+    case 'KeyT': {
+      const i = (THEMES.findIndex((t) => t.id === state.themeId) + 1) % THEMES.length;
+      setTheme(THEMES[i].id);
+      break;
+    }
+    case 'KeyF':
+      $('fullscreen-btn').click();
+      break;
+  }
+});
+
+/* ---------- resize + adaptive quality ---------- */
+
+new ResizeObserver(() => renderer.resize()).observe($('viz-canvas'));
+
+/* ---------- render loop ---------- */
+
+const frameTimes = [];
+function frame() {
+  const t0 = performance.now();
+
+  const hasTrack = engine.hasTrack;
+  const playing = engine.playing;
+  const micLive = engine.micActive;
+
+  let levels = null;
+  let freq = null;
+  let wave = null;
+  if (hasTrack || micLive) {
+    const d = engine.getData();
+    freq = d.freq;
+    wave = d.wave;
+    if (playing || micLive) levels = engine.getLevels();
+  }
+
+  renderer.render(!hasTrack && !micLive, freq, wave, levels);
+
+  if (hasTrack) {
+    const t = engine.getTime();
+    const dur = engine.getDuration();
+    $('seek-fill').style.width = `${dur ? (t / dur) * 100 : 0}%`;
+    $('time-current').textContent = fmtTime(t);
+    const bpm = engine.getBpm();
+    $('bpm-value').textContent = bpm ? bpm.toFixed(2) : '--.--';
+    const bassOn = renderer.sm.bass > 0.35;
+    $('bass-chip').classList.toggle('is-hidden', !bassOn);
+  }
+
+  frameTimes.push(performance.now() - t0);
+  if (frameTimes.length >= 90) {
+    const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+    frameTimes.length = 0;
+    const target = avg > 21 ? 'low' : avg < 13 ? 'high' : renderer.quality;
+    renderer.setQuality(target);
+  }
+
+  requestAnimationFrame(frame);
+}
+
+loadSettings();
+refreshStatus();
+requestAnimationFrame(frame);
