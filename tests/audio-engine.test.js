@@ -60,7 +60,7 @@ class FakeAudioContext {
     this.analyser.fftSize = 2048;
     this.analyser.frequencyBinCount = 1024;
     this.analyser.getByteFrequencyData = (arr) => arr.fill(0);
-    this.analyser.getByteWaveformData = (arr) => arr.fill(128);
+    this.analyser.getByteTimeDomainData = (arr) => arr.fill(128);
     return this.analyser;
   }
   createBiquadFilter() { return new FakeNode(this); }

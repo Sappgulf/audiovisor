@@ -3,3 +3,4 @@ dist
 .superdesign
 *.log
 .DS_Store
+.vercel

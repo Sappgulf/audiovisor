@@ -31,6 +31,9 @@
         </nav>
 
         <div class="topbar-right">
+          <button class="mic-btn" id="capture-btn" title="Visualize tab / system audio" aria-label="Capture tab audio">
+            <span class="ic" data-icon="monitor"></span>
+          </button>
           <button class="mic-btn" id="mic-btn" title="Live microphone input" aria-label="Toggle microphone">
             <span class="ic" data-icon="mic"></span>
           </button>
@@ -65,7 +68,7 @@
             <div class="dropzone">
               <div class="drop-icon-circle"><span class="ic" data-icon="music"></span></div>
               <p class="mono drop-title">Drag &amp; Drop Audio to Begin</p>
-              <p class="drop-sub">Supports MP3, WAV, FLAC, OGG · click to browse</p>
+              <p class="drop-sub">MP3, WAV, FLAC, OGG — or connect Spotify / capture any app / stream a URL</p>
             </div>
           </div>
 
@@ -74,6 +77,13 @@
 
         <aside class="drawer" id="drawer">
           <div class="drawer-scroll">
+            <section>
+              <h3 class="section-title">Connect</h3>
+              <div id="connect-root"></div>
+            </section>
+
+            <div class="divider"></div>
+
             <section>
               <h3 class="section-title">Stage Mode</h3>
               <div class="mode-list" id="mode-list"></div>

@@ -2,6 +2,7 @@ import { setIcon } from './icons.js';
 import { MODES, THEMES } from './themes.js';
 import { AudioEngine } from './audio.js';
 import { Renderer } from './visualizers.js';
+import { ConnectPanel } from './connect.js';
 import { fmtTime, pickRandom } from './utils.js';
 
 const $ = (id) => document.getElementById(id);
@@ -9,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 const engine = new AudioEngine();
 const renderer = new Renderer($('viz-canvas'));
 
-const SETTINGS_KEY = 'audiovisor.settings.v1';
+const SETTINGS_KEY = 'audiovisor.settings.v2';
 
 const state = {
   modeId: 'bars',
@@ -186,7 +187,7 @@ function saveSettings() {
 
 function loadSettings() {
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
+    const raw = localStorage.getItem(SETTINGS_KEY) || localStorage.getItem('audiovisor.settings.v1');
     if (!raw) return;
     const s = JSON.parse(raw);
     if (MODES.some((m) => m.id === s.mode)) setMode(s.mode);
@@ -219,6 +220,40 @@ function loadSettings() {
   } catch {}
 }
 
+/* ---------- track display ---------- */
+
+const trackArtEl = $('track-art');
+
+function updateTrackUI() {
+  const input = engine.activeInput;
+
+  if (input === 'spotify' && connect.client.track) {
+    const t = connect.client.track;
+    $('track-name').textContent = t.name;
+    $('track-spec').textContent = `${t.artists} · SPOTIFY`;
+    $('time-total').textContent = fmtTime(t.durationMs / 1000);
+    trackArtEl.innerHTML = spotifyArtwork
+      ? `<img class="track-art-img" src="${spotifyArtwork}" alt="" />`
+      : '<span class="ic" data-icon="spotify"></span>';
+    if (spotifyArtwork == null) setIcon(trackArtEl.querySelector('.ic'), 'spotify');
+  } else if (input === 'stream' && engine.streamTrack) {
+    $('track-name').textContent = engine.streamTrack.name;
+    $('track-spec').textContent = `LIVE STREAM · ${engine.streamTrack.ext}`;
+    $('time-total').textContent = fmtTime(engine.getDuration());
+    trackArtEl.innerHTML = '<span class="ic" data-icon="link"></span>';
+    setIcon(trackArtEl.querySelector('.ic'), 'link');
+  } else if (engine.track) {
+    const t = engine.track;
+    const idx = engine.queue.length > 1 ? ` · ${engine.queueIndex + 1}/${engine.queue.length}` : '';
+    $('track-name').textContent = t.name + idx;
+    $('track-spec').textContent = `${(t.sampleRate / 1000).toFixed(1)}kHz / ${t.channels === 1 ? 'MONO' : 'STEREO'} · ${t.ext}`;
+    $('time-total').textContent = fmtTime(t.duration);
+    trackArtEl.innerHTML = '<span class="ic" data-icon="music2"></span>';
+    setIcon(trackArtEl.querySelector('.ic'), 'music2');
+  }
+  updateMediaSession();
+}
+
 /* ---------- play state sync ---------- */
 
 function refreshStatus() {
@@ -227,17 +262,72 @@ function refreshStatus() {
   setIcon($('play-pause-icon'), icon);
   setIcon($('header-play-icon'), icon);
   $('track-info').classList.toggle('is-playing', playing);
-  const text = engine.micActive
-    ? 'Engine: Live · MIC'
-    : playing
-      ? 'Engine: Live'
-      : engine.hasTrack
-        ? 'Engine: Paused'
-        : 'Engine: Idle';
+  $('capture-btn').classList.toggle('is-on', engine.captureActive);
+  $('mic-btn').classList.toggle('is-on', engine.micActive);
+
+  let text = 'Engine: Idle';
+  switch (engine.activeInput) {
+    case 'mic': text = playing || engine.micActive ? 'Engine: Live · MIC' : 'Engine: MIC'; break;
+    case 'capture': text = 'Engine: Live · CAPTURE'; break;
+    case 'spotify': text = playing ? 'SPOTIFY · Live' : 'SPOTIFY · Paused'; break;
+    case 'stream': text = playing ? 'STREAM · Live' : 'STREAM · Paused'; break;
+    case 'track': text = playing ? 'Engine: Live' : 'Engine: Paused'; break;
+  }
   $('status-text').textContent = text;
+  refreshStatusDot();
+  syncDropzone();
 }
 
-engine.onStateChange = refreshStatus;
+function refreshStatusDot() {
+  const dot = document.querySelector('#status-pill .status-dot');
+  const live = engine.playing || engine.micActive || engine.captureActive;
+  dot.classList.toggle('is-live', live);
+}
+
+function syncDropzone() {
+  dropzone.classList.toggle('is-hidden', engine.activeInput !== 'none');
+}
+
+engine.on('state', refreshStatus);
+engine.on('source', () => {
+  refreshStatus();
+  updateTrackUI();
+});
+engine.onQueueChange = () => {
+  updateTrackUI();
+};
+
+/* ---------- spotify connect panel ---------- */
+
+let spotifyArtwork = null;
+const connect = new ConnectPanel($('connect-root'), {
+  engine,
+  toast,
+  onSpotifyTrack: async (info) => {
+    if (!info) {
+      spotifyArtwork = null;
+      updateTrackUI();
+      return;
+    }
+    spotifyArtwork = info.artwork || null;
+    updateTrackUI();
+  },
+});
+connect.boot();
+
+/* ---------- capture (topbar shortcut) ---------- */
+
+$('capture-btn').addEventListener('click', async () => {
+  try {
+    const on = await engine.toggleCapture();
+    toast(on
+      ? 'CAPTURE <b>LIVE</b> — visualizing shared audio'
+      : 'Capture <b>OFF</b>', { duration: 2000 });
+  } catch (err) {
+    console.error(err);
+    toast(`<b>Capture blocked</b> — ${err.message || 'permission denied'}`, { duration: 3600 });
+  }
+});
 
 /* ---------- file loading ---------- */
 
@@ -251,13 +341,15 @@ async function loadFiles(files) {
     toast('<b>Unsupported</b> — drop an audio file');
     return;
   }
+  if (engine.captureActive) await engine.toggleCapture();
+  if (engine.mode === 'spotify') engine.pause();
+  engine.stopStream();
   $('status-text').textContent = 'Engine: Decoding';
   try {
     await engine.addToQueue(audioFiles);
     dropzone.classList.add('is-hidden');
-    refreshTrackInfo();
+    updateTrackUI();
     engine.play();
-    updateMediaSession();
     toast(audioFiles.length > 1
       ? `Loaded <b>${audioFiles.length} tracks</b> — queue playing`
       : `Loaded <b>${engine.track.name}</b>`);
@@ -267,20 +359,6 @@ async function loadFiles(files) {
     toast('<b>Decode failed</b> — file may be corrupted', { duration: 3000 });
   }
 }
-
-function refreshTrackInfo() {
-  const t = engine.track;
-  if (!t) return;
-  const idx = engine.queue.length > 1 ? ` · ${engine.queueIndex + 1}/${engine.queue.length}` : '';
-  $('track-name').textContent = t.name + idx;
-  $('track-spec').textContent = `${(t.sampleRate / 1000).toFixed(1)}kHz / ${t.channels === 1 ? 'MONO' : 'STEREO'} · ${t.ext}`;
-  $('time-total').textContent = fmtTime(t.duration);
-}
-
-engine.onQueueChange = () => {
-  refreshTrackInfo();
-  updateMediaSession();
-};
 
 fileInput.addEventListener('change', () => {
   loadFiles(fileInput.files);
@@ -311,14 +389,32 @@ window.addEventListener('drop', (e) => {
 
 /* ---------- media session ---------- */
 
-function updateMediaSession() {
-  if (!('mediaSession' in navigator) || !engine.track) return;
+async function updateMediaSession() {
+  if (!('mediaSession' in navigator)) return;
   try {
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: engine.track.name,
-      artist: 'AUDIOVISOR',
-      album: 'Local File',
-    });
+    const input = engine.activeInput;
+    if (input === 'spotify' && connect.client.track) {
+      const t = connect.client.track;
+      const artwork = spotifyArtwork ? [{ src: spotifyArtwork, sizes: '640x640', type: 'image/jpeg' }] : [];
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: t.name,
+        artist: t.artists,
+        album: 'Spotify · AUDIOVISOR',
+        artwork,
+      });
+    } else if (input === 'stream' && engine.streamTrack) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: engine.streamTrack.name,
+        artist: 'LIVE STREAM',
+        album: 'AUDIOVISOR',
+      });
+    } else if (engine.track) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: engine.track.name,
+        artist: 'AUDIOVISOR',
+        album: 'Local File',
+      });
+    }
   } catch {}
 }
 
@@ -339,15 +435,15 @@ if ('mediaSession' in navigator) {
 const playPauseBtn = $('play-pause-btn');
 const headerPlayBtn = $('header-play-btn');
 
-[playPauseBtn, headerPlayBtn].forEach((btn) =>
-  btn.addEventListener('click', () => {
-    if (!engine.hasTrack) {
-      fileInput.click();
-      return;
-    }
-    engine.toggle();
-  })
-);
+function transportToggle() {
+  if (engine.activeInput === 'none') {
+    fileInput.click();
+    return;
+  }
+  engine.toggle();
+}
+
+[playPauseBtn, headerPlayBtn].forEach((btn) => btn.addEventListener('click', transportToggle));
 
 $('prev-btn').addEventListener('click', () => engine.prevTrack());
 $('next-btn').addEventListener('click', () => engine.nextTrack());
@@ -360,7 +456,7 @@ $('loop-btn').addEventListener('click', () => {
 
 const seekTrack = $('seek-track');
 function seekFromEvent(e) {
-  if (!engine.hasTrack) return;
+  if (engine.getDuration() <= 0) return;
   const rect = seekTrack.getBoundingClientRect();
   const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   engine.seek(ratio * engine.getDuration());
@@ -410,7 +506,9 @@ aboutPanel.innerHTML = `
   <div class="about-card">
     <h2>AUDIOVISOR</h2>
     <div class="about-tag mono">Real-time audio visualizer</div>
-    <p>Drop in a track or go live with your mic — six stage modes, five theme moods, a full FX chain and a beat tracker, all rendered live from the frequency spectrum.</p>
+    <p>Drop in a track, stream a URL, capture any app's audio or connect your
+    Spotify account — nine stage modes, eight theme moods, a full FX chain and
+    a beat tracker, all rendered live.</p>
     <div class="about-keys">
       <div class="about-key"><kbd>SPACE</kbd><span>Play / Pause</span></div>
       <div class="about-key"><kbd>← →</kbd><span>Seek 10s</span></div>
@@ -438,11 +536,11 @@ $('nav-settings').addEventListener('click', () => {
 /* ---------- keyboard ---------- */
 
 window.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   switch (e.code) {
     case 'Space':
       e.preventDefault();
-      if (engine.hasTrack) engine.toggle();
+      transportToggle();
       break;
     case 'ArrowLeft':
       engine.skip(-10);
@@ -473,34 +571,39 @@ new ResizeObserver(() => renderer.resize()).observe($('viz-canvas'));
 /* ---------- render loop ---------- */
 
 const frameTimes = [];
-function frame() {
+let lastFrameTs = performance.now();
+function frame(now) {
   const t0 = performance.now();
+  const dtMs = Math.min(50, now - lastFrameTs);
+  lastFrameTs = now;
 
-  const hasTrack = engine.hasTrack;
-  const playing = engine.playing;
-  const micLive = engine.micActive;
+  const input = engine.activeInput;
+  const idle = input === 'none';
+
+  engine.syncExternal();
 
   let levels = null;
   let freq = null;
   let wave = null;
-  if (hasTrack || micLive) {
+  if (!idle) {
     const d = engine.getData();
     freq = d.freq;
     wave = d.wave;
-    if (playing || micLive) levels = engine.getLevels();
+    if (engine.playing || engine.micActive || engine.captureActive) {
+      levels = engine.getLevels();
+    }
   }
 
-  renderer.render(!hasTrack && !micLive, freq, wave, levels);
+  renderer.render(idle, freq, wave, levels, dtMs);
 
-  if (hasTrack) {
+  if (!idle) {
     const t = engine.getTime();
     const dur = engine.getDuration();
     $('seek-fill').style.width = `${dur ? (t / dur) * 100 : 0}%`;
     $('time-current').textContent = fmtTime(t);
     const bpm = engine.getBpm();
     $('bpm-value').textContent = bpm ? bpm.toFixed(2) : '--.--';
-    const bassOn = renderer.sm.bass > 0.35;
-    $('bass-chip').classList.toggle('is-hidden', !bassOn);
+    $('bass-chip').classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));
   }
 
   frameTimes.push(performance.now() - t0);
@@ -517,3 +620,6 @@ function frame() {
 loadSettings();
 refreshStatus();
 requestAnimationFrame(frame);
+
+/* debug/testing hook */
+window.__av = { engine, renderer, connect };

@@ -20,6 +20,15 @@ export const ICONS = {
   bars: svg('<line x1="5" y1="20" x2="5" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="19" y1="20" x2="19" y2="14"/>'),
   orbit: svg('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="4" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="20" r="1.6" fill="currentColor" stroke="none"/>'),
   mic: svg('<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/>'),
+  mountain: svg('<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>'),
+  cloud: svg('<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>'),
+  galaxy: svg('<circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><path d="M12 12m-6.5 0a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0" stroke-dasharray="3 3"/><path d="M20.5 8a10 10 0 0 0-14-4.6"/><circle cx="20" cy="11" r="1.4" fill="currentColor" stroke="none"/><circle cx="5.5" cy="16.5" r="1.4" fill="currentColor" stroke="none"/>'),
+  monitor: svg('<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="m9 10 2.2 2.2L15.5 8"/>'),
+  spotify: svg('<circle cx="12" cy="12" r="10"/><path d="M8.2 10.1c2.6-.8 5.3-.5 7.6.8"/><path d="M8.6 13c2.1-.6 4.3-.3 6.1.7"/><path d="M9 15.6c1.6-.4 3.2-.2 4.6.6"/>'),
+  search: svg('<circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/>'),
+  link: svg('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
+  close: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
+  user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/>'),
 };
 
 export function setIcon(el, name) {

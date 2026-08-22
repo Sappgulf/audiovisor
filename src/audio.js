@@ -1,5 +1,17 @@
 import { BeatTracker } from './beattracker.js';
+import { SynthFeed } from './synthfeed.js';
 
+/**
+ * Unified audio engine.
+ *
+ * Input modes:
+ *  - 'file'     decoded AudioBuffers (drag & drop)
+ *  - 'mic'      live microphone (analysis-only, no speaker routing)
+ *  - 'capture'  system/tab audio capture (analysis-only)
+ *  - 'stream'   HTMLMediaElement URLs (radio/podcast/direct links)
+ *  - 'spotify'  external DRM playback — visuals driven by a synth feed
+ *               unless capture/mic provides real spectrum data
+ */
 export class AudioEngine {
   constructor() {
     this.ctx = null;
@@ -20,6 +32,26 @@ export class AudioEngine {
     this.micSource = null;
     this.micActive = false;
 
+    this.captureStream = null;
+    this.captureSource = null;
+    this.captureActive = false;
+
+    this.tapGain = null;
+    this.tapAnalyser = null;
+    this.tapFreq = null;
+    this.tapWave = null;
+
+    this.mediaEl = null;
+    this.mediaNode = null;
+    this.streamNoTap = false;
+    this._streamRetry = false;
+    this.streamTrack = null;
+
+    this.mode = 'none';
+    this.external = null;
+    this.synthFile = null;
+    this.synthSpotify = null;
+
     this.playing = false;
     this.loop = false;
     this.volume = 0.75;
@@ -38,9 +70,21 @@ export class AudioEngine {
 
     this.beat = new BeatTracker();
 
+    this._listeners = { state: [], source: [], error: [] };
+
     this.onEnded = null;
-    this.onStateChange = null;
     this.onQueueChange = null;
+  }
+
+  /** Subscribe to engine events: 'state' | 'source' | 'error'. */
+  on(name, fn) {
+    if (this._listeners[name]) this._listeners[name].push(fn);
+  }
+
+  _fire(name, payload) {
+    for (const fn of this._listeners[name] || []) {
+      try { fn(payload); } catch {}
+    }
   }
 
   get hasTrack() {
@@ -48,8 +92,14 @@ export class AudioEngine {
   }
 
   get activeInput() {
-    return this.micActive ? 'mic' : this.hasTrack ? 'track' : 'none';
+    if (this.micActive) return 'mic';
+    if (this.captureActive) return 'capture';
+    if (this.mode === 'spotify') return 'spotify';
+    if (this.mode === 'stream') return 'stream';
+    return this.hasTrack ? 'track' : 'none';
   }
+
+  /* ---------- graph ---------- */
 
   _ensureCtx() {
     if (!this.ctx) {
@@ -96,6 +146,21 @@ export class AudioEngine {
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
 
+  /** Analysis-only bus: mic + capture feed this and it never reaches speakers. */
+  _ensureTap() {
+    if (this.tapAnalyser) return;
+    this._ensureCtx();
+    this.tapGain = this.ctx.createGain();
+    this.tapAnalyser = this.ctx.createAnalyser();
+    this.tapAnalyser.fftSize = 2048;
+    this.tapAnalyser.smoothingTimeConstant = this.smoothing;
+    this.tapAnalyser.minDecibels = -95;
+    this.tapAnalyser.maxDecibels = -15;
+    this.tapGain.connect(this.tapAnalyser);
+    this.tapFreq = new Uint8Array(this.tapAnalyser.frequencyBinCount);
+    this.tapWave = new Uint8Array(this.tapAnalyser.fftSize);
+  }
+
   _makeImpulse() {
     const rate = this.ctx.sampleRate;
     const len = Math.floor(rate * 2.2);
@@ -108,6 +173,8 @@ export class AudioEngine {
     }
     return buf;
   }
+
+  /* ---------- file queue ---------- */
 
   async decodeFile(file) {
     this._ensureCtx();
@@ -144,6 +211,13 @@ export class AudioEngine {
     this.track = item.meta;
     this.offset = 0;
     this.beat.reset();
+    this._setMode('file');
+  }
+
+  _setMode(mode) {
+    if (this.mode === mode) return;
+    this.mode = mode;
+    this._fire('source', mode);
   }
 
   playTrack(i) {
@@ -178,7 +252,23 @@ export class AudioEngine {
     };
   }
 
+  /* ---------- transport (routes by mode) ---------- */
+
   play() {
+    if (this.micActive || this.captureActive) return;
+    if (this.mode === 'spotify') {
+      this.playing = true;
+      if (this.external?.play) this.external.play();
+      this._emit();
+      return;
+    }
+    if (this.mode === 'stream') {
+      this._ensureCtx();
+      this.mediaEl?.play()?.catch(() => {});
+      this.playing = true;
+      this._emit();
+      return;
+    }
     if (!this.buffer) return;
     this._ensureCtx();
     if (this.playing) return;
@@ -190,6 +280,18 @@ export class AudioEngine {
   }
 
   pause() {
+    if (this.mode === 'spotify' && this.playing) {
+      this.playing = false;
+      if (this.external?.pause) this.external.pause();
+      this._emit();
+      return;
+    }
+    if (this.mode === 'stream' && this.playing) {
+      try { this.mediaEl?.pause(); } catch {}
+      this.playing = false;
+      this._emit();
+      return;
+    }
     if (!this.playing || !this.source) return;
     this.offset = this.getTime();
     try { this.source.stop(); } catch {}
@@ -204,6 +306,17 @@ export class AudioEngine {
   }
 
   seek(t) {
+    if (this.mode === 'spotify') {
+      if (this.external?.seek) this.external.seek(Math.max(0, t));
+      return;
+    }
+    if (this.mode === 'stream') {
+      if (!this.mediaEl) return;
+      const dur = this.mediaEl.duration;
+      this.mediaEl.currentTime = Number.isFinite(dur) ? Math.max(0, Math.min(t, dur - 0.05)) : Math.max(0, t);
+      this._emit();
+      return;
+    }
     if (!this.buffer) return;
     t = Math.max(0, Math.min(t, this.buffer.duration - 0.05));
     this.offset = t;
@@ -221,6 +334,10 @@ export class AudioEngine {
   }
 
   prevTrack() {
+    if (this.mode === 'spotify') {
+      if (this.external?.prev) this.external.prev();
+      return;
+    }
     if (this.queue.length > 1) {
       const i = (this.queueIndex - 1 + this.queue.length) % this.queue.length;
       this.playTrack(i);
@@ -231,6 +348,10 @@ export class AudioEngine {
   }
 
   nextTrack() {
+    if (this.mode === 'spotify') {
+      if (this.external?.next) this.external.next();
+      return;
+    }
     if (this.queue.length > 1) {
       const i = (this.queueIndex + 1) % this.queue.length;
       this.playTrack(i);
@@ -240,9 +361,12 @@ export class AudioEngine {
     }
   }
 
+  /* ---------- params & fx ---------- */
+
   setVolume(v) {
     this.volume = v;
     if (this.master) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
+    if (this.external?.setVolume) this.external.setVolume(v);
   }
 
   setSpeed(mult) {
@@ -253,6 +377,7 @@ export class AudioEngine {
   setSmoothing(v) {
     this.smoothing = v;
     if (this.analyser) this.analyser.smoothingTimeConstant = v;
+    if (this.tapAnalyser) this.tapAnalyser.smoothingTimeConstant = v;
   }
 
   setFx(name, on) {
@@ -265,14 +390,17 @@ export class AudioEngine {
     if (name === 'speed') this.setSpeed(on ? 1.5 : 1);
   }
 
+  /* ---------- mic (analysis-only) ---------- */
+
   async enableMic() {
     this._ensureCtx();
+    this._ensureTap();
     if (this.micActive) return;
     this.micStream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false },
     });
     this.micSource = this.ctx.createMediaStreamSource(this.micStream);
-    this.micSource.connect(this.filter);
+    this.micSource.connect(this.tapGain);
     if (this.playing) this.pause();
     this.micActive = true;
     this.beat.reset();
@@ -297,7 +425,190 @@ export class AudioEngine {
     return this.micActive;
   }
 
+  /* ---------- display / tab capture (analysis-only) ---------- */
+
+  async enableCapture() {
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      throw new Error('Tab capture is not supported in this browser');
+    }
+    this._ensureCtx();
+    this._ensureTap();
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      preferCurrentTab: true,
+    });
+    const audioTracks = stream.getAudioTracks();
+    stream.getVideoTracks().forEach((t) => t.stop());
+    if (!audioTracks.length) {
+      stream.getTracks().forEach((t) => t.stop());
+      throw new Error('No audio was shared — pick a tab and enable "Share tab audio"');
+    }
+    this.captureStream = stream;
+    this.captureSource = this.ctx.createMediaStreamSource(new MediaStream(audioTracks));
+    this.captureSource.connect(this.tapGain);
+    audioTracks[0].addEventListener('ended', () => {
+      this.disableCapture();
+      this._fire('source', 'capture-ended');
+    });
+    if (this.playing) this.pause();
+    this.disableMic();
+    this.captureActive = true;
+    this.beat.reset();
+    this._emit();
+  }
+
+  disableCapture() {
+    if (!this.captureActive) return;
+    if (this.captureSource) this.captureSource.disconnect();
+    this.captureSource = null;
+    if (this.captureStream) {
+      this.captureStream.getTracks().forEach((tr) => tr.stop());
+      this.captureStream = null;
+    }
+    this.captureActive = false;
+    this._emit();
+  }
+
+  async toggleCapture() {
+    if (this.captureActive) this.disableCapture();
+    else await this.enableCapture();
+    return this.captureActive;
+  }
+
+  /* ---------- direct URL streams ---------- */
+
+  async playUrl(url, meta = {}) {
+    this._ensureCtx();
+    this.disableMic();
+    this.disableCapture();
+    if (this.playing && this.source) {
+      try { this.source.stop(); } catch {}
+      this.source = null;
+      this.playing = false;
+    }
+    this.external = null;
+
+    if (this.mediaEl) {
+      try { this.mediaEl.pause(); } catch {}
+    }
+
+    /* a fresh element per stream keeps CORS-taint and old graph nodes
+       from leaking into the next URL */
+    this._resetStreamElement();
+    this._streamRetry = false;
+
+    try {
+      this.mediaNode = this.ctx.createMediaElementSource(this.mediaEl);
+      this.mediaNode.connect(this.filter);
+    } catch {
+      this.streamNoTap = true;
+    }
+
+    this.streamTrack = { name: meta.name || 'Stream', url, ext: meta.ext || 'STREAM' };
+    this.mediaEl.src = url;
+    this._setMode('stream');
+    this.playing = true;
+    this.beat.reset();
+
+    const p = this.mediaEl.play();
+    if (p) {
+      try {
+        await p;
+      } catch (err) {
+        if (err?.name !== 'AbortError') this._onStreamError(err);
+      }
+    }
+    this._emit();
+  }
+
+  _resetStreamElement(noCors = false) {
+    this.streamNoTap = noCors;
+    if (this.mediaNode) {
+      try { this.mediaNode.disconnect(); } catch {}
+      this.mediaNode = null;
+    }
+    this.mediaEl = new Audio();
+    this.mediaEl.preload = 'auto';
+    if (!noCors) this.mediaEl.crossOrigin = 'anonymous';
+    this.mediaEl.addEventListener('ended', () => {
+      if (this.mode === 'stream') {
+        this.playing = false;
+        this.offset = 0;
+        this._emit();
+        if (this.onEnded) this.onEnded();
+      }
+    });
+    this.mediaEl.addEventListener('error', () => this._onStreamError());
+    this.mediaEl.addEventListener('play', () => {
+      if (this.mode === 'stream' && !this.playing) { this.playing = true; this._emit(); }
+    });
+    this.mediaEl.addEventListener('pause', () => {
+      if (this.mode === 'stream' && this.playing) { this.playing = false; this._emit(); }
+    });
+  }
+
+  _onStreamError(_err) {
+    // CORS-tainted sources fail with crossOrigin set; fall back to a plain
+    // element (plays straight to speakers) + synth feed for visuals.
+    if (!this._streamRetry && this.streamTrack?.url) {
+      this._streamRetry = true;
+      this._resetStreamElement(true);
+      this.mediaEl.src = this.streamTrack.url;
+      this.mediaEl.play().catch(() => {});
+      return;
+    }
+    this.playing = false;
+    this._emit();
+    this._fire('error', 'Stream failed — link may be offline or block playback');
+  }
+
+  stopStream() {
+    if (this.mode !== 'stream') return;
+    try { this.mediaEl?.pause(); } catch {}
+    this.playing = false;
+    this.streamTrack = null;
+    this._setMode(this.hasTrack ? 'file' : 'none');
+    this._emit();
+  }
+
+  /* ---------- external transport (e.g. Spotify) ---------- */
+
+  setExternal(controller) {
+    this.external = controller;
+    if (controller) {
+      this.synthSpotify = null;
+      this._setMode('spotify');
+      this.playing = controller.isPlaying?.() ?? false;
+    } else {
+      this._setMode(this.hasTrack ? 'file' : 'none');
+    }
+    this._emit();
+  }
+
+  clearExternalIfIdle() {
+    if (this.mode === 'spotify' && !this.external) {
+      this._setMode(this.hasTrack ? 'file' : 'none');
+    }
+  }
+
+  syncExternal() {
+    if (this.mode !== 'spotify' || !this.external) return;
+    const nowPlaying = !!this.external.isPlaying();
+    if (nowPlaying !== this.playing) {
+      this.playing = nowPlaying;
+      this._emit();
+    }
+  }
+
+  /* ---------- time ---------- */
+
   getTime() {
+    if (this.mode === 'spotify' && this.external) return this.external.getTime();
+    if (this.mode === 'stream') {
+      if (!this.mediaEl) return 0;
+      return Number.isFinite(this.mediaEl.duration) ? this.mediaEl.currentTime : 0;
+    }
     if (!this.buffer) return 0;
     if (!this.playing) return this.offset;
     const t = this.ctx.currentTime - this.startedAt;
@@ -305,13 +616,44 @@ export class AudioEngine {
   }
 
   getDuration() {
+    if (this.mode === 'spotify' && this.external) return this.external.getDuration();
+    if (this.mode === 'stream') {
+      const d = this.mediaEl?.duration;
+      return Number.isFinite(d) ? d : 0;
+    }
     return this.buffer ? this.buffer.duration : 0;
   }
 
+  /* ---------- analysis ---------- */
+
   getData() {
+    if (this.micActive || this.captureActive) {
+      if (!this.tapAnalyser) return null;
+      this.tapAnalyser.getByteFrequencyData(this.tapFreq);
+      this.tapAnalyser.getByteTimeDomainData(this.tapWave);
+      return { freq: this.tapFreq, wave: this.tapWave };
+    }
+    if (this.mode === 'spotify') {
+      if (!this.synthSpotify) {
+        this.synthSpotify = new SynthFeed(
+          this.external?.seed ? this.external.seed : 'spotify',
+        );
+      }
+      if (this.playing) this.synthSpotify.tick(this.getTime());
+      else this.synthSpotify.clear();
+      return this.synthSpotify.getData();
+    }
+    if (this.mode === 'stream' && this.streamNoTap) {
+      if (!this.synthFile) {
+        this.synthFile = new SynthFeed(this.streamTrack?.url || 'stream');
+      }
+      if (this.playing) this.synthFile.tick(this.getTime());
+      else this.synthFile.clear();
+      return this.synthFile.getData();
+    }
     if (!this.analyser) return null;
     this.analyser.getByteFrequencyData(this.freqData);
-    this.analyser.getByteWaveformData(this.waveData);
+    this.analyser.getByteTimeDomainData(this.waveData);
     return { freq: this.freqData, wave: this.waveData };
   }
 
@@ -320,7 +662,7 @@ export class AudioEngine {
     if (!d) return { bass: 0, mid: 0, high: 0, level: 0 };
     const { freq } = d;
     const n = freq.length;
-    const binHz = this.ctx.sampleRate / 2 / n;
+    const binHz = (this.ctx?.sampleRate || 44100) / 2 / n;
     const iBass = Math.floor(120 / binHz);
     const iMid = Math.floor(2000 / binHz);
     const iHigh = Math.floor(8000 / binHz);
@@ -342,6 +684,6 @@ export class AudioEngine {
   }
 
   _emit() {
-    if (this.onStateChange) this.onStateChange(this.playing);
+    this._fire('state', this.playing);
   }
 }
