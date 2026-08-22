@@ -48,6 +48,17 @@ export class Renderer {
     this._spawnAcc = 0;
     this.nebula = null;
 
+    /* vectorscope / spectrogram / city state */
+    this.scopePrev = null;
+    this.specCv = null;
+    this.specCtx = null;
+    this.specLut = null;
+    this.specSig = '';
+    this._specAcc = 0;
+    this.cityCols = [];
+    this.stars = [];
+    this._starSig = '';
+
     /* caches */
     this._dotSprites = null;
     this._barSprites = null;
@@ -73,10 +84,19 @@ export class Renderer {
     this.resize();
   }
 
-  setMode(m) { this.mode = m; this.history = []; this.echo = null; this.terrainRows = []; }
+  setMode(m) {
+    this.mode = m;
+    this.history = [];
+    this.echo = null;
+    this.terrainRows = [];
+    this.scopePrev = null;
+    this.cityCols = [];
+    this.specSig = '';
+  }
   setTheme(t) {
     this.theme = t;
     this._cacheSig = '';
+    this.specSig = '';
   }
   setSensitivity(v) { this.sensitivity = v; }
   setBassFocus(v) { this.bassFocus = v; }
@@ -172,11 +192,14 @@ export class Renderer {
     switch (this.mode) {
       case 'bars': this._bars(freq, dt60); break;
       case 'waves': this._waves(wave, dt60); break;
+      case 'scope': this._scope(wave, dt60); break;
       case 'particles': this._particles(dt, dt60); break;
       case 'kaleido': this._kaleido(freq, dt); break;
+      case 'spectro': this._spectro(freq, dt); break;
       case 'tunnel': this._tunnel(); break;
       case 'plasma': this._plasma(freq, dt); break;
       case 'terrain': this._terrain(freq, dt); break;
+      case 'city': this._city(freq, dt60); break;
       case 'nebula': this._nebula(); break;
       case 'spiral': this._spiral(freq); break;
     }
@@ -398,6 +421,164 @@ export class Renderer {
     for (let i = 0; i < wave.length; i++) {
       this.echo[i] = Math.round(lerp(this.echo[i] || 128, wave[i], k));
     }
+  }
+
+  /* ---------------- VECTORSCOPE ---------------- */
+
+  _scope(wave, dt60) {
+    const { ctx, w, h } = this;
+    const cx = w / 2;
+    const cy = h / 2;
+    const minDim = Math.min(w, h);
+    const R = minDim * 0.36 * (0.78 + this.sm.level * 0.5 * this.sensitivity);
+    const N = this.quality === 'low' ? 120 : 220;
+    const delay = Math.floor(wave.length / 4);
+    const c0 = this._color(0);
+    const c1 = this._color(1);
+
+    /* graticule */
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(c0, 0.07);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 1.06, 0, Math.PI * 2);
+    ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
+    ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
+    ctx.stroke();
+
+    if (!this.scopePrev || this.scopePrev.length !== N * 2) {
+      this.scopePrev = new Float32Array(N * 2);
+    }
+    const prev = this.scopePrev;
+    const pts = new Float32Array(N * 2);
+    for (let i = 0; i < N; i++) {
+      const si = ((i / N) * wave.length) | 0;
+      const sj = (si + delay) % wave.length;
+      pts[i * 2] = ((wave[si] - 128) / 128) * R;
+      pts[i * 2 + 1] = ((wave[sj] - 128) / 128) * R;
+    }
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(this.t * 0.1);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineJoin = 'round';
+
+    /* phosphor ghost trail */
+    const k = 1 - Math.pow(0.7, dt60);
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      prev[i * 2] += (pts[i * 2] - prev[i * 2]) * k;
+      prev[i * 2 + 1] += (pts[i * 2 + 1] - prev[i * 2 + 1]) * k;
+      if (i === 0) ctx.moveTo(prev[0], prev[1]);
+      else ctx.lineTo(prev[i * 2], prev[i * 2 + 1]);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = hexRgba(c1, 0.22);
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+
+    /* live trace */
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      if (i === 0) ctx.moveTo(pts[0], pts[1]);
+      else ctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = hexRgba(c0, 0.9);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    /* sparkle nodes + beat core */
+    const sprite = this._dot(this._color(2));
+    const sr = 2.5 + this.sm.bass * 6;
+    for (let i = 0; i < N; i += 18) {
+      ctx.globalAlpha = 0.3 + this.beat * 0.4;
+      ctx.drawImage(sprite, pts[i * 2] - sr, pts[i * 2 + 1] - sr, sr * 2, sr * 2);
+    }
+    ctx.globalAlpha = 1;
+    const cr = minDim * 0.012 * (1 + this.beat * 2 + this.sm.bass * 0.6);
+    ctx.drawImage(this._dot(c0), -cr, -cr, cr * 2, cr * 2);
+    ctx.restore();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ---------------- SPECTROGRAM WATERFALL ---------------- */
+
+  _buildSpectroLut() {
+    const stops = [[5, 7, 13]];
+    for (const c of this.theme.colors) {
+      const n = parseInt(c.slice(1), 16);
+      stops.push([(n >> 16) & 255, (n >> 8) & 255, n & 255]);
+    }
+    const last = stops[stops.length - 1];
+    stops.push([
+      Math.min(255, last[0] + 150),
+      Math.min(255, last[1] + 150),
+      Math.min(255, last[2] + 150),
+    ]);
+    const lut = this.specLut = new Uint8Array(256 * 3);
+    const segs = stops.length - 1;
+    for (let i = 0; i < 256; i++) {
+      const f = (i / 255) * segs;
+      const s = Math.min(segs - 1, Math.floor(f));
+      const u = f - s;
+      const a = stops[s];
+      const b = stops[s + 1];
+      lut[i * 3] = a[0] + (b[0] - a[0]) * u;
+      lut[i * 3 + 1] = a[1] + (b[1] - a[1]) * u;
+      lut[i * 3 + 2] = a[2] + (b[2] - a[2]) * u;
+    }
+  }
+
+  _spectro(freq, dt) {
+    const { ctx, w, h } = this;
+    const sig = `${w}x${h}|${this.theme.colors.join(',')}|${this.quality}`;
+    if (!this.specCv || this.specSig !== sig) {
+      this.specSig = sig;
+      this.specCv = document.createElement('canvas');
+      this.specCv.width = Math.max(2, Math.round(w));
+      this.specCv.height = Math.max(2, Math.round(h));
+      this.specCtx = this.specCv.getContext('2d');
+      this._specAcc = 0;
+      this._buildSpectroLut();
+    }
+
+    const colW = this.quality === 'low' ? 3 : 2;
+    const W = this.specCv.width;
+    const H = this.specCv.height;
+    const COLINT = 0.032;
+    this._specAcc = Math.min(this._specAcc + dt, COLINT * 6);
+    while (this._specAcc >= COLINT) {
+      this._specAcc -= COLINT;
+      this.specCtx.drawImage(this.specCv, -colW, 0);
+      const img = this.specCtx.createImageData(colW, H);
+      const d = img.data;
+      for (let y = 0; y < H; y++) {
+        /* bottom = low freq, log-ish mapping up the column */
+        const t = 1 - y / H;
+        const bin = Math.min(
+          freq.length - 1,
+          2 + Math.floor(Math.pow(t, 1.7) * freq.length * 0.72),
+        );
+        let v = (freq[bin] / 255) * this.sensitivity;
+        v = v > 1 ? 1 : v < 0.04 ? 0 : v;
+        const o = ((v * 255) | 0) * 3;
+        const lut = this.specLut;
+        for (let x = 0; x < colW; x++) {
+          const p = (y * colW + x) * 4;
+          d[p] = lut[o];
+          d[p + 1] = lut[o + 1];
+          d[p + 2] = lut[o + 2];
+          d[p + 3] = 235;
+        }
+      }
+      this.specCtx.putImageData(img, W - colW, 0);
+    }
+
+    ctx.drawImage(this.specCv, 0, 0, w, h);
+    ctx.fillStyle = hexRgba(this._color(0), 0.3);
+    ctx.fillRect(w - colW - 1, 0, 1, h);
   }
 
   /* ---------------- PARTICLE FIELD ---------------- */
@@ -685,6 +866,135 @@ export class Renderer {
     }
     ctx.restore();
     ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ---------------- NEON CITY ---------------- */
+
+  _city(freq, dt60) {
+    const { ctx, w, h } = this;
+    const baseline = h * 0.74;
+    const maxH = h * 0.5;
+    const N = Math.max(14, Math.min(this.quality === 'low' ? 26 : 42, Math.floor(w / 24)));
+    const bw = w / N;
+    const colors = this.theme.colors;
+
+    /* stars */
+    const starSig = `${w}x${h}`;
+    if (this._starSig !== starSig || !this.stars.length) {
+      this._starSig = starSig;
+      this.stars = Array.from({ length: 80 }, () => ({
+        x: Math.random() * w,
+        y: Math.random() * baseline * 0.9,
+        r: 0.6 + Math.random() * 1.2,
+        ph: Math.random() * Math.PI * 2,
+      }));
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = '#ffffff';
+    for (const s of this.stars) {
+      ctx.globalAlpha = 0.05 + 0.22 * (0.5 + 0.5 * Math.sin(this.t * 0.8 + s.ph));
+      ctx.fillRect(s.x, s.y, s.r, s.r);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+
+    /* column state */
+    if (this.cityCols.length !== N) {
+      this.cityCols = Array.from({ length: N }, (_, i) => ({
+        v: 0,
+        peak: 0,
+        seed: ((i + 1) * 2654435761) % 997,
+      }));
+    }
+
+    const fall = 1 - Math.pow(0.88, dt60);
+    const fallPeak = Math.pow(0.985, dt60);
+    for (let i = 0; i < N; i++) {
+      const idx = logFreqIndex(i, N, freq.length);
+      const idx2 = Math.min(freq.length - 1, idx + 2);
+      const raw = ((freq[idx] + freq[idx2]) / 510) * this.sensitivity;
+      const weight = 1 + this.bassFocus * 1.4 * (1 - i / N);
+      const target = Math.min(1, raw * weight);
+      const c = this.cityCols[i];
+      c.v += (target - c.v) * (target > c.v ? Math.min(1, dt60 * 0.55) : fall);
+      c.peak = Math.max(c.peak * fallPeak, c.v);
+    }
+
+    /* back-layer silhouettes for parallax depth */
+    ctx.fillStyle = 'rgba(8, 11, 20, 0.85)';
+    for (let i = 0; i < N; i += 2) {
+      const src = this.cityCols[(i * 7 + 3) % N];
+      const bh = maxH * 0.16 + src.v * maxH * 0.5;
+      const x = i * bw - bw * 0.35;
+      ctx.fillRect(x, baseline - bh, bw * 0.62, bh);
+    }
+
+    /* ground glow */
+    const gGrad = ctx.createLinearGradient(0, baseline, 0, h);
+    gGrad.addColorStop(0, hexRgba(this._color(0), 0.12));
+    gGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gGrad;
+    ctx.fillRect(0, baseline, w, h - baseline);
+
+    /* buildings */
+    const tall = [];
+    for (let i = 0; i < N; i++) {
+      const col = this.cityCols[i];
+      const bh = Math.max(8, (0.06 + col.v * 0.64) * maxH);
+      const bodyW = bw * 0.68;
+      const x = i * bw + (bw - bodyW) / 2;
+      const y = baseline - bh;
+      const c = colors[i % colors.length];
+
+      ctx.fillStyle = '#070a12';
+      ctx.fillRect(x, y, bodyW, bh);
+
+      /* reflection strip under the skyline */
+      ctx.globalAlpha = 0.1;
+      ctx.fillStyle = c;
+      ctx.fillRect(x, baseline + 2, bodyW, Math.min(bh * 0.4, maxH * 0.3));
+      ctx.globalAlpha = 1;
+
+      /* colored cap + peak-hold tick */
+      ctx.fillStyle = hexRgba(c, 0.9);
+      ctx.fillRect(x, y, bodyW, 2);
+      if (col.peak > 0.04) {
+        const py = baseline - col.peak * maxH - 4;
+        ctx.globalAlpha = 0.45;
+        ctx.fillRect(x, py, bodyW, 1.5);
+        ctx.globalAlpha = 1;
+      }
+
+      /* windows — deterministic grid with flicker */
+      const wxMax = Math.max(1, Math.floor((bodyW - 5) / 5));
+      const rows = Math.min(14, Math.floor((bh - 10) / 10));
+      for (let wy = 0; wy < rows; wy++) {
+        for (let wx = 0; wx < wxMax; wx++) {
+          const hsh =
+            (((Math.sin(col.seed + wx * 37 + wy * 101) + 1) / 2) * 43758.5453) % 1;
+          if (hsh < 0.42) continue;
+          const flick = 0.55 + 0.45 * Math.sin(this.t * (0.8 + hsh * 2.2) + col.seed + wx);
+          const a = (0.14 + 0.6 * col.v) * (0.3 + 0.7 * hsh) * flick;
+          if (a < 0.06) continue;
+          ctx.fillStyle = hexRgba(c, a);
+          ctx.fillRect(x + 3 + wx * 5, y + 7 + wy * 10, 2.5, 3.5);
+        }
+      }
+
+      tall.push({ x: x + bodyW / 2, y: y, bh });
+    }
+
+    /* rooftop beacons on the three tallest buildings */
+    tall.sort((a, b) => b.y - a.y);
+    const beaconC = this._color(0);
+    for (let k = 0; k < Math.min(3, tall.length); k++) {
+      const t = tall[k];
+      const pulse = Math.max(0, Math.sin(this.t * 2.4 + k * 2.1)) ** 2;
+      const r = 2.5 + this.beat * 2;
+      ctx.globalAlpha = 0.25 + 0.75 * pulse;
+      ctx.drawImage(this._dot(beaconC), t.x - r, t.y - r - 3, r * 2, r * 2);
+    }
+    ctx.globalAlpha = 1;
   }
 
   /* ---------------- NEBULA ---------------- */

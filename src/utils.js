@@ -22,8 +22,24 @@ export function pickRandom(arr) {
 }
 
 export function hexRgba(hex, a) {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+  const q = Math.round(Math.max(0, Math.min(1, a)) * 1000);
+  const key = `${hex}:${q}`;
+  let s = _rgbaCache.get(key);
+  if (s === undefined) {
+    if (_rgbaCache.size > 8192) _rgbaCache.clear();
+    const n = parseInt(hex.slice(1), 16);
+    s = `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${q / 1000})`;
+    _rgbaCache.set(key, s);
+  }
+  return s;
+}
+
+const _rgbaCache = new Map();
+
+/** Timestamp for export filenames, e.g. "20260822-143005". */
+export function fmtStamp(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
 export function median(arr) {

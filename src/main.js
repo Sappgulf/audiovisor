@@ -3,9 +3,12 @@ import { MODES, THEMES } from './themes.js';
 import { AudioEngine } from './audio.js';
 import { Renderer } from './visualizers.js';
 import { ConnectPanel } from './connect.js';
-import { fmtTime, pickRandom } from './utils.js';
+import { fmtTime, pickRandom, fmtStamp } from './utils.js';
 
 const $ = (id) => document.getElementById(id);
+const esc = (s) =>
+  String(s ?? '').replace(/[&<>"']/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 const engine = new AudioEngine();
 const renderer = new Renderer($('viz-canvas'));
@@ -220,6 +223,68 @@ function loadSettings() {
   } catch {}
 }
 
+/* ---------- queue manager ---------- */
+
+const queuePanel = document.createElement('div');
+queuePanel.className = 'queue-panel is-hidden';
+$('shell').appendChild(queuePanel);
+
+function renderQueue() {
+  const q = engine.queue;
+  let html = `
+    <div class="queue-head">
+      <span class="ic ic-lime" data-icon="list"></span>
+      <span class="mono queue-title">QUEUE · ${q.length}</span>
+      <button class="icon-x" id="queue-shuffle-btn" title="Shuffle queue"><span class="ic ic-sm" data-icon="shuffle"></span></button>
+      <button class="icon-x" id="queue-close-btn" title="Close"><span class="ic ic-sm" data-icon="close"></span></button>
+    </div>`;
+  if (!q.length) {
+    html += `<div class="queue-empty mono">DROP AUDIO FILES TO BUILD A QUEUE</div>`;
+  } else {
+    html += `<div class="queue-list">` + q.map((t, i) => `
+      <div class="queue-row${i === engine.queueIndex ? ' is-active' : ''}" data-i="${i}">
+        <span class="mono queue-idx">${i === engine.queueIndex ? '▶' : String(i + 1).padStart(2, '0')}</span>
+        <span class="queue-name">${esc(t.meta.name)}</span>
+        <span class="mono queue-dur">${fmtTime(t.meta.duration)}</span>
+        <button class="icon-x queue-remove" data-i="${i}" title="Remove"><span class="ic ic-sm" data-icon="close"></span></button>
+      </div>`).join('') + `</div>`;
+  }
+  queuePanel.innerHTML = html;
+  queuePanel.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
+
+  queuePanel.querySelectorAll('.queue-row').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.queue-remove')) return;
+      if (engine.captureActive || engine.micActive || engine.mode !== 'file') return;
+      engine.playTrack(Number(row.dataset.i));
+      renderQueue();
+    });
+  });
+  queuePanel.querySelectorAll('.queue-remove').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const i = Number(btn.dataset.i);
+      engine.removeFromQueue(i);
+      renderQueue();
+    });
+  });
+  queuePanel.querySelector('#queue-shuffle-btn')?.addEventListener('click', () => {
+    engine.shuffleQueue();
+    renderQueue();
+    toast('QUEUE <b>SHUFFLED</b>', { duration: 1200 });
+  });
+  queuePanel.querySelector('#queue-close-btn')?.addEventListener('click', () => toggleQueue(false));
+}
+
+function toggleQueue(force) {
+  const show = force ?? queuePanel.classList.contains('is-hidden');
+  queuePanel.classList.toggle('is-hidden', !show);
+  $('queue-btn').classList.toggle('is-on', show);
+  if (show) renderQueue();
+}
+
+$('queue-btn').addEventListener('click', () => toggleQueue());
+
 /* ---------- track display ---------- */
 
 const trackArtEl = $('track-art');
@@ -295,6 +360,7 @@ engine.on('source', () => {
 });
 engine.onQueueChange = () => {
   updateTrackUI();
+  if (!queuePanel.classList.contains('is-hidden')) renderQueue();
 };
 
 /* ---------- spotify connect panel ---------- */
@@ -420,14 +486,18 @@ async function updateMediaSession() {
 
 if ('mediaSession' in navigator) {
   const ms = navigator.mediaSession;
-  try {
-    ms.setActionHandler('play', () => engine.play());
-    ms.setActionHandler('pause', () => engine.pause());
-    ms.setActionHandler('seekbackward', (d) => engine.skip(-(d.seekOffset || 10)));
-    ms.setActionHandler('seekforward', (d) => engine.skip(d.seekOffset || 10));
-    ms.setActionHandler('previoustrack', () => engine.prevTrack());
-    ms.setActionHandler('nexttrack', () => engine.nextTrack());
-  } catch {}
+  const actions = {
+    play: () => engine.play(),
+    pause: () => engine.pause(),
+    seekbackward: (d) => engine.skip(-(d.seekOffset || 10)),
+    seekforward: (d) => engine.skip(d.seekOffset || 10),
+    previoustrack: () => engine.prevTrack(),
+    nexttrack: () => engine.nextTrack(),
+    seekto: (d) => { if (d.seekTime != null) engine.seek(d.seekTime); },
+  };
+  for (const [name, fn] of Object.entries(actions)) {
+    try { ms.setActionHandler(name, fn); } catch {}
+  }
 }
 
 /* ---------- transport ---------- */
@@ -467,11 +537,14 @@ window.addEventListener('mousemove', (e) => { if (seeking) seekFromEvent(e); });
 window.addEventListener('mouseup', () => { seeking = false; });
 
 const volumeTrack = $('volume-track');
-function volumeFromEvent(e) {
-  const rect = volumeTrack.getBoundingClientRect();
-  const v = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+function setVolumeUI(v) {
+  v = Math.max(0, Math.min(1, v));
   engine.setVolume(v);
   $('volume-fill').style.width = `${v * 100}%`;
+}
+function volumeFromEvent(e) {
+  const rect = volumeTrack.getBoundingClientRect();
+  setVolumeUI((e.clientX - rect.left) / rect.width);
 }
 let volDragging = false;
 volumeTrack.addEventListener('mousedown', (e) => { volDragging = true; volumeFromEvent(e); });
@@ -482,6 +555,86 @@ $('fullscreen-btn').addEventListener('click', () => {
   const shell = $('shell');
   if (document.fullscreenElement) document.exitFullscreen();
   else shell.requestFullscreen?.();
+});
+
+/* ---------- snapshot & session recorder ---------- */
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+function snapshot() {
+  try {
+    renderer.canvas.toBlob((blob) => {
+      if (!blob) return;
+      downloadBlob(blob, `audiovisor-snapshot-${fmtStamp()}.png`);
+      toast('SNAPSHOT <b>SAVED</b>', { duration: 1400 });
+    }, 'image/png');
+  } catch (err) {
+    console.error(err);
+    toast('<b>Snapshot failed</b>', { duration: 2000 });
+  }
+}
+
+$('snapshot-btn').addEventListener('click', snapshot);
+
+let recorder = null;
+let recChunks = [];
+
+function setRecBtn(on) {
+  $('record-btn').classList.toggle('is-rec', on);
+}
+
+function startRecording() {
+  if (!('MediaRecorder' in window) || !renderer.canvas.captureStream) {
+    toast('<b>Recording unavailable</b> — browser lacks MediaRecorder', { duration: 3000 });
+    return;
+  }
+  try {
+    const stream = renderer.canvas.captureStream(60);
+    try {
+      const audio = engine.getRecordStream();
+      if (audio) audio.getAudioTracks().forEach((t) => stream.addTrack(t));
+    } catch {}
+    const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+      .find((m) => MediaRecorder.isTypeSupported(m)) || '';
+    recChunks = [];
+    recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8000000 } : undefined);
+    recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+    recorder.start(1000);
+    setRecBtn(true);
+    toast('RECORDING <b>LIVE</b> — press again to save', { duration: 2200 });
+  } catch (err) {
+    console.error(err);
+    recorder = null;
+    toast('<b>Recording failed to start</b>', { duration: 2600 });
+  }
+}
+
+function stopRecording() {
+  const r = recorder;
+  if (!r) return;
+  recorder = null;
+  setRecBtn(false);
+  r.onstop = () => {
+    const blob = new Blob(recChunks, { type: r.mimeType || 'video/webm' });
+    recChunks = [];
+    if (!blob.size) return;
+    downloadBlob(blob, `audiovisor-session-${fmtStamp()}.webm`);
+    toast('SESSION <b>SAVED</b> — WebM downloaded', { duration: 2800 });
+  };
+  if (r.state !== 'inactive') r.stop();
+  else r.onstop();
+}
+
+$('record-btn').addEventListener('click', () => {
+  if (recorder) stopRecording();
+  else startRecording();
 });
 
 /* ---------- mic ---------- */
@@ -512,8 +665,12 @@ aboutPanel.innerHTML = `
     <div class="about-keys">
       <div class="about-key"><kbd>SPACE</kbd><span>Play / Pause</span></div>
       <div class="about-key"><kbd>← →</kbd><span>Seek 10s</span></div>
+      <div class="about-key"><kbd>↑ ↓</kbd><span>Volume ±5%</span></div>
       <div class="about-key"><kbd>M</kbd><span>Cycle Mode</span></div>
       <div class="about-key"><kbd>T</kbd><span>Cycle Theme</span></div>
+      <div class="about-key"><kbd>R</kbd><span>Random Look</span></div>
+      <div class="about-key"><kbd>Q</kbd><span>Queue Manager</span></div>
+      <div class="about-key"><kbd>P</kbd><span>Snapshot PNG</span></div>
       <div class="about-key"><kbd>F</kbd><span>Fullscreen</span></div>
     </div>
   </div>`;
@@ -548,6 +705,14 @@ window.addEventListener('keydown', (e) => {
     case 'ArrowRight':
       engine.skip(10);
       break;
+    case 'ArrowUp':
+      e.preventDefault();
+      setVolumeUI(engine.volume + 0.05);
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      setVolumeUI(engine.volume - 0.05);
+      break;
     case 'KeyM': {
       const i = (MODES.findIndex((m) => m.id === state.modeId) + 1) % MODES.length;
       setMode(MODES[i].id);
@@ -558,6 +723,16 @@ window.addEventListener('keydown', (e) => {
       setTheme(THEMES[i].id);
       break;
     }
+    case 'KeyR':
+      randomizeLook();
+      toast('LOOK <b>RANDOMIZED</b>', { duration: 1200 });
+      break;
+    case 'KeyP':
+      snapshot();
+      break;
+    case 'KeyQ':
+      toggleQueue();
+      break;
     case 'KeyF':
       $('fullscreen-btn').click();
       break;

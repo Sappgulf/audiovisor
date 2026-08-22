@@ -70,6 +70,8 @@ export class AudioEngine {
 
     this.beat = new BeatTracker();
 
+    this.recDest = null;
+
     this._listeners = { state: [], source: [], error: [] };
 
     this.onEnded = null;
@@ -359,6 +361,70 @@ export class AudioEngine {
     } else {
       this.skip(10);
     }
+  }
+
+  /** Remove a queue item. If it's playing, advance to the next track in its place. */
+  removeFromQueue(i) {
+    if (i < 0 || i >= this.queue.length) return;
+    const removingCurrent = i === this.queueIndex;
+    this.queue.splice(i, 1);
+
+    if (!this.queue.length) {
+      if (this.source) {
+        try { this.source.stop(); } catch {}
+        this.source = null;
+      }
+      this.buffer = null;
+      this.track = null;
+      this.offset = 0;
+      this.playing = false;
+      this.queueIndex = -1;
+      if (this.mode === 'file') this._setMode('none');
+      if (this.onQueueChange) this.onQueueChange();
+      return;
+    }
+
+    if (removingCurrent) {
+      const wasPlaying = this.playing;
+      if (this.source) {
+        try { this.source.stop(); } catch {}
+        this.source = null;
+      }
+      this.playing = false;
+      this._applyQueueItem(Math.min(i, this.queue.length - 1));
+      if (wasPlaying) this.play();
+    } else if (i < this.queueIndex) {
+      this.queueIndex--;
+    }
+    if (this.onQueueChange) this.onQueueChange();
+  }
+
+  /** Fisher–Yates shuffle of the queue, keeping the current track first. */
+  shuffleQueue() {
+    if (this.queue.length < 2) return;
+    const cur = this.queueIndex >= 0 && this.queueIndex < this.queue.length
+      ? this.queue[this.queueIndex]
+      : null;
+    const rest = this.queue.filter((_, idx) => idx !== this.queueIndex);
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rest[i], rest[j]] = [rest[j], rest[i]];
+    }
+    this.queue = cur ? [cur, ...rest] : rest;
+    this.queueIndex = cur ? 0 : this.queueIndex;
+    if (this.onQueueChange) this.onQueueChange();
+  }
+
+  /* ---------- session export ---------- */
+
+  /** MediaStream carrying the master mix, for canvas+audio recording. */
+  getRecordStream() {
+    if (!this.ctx || !this.master) return null;
+    if (!this.recDest) {
+      this.recDest = this.ctx.createMediaStreamDestination();
+      this.master.connect(this.recDest);
+    }
+    return this.recDest.stream;
   }
 
   /* ---------- params & fx ---------- */

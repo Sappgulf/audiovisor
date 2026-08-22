@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clamp, lerp, fmtTime, logFreqIndex, median, hexRgba, pickRandom } from '../src/utils.js';
+import { clamp, lerp, fmtTime, fmtStamp, logFreqIndex, median, hexRgba, pickRandom } from '../src/utils.js';
 
 describe('clamp', () => {
   it('clamps into range', () => {
@@ -71,5 +71,15 @@ describe('pickRandom', () => {
     for (let i = 0; i < 100; i++) {
       expect(arr).toContain(pickRandom(arr));
     }
+  });
+});
+
+describe('fmtStamp', () => {
+  it('formats YYYYMMDD-HHMMSS', () => {
+    expect(fmtStamp(new Date(2026, 7, 22, 14, 3, 5))).toBe('20260822-140305');
+  });
+  it('pads single digits and defaults to now', () => {
+    const s = fmtStamp();
+    expect(s).toMatch(/^\d{8}-\d{6}$/);
   });
 });

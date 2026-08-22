@@ -222,4 +222,66 @@ describe('AudioEngine', () => {
     engine.play();
     expect(engine.source.startCalls.length).toBe(1);
   });
+
+  it('removeFromQueue drops a later track without touching playback', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3'), makeFile('c.mp3')]);
+    engine.play();
+    engine.removeFromQueue(2);
+    expect(engine.queue.length).toBe(2);
+    expect(engine.queueIndex).toBe(0);
+    expect(engine.playing).toBe(true);
+    expect(engine.track.name).toBe('a');
+  });
+
+  it('removeFromQueue before the current track shifts the index', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3'), makeFile('c.mp3')]);
+    engine.nextTrack();
+    expect(engine.track.name).toBe('b');
+    engine.removeFromQueue(0);
+    expect(engine.queue.length).toBe(2);
+    expect(engine.queueIndex).toBe(0);
+    expect(engine.track.name).toBe('b');
+  });
+
+  it('removeFromQueue on the current track advances to next and keeps playing', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3'), makeFile('c.mp3')]);
+    engine.play();
+    engine.removeFromQueue(0);
+    expect(engine.queue.length).toBe(2);
+    expect(engine.track.name).toBe('b');
+    expect(engine.playing).toBe(true);
+  });
+
+  it('removeFromQueue on the only track returns the engine to idle', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
+    engine.play();
+    engine.removeFromQueue(1);
+    engine.removeFromQueue(0);
+    expect(engine.hasTrack).toBe(false);
+    expect(engine.playing).toBe(false);
+    expect(engine.mode).toBe('none');
+    expect(engine.activeInput).toBe('none');
+  });
+
+  it('removeFromQueue ignores out-of-range indices', async () => {
+    await engine.addToQueue([makeFile('a.mp3')]);
+    engine.removeFromQueue(-1);
+    engine.removeFromQueue(5);
+    expect(engine.queue.length).toBe(1);
+  });
+
+  it('shuffleQueue keeps every track exactly once with current first', async () => {
+    await engine.addToQueue([
+      makeFile('a.mp3'), makeFile('b.mp3'), makeFile('c.mp3'), makeFile('d.mp3'),
+    ]);
+    engine.play();
+    engine.shuffleQueue();
+    expect(engine.queue.length).toBe(4);
+    expect(engine.queueIndex).toBe(0);
+    const names = engine.queue.map((t) => t.meta.name).sort();
+    expect(names).toEqual(['a', 'b', 'c', 'd']);
+    expect(engine.playing).toBe(true);
+    // playback continues uninterrupted: same buffer object still loaded
+    expect(engine.source.startCalls.length).toBe(1);
+  });
 });

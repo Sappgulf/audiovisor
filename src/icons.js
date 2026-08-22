@@ -29,6 +29,12 @@ export const ICONS = {
   link: svg('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
   close: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
   user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/>'),
+  target: svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><line x1="12" y1="1.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22.5" y2="12"/>'),
+  layers: svg('<line x1="3" y1="6" x2="21" y2="6"/><line x1="5" y1="10" x2="19" y2="10"/><line x1="7" y1="14" x2="17" y2="14"/><line x1="9" y1="18" x2="15" y2="18"/>'),
+  building: svg('<rect x="4" y="8" width="7" height="13" rx="0.5"/><rect x="11" y="3" width="9" height="18" rx="0.5"/><line x1="14.5" y1="7" x2="14.5" y2="7.01"/><line x1="17.5" y1="7" x2="17.5" y2="7.01"/><line x1="14.5" y1="11" x2="14.5" y2="11.01"/><line x1="17.5" y1="11" x2="17.5" y2="11.01"/><line x1="14.5" y1="15" x2="14.5" y2="15.01"/><line x1="17.5" y1="15" x2="17.5" y2="15.01"/><path d="M3 21h19"/>'),
+  camera: svg('<path d="M14.5 4h-5L7.5 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3.5z"/><circle cx="12" cy="13" r="3.5"/>'),
+  record: svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5" fill="currentColor" stroke="none"/>'),
+  list: svg('<line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="0.8" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="0.8" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="0.8" fill="currentColor" stroke="none"/>'),
 };
 
 export function setIcon(el, name) {

@@ -1,6 +1,6 @@
 # AUDIOVISOR
 
-A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across nine stage modes, eight theme moods, a full FX chain, beat tracking, and autopilot.
+A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across twelve stage modes, twelve theme moods, a full FX chain, beat tracking, session recording, and autopilot.
 
 ## Features
 
@@ -14,19 +14,22 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 > **Note on streaming services:** DRM-protected streams (Spotify/Apple Music in-app playback) can't be tapped by the Web Audio API directly. When Spotify plays through the built-in player without capture, AUDIOVISOR drives the visuals with a procedural synth feed seeded from the track — hit **Capture** and share the current tab for true spectrum-reactive visuals of the actual audio.
 
 ### Stage
-- **9 stage modes** — Spectrum Bars, Linear Wave, Particle Field, Kaleidoscope, Radial Tunnel, Plasma Rings, Aurora Terrain, Nebula Clouds, Spiral Galaxy
-- **8 themes** — Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic
+- **12 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy
+- **12 themes** — Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic, Monolith, Sunset, Matrix, Ultraviolet
 - **Bloom compositing** — two-pass downscale glow replaces per-element shadow blur
 - **Delta-time animation** — identical motion at 60 Hz, 120 Hz, 144 Hz+
 - **Adaptive quality** — auto-scales rendering (DPR, particle caps, bloom) to hold 60fps
 
 ### Engine
 - Web Audio API: queue, seek, loop, volume, speed
+- **Queue manager** — jump between tracks, remove, shuffle (`Q`)
+- **Snapshot** — save the current frame as PNG (`P` or camera button)
+- **Session recorder** — record visuals + master audio mix to WebM (record button)
 - FX chain — Reverb (generated impulse), Limiter, Lowpass, Speed ×1.5
 - Reactivity — sensitivity, bass focus, smoothing controls
 - Beat tracking — live BPM chip + bass-active indicator
 - Autopilot — cycles modes and themes every 12s
-- MediaSession — OS media keys, lock-screen metadata & album art
+- MediaSession — OS media keys, lock-screen metadata & album art, seek-to
 
 ## Spotify setup
 
@@ -47,8 +50,12 @@ VITE_SPOTIFY_CLIENT_ID=your_client_id npm run build
 | --- | --- |
 | `Space` | Play / Pause |
 | `←` `→` | Seek ±10s |
+| `↑` `↓` | Volume ±5% |
 | `M` | Cycle stage mode |
 | `T` | Cycle theme |
+| `R` | Random look (mode + theme) |
+| `Q` | Queue manager |
+| `P` | Snapshot PNG |
 | `F` | Fullscreen |
 
 ## Dev

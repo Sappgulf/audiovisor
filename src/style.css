@@ -819,6 +819,102 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 }
 .about-key span { font-size: 9px; color: var(--text-40); }
 
+/* ---------- Queue manager ---------- */
+
+.queue-panel {
+  position: absolute;
+  left: 16px;
+  bottom: 96px;
+  z-index: 34;
+  width: 340px;
+  max-height: min(420px, 55vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.55);
+  overflow: hidden;
+  animation: queue-in 0.25s var(--ease);
+}
+@keyframes queue-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.queue-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.queue-title {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--lime);
+  flex: 1;
+}
+
+.queue-list {
+  overflow-y: auto;
+  padding: 6px;
+}
+.queue-list::-webkit-scrollbar { width: 4px; }
+.queue-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+}
+.queue-row:hover { background: rgba(255,255,255,0.05); }
+.queue-row.is-active { background: rgba(204, 255, 0, 0.07); }
+.queue-row.is-active .queue-name { color: var(--lime); }
+
+.queue-idx { font-size: 9px; color: var(--text-40); width: 18px; flex-shrink: 0; }
+.queue-row.is-active .queue-idx { color: var(--lime); }
+
+.queue-name {
+  flex: 1;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queue-dur { font-size: 9px; color: var(--text-40); }
+
+.queue-remove { opacity: 0; transition: opacity 0.15s var(--ease); }
+.queue-row:hover .queue-remove,
+.queue-row.is-active .queue-remove { opacity: 1; }
+
+.queue-empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--text-40);
+}
+
+@media (max-width: 1024px) {
+  .queue-panel { left: 12px; right: auto; width: min(320px, calc(100vw - 24px)); bottom: 120px; }
+}
+
+/* ---------- Record button state ---------- */
+
+.rec-btn.is-rec {
+  color: #ff4d4d;
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(255, 77, 77, 0.7)); }
+  50% { filter: drop-shadow(0 0 10px rgba(255, 77, 77, 1)); }
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 1024px) {
