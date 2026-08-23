@@ -5,6 +5,7 @@ import { Renderer } from './visualizers.js';
 import { ConnectPanel } from './connect.js';
 import { fmtTime, pickRandom, fmtStamp } from './utils.js';
 import * as Library from './library.js';
+import { AI_PRESETS, suggestPreset } from './ai.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) =>
@@ -133,6 +134,115 @@ FX.forEach((fx) => {
   fxRow.appendChild(btn);
   fxEls[fx] = btn;
 });
+
+// AI Remix Studio wiring
+const aiStems = document.getElementById('ai-stems');
+if (aiStems) {
+  ['vocals','drums','bass'].forEach(s => {
+    const b = document.createElement('button');
+    b.className = 'fx-chip';
+    b.innerHTML = `<span class="chip-dot"></span><span class="chip-txt">${s}</span>`;
+    b.addEventListener('click', () => {
+      b.classList.toggle('is-active');
+      const on = b.classList.contains('is-active');
+      // stem isolation via filter
+      if (s === 'vocals') engine.filter.frequency.setTargetAtTime(on ? 3200 : 22050, engine.ctx?.currentTime || 0, 0.08);
+      if (s === 'bass') engine.filter.frequency.setTargetAtTime(on ? 180 : 22050, engine.ctx?.currentTime || 0, 0.08);
+      if (s === 'drums') engine.filter.frequency.setTargetAtTime(on ? 8000 : 22050, engine.ctx?.currentTime || 0, 0.08);
+      engine.filter.type = on ? 'bandpass' : 'lowpass';
+      if (!on) engine.filter.type = 'lowpass';
+      toast(`Stem <b>${s}</b> ${on ? 'solo' : 'all'}`);
+    });
+    aiStems.appendChild(b);
+  });
+}
+const aiPresetsEl = document.getElementById('ai-presets');
+if (aiPresetsEl) {
+  AI_PRESETS.forEach(pr => {
+    const b = document.createElement('button');
+    b.className = 'mini-btn';
+    b.textContent = pr.name;
+    b.addEventListener('click', () => {
+      for (const [k,v] of Object.entries(pr.fx)) { engine.setFx(k, v); const el=fxEls[k]; if(el) el.classList.toggle('is-active', v); state.fx[k]=v; }
+      if (pr.theme) setTheme(pr.theme);
+      saveSettings();
+      toast(`AI <b>${pr.name}</b> applied`);
+    });
+    aiPresetsEl.appendChild(b);
+  });
+}
+document.getElementById('ai-suggest')?.addEventListener('click', () => {
+  const pr = suggestPreset(Math.floor(Math.random()*9999));
+  for (const [k,v] of Object.entries(pr.fx)) { engine.setFx(k, !!v); const el=fxEls[k]; if(el) el.classList.toggle('is-active', !!v); state.fx[k]=!!v; }
+  setTheme(pr.theme);
+  saveSettings();
+  toast(`AI suggests <b>${pr.name}</b>`);
+});
+
+// Collab & Share wiring
+const shareBtn = document.getElementById('share-btn');
+shareBtn?.addEventListener('click', async () => {
+  const data = btoa(JSON.stringify({ mode: state.modeId, theme: state.themeId, fx: state.fx }));
+  const url = location.origin + location.pathname + '#share=' + data;
+  try { await navigator.clipboard.writeText(url); toast('Link <b>copied</b>'); } catch { prompt('Copy link', url); }
+  // store in local collab history
+  const hist = JSON.parse(localStorage.getItem('audiovisor.collab')||'[]');
+  hist.unshift({ url, at: Date.now() });
+  localStorage.setItem('audiovisor.collab', JSON.stringify(hist.slice(0,20)));
+});
+const partyBtn = document.getElementById('party-btn');
+partyBtn?.addEventListener('click', () => {
+  const qr = document.getElementById('party-qr');
+  const urlEl = document.getElementById('qr-url');
+  if (urlEl) urlEl.textContent = location.href;
+  qr?.classList.toggle('is-hidden');
+  toast('Party <b>QR</b> — others scan to join');
+  // broadcast via BroadcastChannel for live sync
+  try {
+    const bc = new BroadcastChannel('audiovisor-party');
+    bc.postMessage({ type: 'party', mode: state.modeId, theme: state.themeId });
+  } catch {}
+});
+const commentInput = document.getElementById('comment-input');
+const collabEl = document.getElementById('collab-comments');
+function renderComments() {
+  if (!collabEl) return;
+  const list = JSON.parse(localStorage.getItem('audiovisor.comments')||'[]');
+  collabEl.innerHTML = list.slice(-6).map(c => `<div style="font-size:11px; color:var(--text-60); padding:4px 6px; background:var(--glass); border-radius:6px"><b style="color:var(--accent)">${esc(c.user)}</b> ${esc(c.text)}</div>`).join('') || '<div style="font-size:10px; color:var(--text-20)">No comments yet</div>';
+}
+document.getElementById('comment-send')?.addEventListener('click', () => {
+  const text = commentInput?.value.trim();
+  if (!text) return;
+  const list = JSON.parse(localStorage.getItem('audiovisor.comments')||'[]');
+  list.push({ user: 'You', text, at: Date.now() });
+  localStorage.setItem('audiovisor.comments', JSON.stringify(list));
+  if (commentInput) commentInput.value = '';
+  renderComments();
+  toast('Comment <b>posted</b>');
+  // broadcast
+  try { new BroadcastChannel('audiovisor-party').postMessage({ type: 'comment', text }); } catch {}
+});
+renderComments();
+// party sync listener
+try {
+  const bc = new BroadcastChannel('audiovisor-party');
+  bc.onmessage = (e) => {
+    if (e.data?.type === 'party') { setMode(e.data.mode); setTheme(e.data.theme); toast('Party <b>sync</b>'); }
+    if (e.data?.type === 'comment') { const list = JSON.parse(localStorage.getItem('audiovisor.comments')||'[]'); list.push({ user: 'Guest', text: e.data.text, at: Date.now() }); localStorage.setItem('audiovisor.comments', JSON.stringify(list)); renderComments(); }
+  };
+} catch {}
+// handle share hash on load
+try {
+  const h = location.hash;
+  if (h.startsWith('#share=')) {
+    const data = JSON.parse(atob(h.slice(7)));
+    if (data.mode) setMode(data.mode);
+    if (data.theme) setTheme(data.theme);
+    if (data.fx) for (const [k,v] of Object.entries(data.fx)) { engine.setFx(k, v); const el=fxEls[k]; if(el) el.classList.toggle('is-active', v); }
+    toast('Shared <b>remix</b> loaded');
+  }
+} catch {}
+
 
 /* ---------- mode / theme switching ---------- */
 

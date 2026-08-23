@@ -289,6 +289,11 @@ export class Renderer {
       case 'nebula': this._nebula(); break;
       case 'spiral': this._spiral(freq); break;
       case 'orb': this._orb(freq, dt60, dt); break;
+      case 'fluid': this._fluid(freq); break;
+      case 'tensor': this._tensor(freq); break;
+      case 'prism': this._prism(freq); break;
+      case 'void': this._void(freq); break;
+      case 'bloomfield': this._bloomField(freq); break;
     }
   }
 
@@ -1387,6 +1392,163 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ---------------- FLUID METAL ---------------- */
+  _fluid(freq) {
+    const { ctx, w, h } = this;
+    const cx = w / 2, cy = h / 2;
+    const n = this.quality === 'low' ? 5 : 9;
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * Math.PI * 2 + this.t * (0.18 + i * 0.02);
+      const rad = Math.min(w, h) * 0.22 * (0.7 + this.sm.bass * 0.6 + this.beat * 0.25);
+      const x = cx + Math.cos(ang) * rad * 0.7;
+      const y = cy + Math.sin(ang) * rad * 0.5;
+      const v = freq ? logSample(freq, i / n) : 0.5;
+      const r = rad * 0.55 * (0.6 + v * 0.9);
+      const c = this._color(i + Math.floor(this.t * 0.7));
+      ctx.globalAlpha = 0.42 + v * 0.35;
+      ctx.drawImage(this._dot(c), x - r, y - r, r * 2, r * 2);
+    }
+    // central merge
+    const cr = Math.min(w, h) * 0.08 * (1 + this.sm.level * 0.6);
+    ctx.globalAlpha = 0.85;
+    ctx.drawImage(this._dot(this._color(0)), cx - cr, cy - cr, cr * 2, cr * 2);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ---------------- TENSOR GRID ---------------- */
+  _tensor(freq) {
+    const { ctx, w, h } = this;
+    const cols = this.quality === 'low' ? 12 : 20;
+    const rows = this.quality === 'low' ? 8 : 14;
+    const cw = w / cols;
+    const rh = h / rows;
+    ctx.strokeStyle = hexRgba(this._color(0), 0.18);
+    ctx.lineWidth = 1;
+    for (let y = 0; y <= rows; y++) {
+      ctx.beginPath();
+      for (let x = 0; x <= cols; x++) {
+        const u = x / cols;
+        const v = freq ? logSample(freq, u) : 0;
+        const off = Math.sin(u * 6 + this.t * 1.4) * v * 22 * this.sensitivity;
+        const px = x * cw;
+        const py = y * rh + off * (1 - Math.abs(y - rows/2) / (rows/2));
+        if (x === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+    for (let x = 0; x <= cols; x++) {
+      ctx.beginPath();
+      for (let y = 0; y <= rows; y++) {
+        const v = freq ? logSample(freq, y / rows) : 0;
+        const off = Math.cos(y * 4 + this.t * 1.1) * v * 14;
+        const px = x * cw + off * (1 - Math.abs(x - cols/2) / (cols/2));
+        const py = y * rh;
+        if (y === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+  }
+
+  /* ---------------- PRISM RAY ---------------- */
+  _prism(freq) {
+    const { ctx, w, h } = this;
+    const cx = w / 2, cy = h * 0.58;
+    const sz = Math.min(w, h) * 0.22;
+    ctx.globalCompositeOperation = 'lighter';
+    // prism triangle
+    ctx.strokeStyle = hexRgba(this._color(1), 0.9);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - sz);
+    ctx.lineTo(cx - sz * 0.86, cy + sz * 0.5);
+    ctx.lineTo(cx + sz * 0.86, cy + sz * 0.5);
+    ctx.closePath();
+    ctx.stroke();
+    // refracted beams
+    const beams = this.quality === 'low' ? 5 : 9;
+    for (let i = 0; i < beams; i++) {
+      const u = i / beams;
+      const v = freq ? logSample(freq, u) : 0.5;
+      const ang = -0.9 + u * 1.8 + this.beat * 0.15;
+      const len = w * 0.7 * (0.5 + v * 0.7);
+      const x1 = cx + Math.cos(Math.PI/2 + ang) * sz * 0.6;
+      const y1 = cy + Math.sin(Math.PI/2 + ang) * sz * 0.6;
+      const x2 = x1 + Math.cos(ang) * len;
+      const y2 = y1 + Math.sin(ang) * len * 0.18;
+      ctx.strokeStyle = hexRgba(this._color(i), 0.42 + v * 0.4);
+      ctx.lineWidth = 1.2 + v * 2.2;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ---------------- VOID CORE ---------------- */
+  _void(freq) {
+    const { ctx, w, h } = this;
+    const cx = w / 2, cy = h / 2;
+    const base = Math.min(w, h) * 0.11 * (1 + this.sm.bass * 0.3);
+    ctx.globalCompositeOperation = 'lighter';
+    // accretion disk
+    const rings = this.quality === 'low' ? 22 : 36;
+    for (let i = 0; i < rings; i++) {
+      const t = i / rings;
+      const r = base * 1.7 + Math.pow(t, 1.2) * Math.min(w, h) * 0.38;
+      const v = freq ? logSample(freq, t) : 0.5;
+      const wob = Math.sin(t * 18 + this.t * 2.2) * v * 6;
+      ctx.strokeStyle = hexRgba(this._color(Math.floor(t * 4)), 0.18 + v * 0.32);
+      ctx.lineWidth = 1.1 + v * 1.4;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r + wob, r * 0.38 + wob * 0.18, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // core shadow
+    ctx.globalCompositeOperation = 'source-over';
+    const g = ctx.createRadialGradient(cx, cy, base * 0.7, cx, cy, base);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    g.addColorStop(0.72, 'rgba(0,0,0,1)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, base, 0, Math.PI * 2);
+    ctx.fill();
+    // photon ring
+    ctx.strokeStyle = hexRgba(this._color(0), 0.85 + this.beat * 0.2);
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(cx, cy, base * 1.02, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  /* ---------------- BLOOM FIELD ---------------- */
+  _bloomField(freq) {
+    const { ctx, w, h } = this;
+    const cols = this.quality === 'low' ? 10 : 16;
+    const rows = this.quality === 'low' ? 6 : 9;
+    const cw = w / cols;
+    const rh = h / rows;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        // u/v kept for future spatial variation
+        const idx = (y * cols + x) % 64;
+        const amp = freq ? logSample(freq, (idx / 64)) : 0.5;
+        const cx = x * cw + cw / 2 + Math.sin(this.t * 0.6 + idx) * 4;
+        const cy = y * rh + rh / 2 + Math.cos(this.t * 0.5 + idx * 1.3) * 4;
+        const s = 10 + amp * 22 * this.sensitivity + this.beat * 6;
+        const c = this._color((x + y) % this.theme.colors.length);
+        ctx.globalAlpha = 0.22 + amp * 0.55;
+        ctx.drawImage(this._dot(c), cx - s, cy - s, s * 2, s * 2);
+      }
+    }
+    ctx.globalAlpha = 1;
   }
 }
 

@@ -12,6 +12,11 @@ export const MODES = [
   { id: 'nebula', name: 'Nebula Clouds', icon: 'cloud' },
   { id: 'spiral', name: 'Spiral Galaxy', icon: 'galaxy' },
   { id: 'orb', name: 'Pulse Orb', icon: 'orb' },
+  { id: 'fluid', name: 'Fluid Metal', icon: 'droplet' },
+  { id: 'tensor', name: 'Tensor Grid', icon: 'grid' },
+  { id: 'prism', name: 'Prism Ray', icon: 'prism' },
+  { id: 'void', name: 'Void Core', icon: 'void' },
+  { id: 'bloomfield', name: 'Bloom Field', icon: 'flower' },
 ];
 
 export const THEMES = [
