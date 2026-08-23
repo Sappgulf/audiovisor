@@ -236,7 +236,7 @@ export class Renderer {
     const punched = this.beat > 0.02;
     if (punched) {
       ctx.save();
-      const z = 1 + this.beat * 0.012;
+      const z = 1 + this.beat * 0.018;
       ctx.translate(w / 2, h / 2);
       ctx.scale(z, z);
       ctx.translate(-w / 2, -h / 2);
@@ -434,6 +434,17 @@ export class Renderer {
     }
     ctx.fillStyle = this._floorGrads[c0];
     ctx.fillRect(0, horizon, w, h - horizon);
+
+    /* wide soft backdrop glow behind the bars */
+    const backdrop = this._dot(c0);
+    const bgh = maxH * 0.9;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.10 + this.sm.level * 0.12;
+    ctx.drawImage(backdrop, 0, horizon - bgh, w, bgh * 2);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+
     // ray-trace AO: soft contact shadow at horizon
     const ao = ctx.createLinearGradient(0, horizon - 1, 0, horizon + 22);
     ao.addColorStop(0, 'rgba(0,0,0,0)');
@@ -1052,10 +1063,40 @@ export class Renderer {
     }
     while (this.terrainRows.length < ROWS) this.terrainRows.push(new Float32Array(COLS));
 
+    /* stars */
+    const starSig = `${w}x${h}|terrain`;
+    if (this._starSig !== starSig || !this.stars.length) {
+      this._starSig = starSig;
+      this.stars = Array.from({ length: 54 }, () => ({
+        x: Math.random() * w,
+        y: Math.random() * horizon * 0.85,
+        r: 0.5 + Math.random() * 1.1,
+        ph: Math.random() * Math.PI * 2,
+      }));
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = '#ffffff';
+    for (const s of this.stars) {
+      ctx.globalAlpha = 0.10 + 0.30 * (0.5 + 0.5 * Math.sin(this.t * 0.9 + s.ph));
+      ctx.fillRect(s.x, s.y, s.r, s.r);
+    }
+    ctx.globalAlpha = 1;
+
+    /* aurora sky washes */
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 2; i++) {
+      const ax = w * (0.25 + i * 0.35) + Math.sin(this.t * 0.14 + i * 2.2) * w * 0.14;
+      const ah = depth * (0.24 + i * 0.1);
+      const aur = ctx.createLinearGradient(0, horizon - ah, 0, horizon);
+      aur.addColorStop(0, 'rgba(0,0,0,0)');
+      aur.addColorStop(1, hexRgba(this._color(1 + i), 0.10 + this.sm.level * 0.06 + this.beat * 0.04));
+      ctx.fillStyle = aur;
+      ctx.fillRect(ax, horizon - ah, w * 0.34, ah);
+    }
+
     /* sun */
     const sunR = Math.min(w, h) * (0.11 + this.sm.bass * 0.03 + this.beat * 0.012);
     const sunY = horizon - Math.min(w, h) * 0.16;
-    ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = 0.85;
     ctx.drawImage(this._dot(this._color(1)), w / 2 - sunR, sunY - sunR, sunR * 2, sunR * 2);
     ctx.globalAlpha = 1;
@@ -1123,7 +1164,7 @@ export class Renderer {
     const colors = this.theme.colors;
 
     /* stars */
-    const starSig = `${w}x${h}`;
+    const starSig = `${w}x${h}|city`;
     if (this._starSig !== starSig || !this.stars.length) {
       this._starSig = starSig;
       this.stars = Array.from({ length: 80 }, () => ({
@@ -1140,6 +1181,20 @@ export class Renderer {
       ctx.fillRect(s.x, s.y, s.r, s.r);
     }
     ctx.globalAlpha = 1;
+
+    /* aurora ribbon */
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 2; i++) {
+      ctx.beginPath();
+      for (let x = 0; x <= w; x += 20) {
+        const y = baseline * (0.22 + i * 0.12) + Math.sin(x * 0.006 + this.t * 0.3 + i * 2) * h * 0.03;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = hexRgba(this._color(1 + i), 0.12 + this.sm.level * 0.08 + this.beat * 0.05);
+      ctx.stroke();
+    }
     ctx.globalCompositeOperation = 'source-over';
 
     /* column state */
@@ -1287,6 +1342,17 @@ export class Renderer {
       ctx.rotate(swirl * (i % 2 ? 1 : -1));
       ctx.drawImage(sprite, -r, -r, r * 2, r * 2);
       ctx.restore();
+    }
+    /* stardust */
+    for (let i = 0; i < 22; i++) {
+      const fx = ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1;
+      const fy = ((Math.sin(i * 78.233) * 12543.123) % 1 + 1) % 1;
+      const px = fx * w + Math.sin(this.t * 0.18 + i * 1.7) * 18;
+      const py = fy * h + Math.cos(this.t * 0.14 + i * 2.3) * 14;
+      const a = 0.16 + 0.26 * (0.5 + 0.5 * Math.sin(this.t * 1.1 + i * 1.1));
+      const rr = 1.2 + ((i * 7919) % 7) * 0.22;
+      ctx.globalAlpha = a;
+      ctx.drawImage(this._dot(this._color(i % this.theme.colors.length)), px - rr, py - rr, rr * 2, rr * 2);
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';

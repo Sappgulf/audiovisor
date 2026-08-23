@@ -995,6 +995,7 @@ aboutPanel.innerHTML = `
       <div class="about-key"><kbd>M</kbd><span>Cycle Mode</span></div>
       <div class="about-key"><kbd>T</kbd><span>Cycle Theme</span></div>
       <div class="about-key"><kbd>R</kbd><span>Random Look</span></div>
+      <div class="about-key"><kbd>1-9</kbd><span>Jump Mode</span></div>
       <div class="about-key"><kbd>Q</kbd><span>Queue Manager</span></div>
       <div class="about-key"><kbd>P</kbd><span>Snapshot PNG</span></div>
       <div class="about-key"><kbd>C</kbd><span>Chop N Screw</span></div>
@@ -1061,6 +1062,12 @@ window.addEventListener('keydown', (e) => {
       randomizeLook();
       toast('LOOK <b>RANDOMIZED</b>', { duration: 1200 });
       break;
+    case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': case 'Digit5':
+    case 'Digit6': case 'Digit7': case 'Digit8': case 'Digit9': {
+      const idx = Number(e.code.slice(5)) - 1;
+      if (MODES[idx]) setMode(MODES[idx].id);
+      break;
+    }
     case 'KeyP':
       snapshot();
       break;
