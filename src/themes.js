@@ -17,6 +17,7 @@ export const MODES = [
   { id: 'prism', name: 'Prism Ray', icon: 'prism' },
   { id: 'void', name: 'Void Core', icon: 'void' },
   { id: 'bloomfield', name: 'Bloom Field', icon: 'flower' },
+  { id: 'fractal', name: 'Fractal Bloom', icon: 'snowflake' },
   { id: 'gpu', name: 'GPU Core', icon: 'void' },
 ];
 
@@ -41,4 +42,5 @@ export const THEMES = [
   { id: 'crimson', name: 'Crimson Silk', colors: ['#ff4d6d', '#8a0f2a', '#ffd6dd'], css: 'linear-gradient(135deg, #ff4d6d, #8a0f2a)' },
   { id: 'desert', name: 'Desert Mirage', colors: ['#ffd6a6', '#ff8a5c', '#8a4a2a'], css: 'linear-gradient(135deg, #ffd6a6, #ff8a5c)' },
   { id: 'ocean', name: 'Ocean Depth', colors: ['#00d4ff', '#0066cc', '#001a33'], css: 'linear-gradient(135deg, #00d4ff, #001a33)' },
+  { id: 'fractal', name: 'Fractal Dawn', colors: ['#ff6b35', '#f7c948', '#2a0a4a'], css: 'linear-gradient(135deg, #ff6b35, #2a0a4a)' },
 ];

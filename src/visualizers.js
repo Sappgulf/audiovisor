@@ -369,6 +369,7 @@ export class Renderer {
       case 'prism': this._prism(freq); break;
       case 'void': this._void(freq); break;
       case 'bloomfield': this._bloomField(freq); break;
+      case 'fractal': this._fractal(freq); break;
     }
   }
 
@@ -1893,5 +1894,39 @@ export class Renderer {
       }
     }
     ctx.globalAlpha = 1;
+  }
+
+  _fractal(freq) {
+    const { ctx, w, h } = this;
+    const cx = w / 2, cy = h / 2;
+    const base = Math.min(w, h) * 0.12;
+    const depth = this.quality === 'low' ? 4 : 6;
+    const drawBranch = (x, y, len, ang, d, colIdx) => {
+      if (d <= 0) return;
+      const v = freq ? logSample(freq, (d / depth)) : 0.5;
+      const nx = x + Math.cos(ang) * len * (0.7 + v * 0.6);
+      const ny = y + Math.sin(ang) * len * (0.7 + v * 0.6);
+      ctx.strokeStyle = hexRgba(this._color(colIdx % this.theme.colors.length), 0.35 + v * 0.45);
+      ctx.lineWidth = Math.max(1, d * 1.2);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(nx, ny);
+      ctx.stroke();
+      const spread = 0.55 + this.sm.bass * 0.3;
+      drawBranch(nx, ny, len * 0.68, ang - spread, d - 1, colIdx + 1);
+      drawBranch(nx, ny, len * 0.68, ang + spread, d - 1, colIdx + 2);
+    };
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < (this.quality === 'low' ? 3 : 5); i++) {
+      const ang = (i / 5) * Math.PI * 2 + this.t * 0.2;
+      const col = i;
+      drawBranch(cx, cy, base, ang, depth, col);
+    }
+    // central bloom
+    const cr = base * 0.35 * (1 + this.beat * 0.8);
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(this._dot(this._color(0)), cx - cr, cy - cr, cr * 2, cr * 2);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
   }
 }
