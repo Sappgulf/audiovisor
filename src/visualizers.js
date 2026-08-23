@@ -68,6 +68,11 @@ export class Renderer {
     this.orbSat = [];
     this._scopePts = null;
 
+    /* radar / lava state */
+    this.radarBlips = [];
+    this._sweepAng = -Math.PI / 2;
+    this.lavaBlobs = null;
+
     /* caches */
     this._dotSprites = null;
     this._barSprites = null;
@@ -109,6 +114,8 @@ export class Renderer {
     this.scopeCtx = null;
     this.orbSat = [];
     this._scopePts = null;
+    this.radarBlips = [];
+    this.lavaBlobs = null;
   }
   setTheme(t) {
     this.theme = t;
@@ -370,6 +377,8 @@ export class Renderer {
       case 'void': this._void(freq); break;
       case 'bloomfield': this._bloomField(freq); break;
       case 'fractal': this._fractal(freq); break;
+      case 'radar': this._radar(freq, dt); break;
+      case 'lava': this._lava(freq, dt, dt60); break;
     }
   }
 
@@ -1833,6 +1842,155 @@ export class Renderer {
     const cr = base * 0.35 * (1 + this.beat * 0.8);
     ctx.globalAlpha = 0.9;
     ctx.drawImage(this._dot(this._color(0)), cx - cr, cy - cr, cr * 2, cr * 2);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ---------------- BEAT RADAR ---------------- */
+
+  _radar(freq, dt) {
+    const { ctx, w, h } = this;
+    const cx = w / 2, cy = h / 2;
+    const minDim = Math.min(w, h);
+    const R = minDim * 0.42;
+
+    /* sweep speed follows energy, kicks forward on beats */
+    const spd = (0.9 + this.sm.level * 2.2) * (1 + this.beat * 1.4);
+    this._sweepAng += spd * dt;
+
+    /* range rings + graticule */
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._color(0), 0.10);
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 4; i++) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, (R * i) / 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
+    ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
+    ctx.stroke();
+
+    /* trailing sweep — fan of decaying rays */
+    const rays = this.quality === 'low' ? 14 : 26;
+    for (let i = 0; i < rays; i++) {
+      const ang = this._sweepAng - i * 0.03;
+      const a = (1 - i / rays) * (0.30 + this.sm.level * 0.25);
+      ctx.strokeStyle = hexRgba(this._color(Math.floor(i / 9)), a);
+      ctx.lineWidth = i === 0 ? 2 : 1.2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(ang) * R, cy + Math.sin(ang) * R);
+      ctx.stroke();
+    }
+    /* leading edge glow */
+    const tipR = minDim * 0.02 * (1 + this.beat);
+    ctx.globalAlpha = 0.85;
+    ctx.drawImage(
+      this._dot(this._color(0)),
+      cx + Math.cos(this._sweepAng) * R - tipR,
+      cy + Math.sin(this._sweepAng) * R - tipR,
+      tipR * 2, tipR * 2
+    );
+    ctx.globalAlpha = 1;
+
+    /* blips: beat drops a heavy contact, spectrum seeds lighter ones */
+    if (this.beat > 0.55 && this.radarBlips.length < 48) {
+      this.radarBlips.push({
+        ang: this._sweepAng,
+        dist: R * (0.25 + this.sm.bass * 0.6),
+        life: 1,
+        decay: 0.22 + Math.random() * 0.12,
+        c: 0,
+        big: true,
+      });
+    }
+    if (freq && this.radarBlips.length < 64 && Math.random() < 0.35 + this.sm.level * 0.5) {
+      const u = Math.random();
+      this.radarBlips.push({
+        ang: this._sweepAng - Math.random() * 0.25,
+        dist: R * (0.15 + u * 0.8),
+        life: 0.7,
+        decay: 0.35 + logSample(freq, u) * 0.5,
+        c: 1 + Math.floor(u * 3),
+        big: false,
+      });
+    }
+    for (let i = this.radarBlips.length - 1; i >= 0; i--) {
+      const b = this.radarBlips[i];
+      b.life -= b.decay * dt;
+      if (b.life <= 0) { this.radarBlips.splice(i, 1); continue; }
+      const x = cx + Math.cos(b.ang) * b.dist;
+      const y = cy + Math.sin(b.ang) * b.dist;
+      const r = (b.big ? 5 : 3) + b.life * (b.big ? 7 : 4);
+      ctx.globalAlpha = clamp(b.life, 0, 1) * (b.big ? 0.95 : 0.55);
+      ctx.drawImage(this._dot(this._color(b.c)), x - r, y - r, r * 2, r * 2);
+      /* ping ring on fresh contacts */
+      if (b.life > 0.82) {
+        ctx.strokeStyle = hexRgba(this._color(b.c), (b.life - 0.82) * 2.2);
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(x, y, (1 - b.life) * 90 + 6, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    /* center core */
+    const coreR = minDim * 0.014 * (1 + this.sm.bass * 1.2 + this.beat * 0.8);
+    ctx.globalAlpha = 0.95;
+    ctx.drawImage(this._dot(this._color(0)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ---------------- LAVA LAMP ---------------- */
+
+  _lava(freq, dt, dt60) {
+    const { ctx, w, h } = this;
+    const N = this.quality === 'low' ? 6 : 10;
+    if (!this.lavaBlobs || this.lavaBlobs.length !== N) {
+      this.lavaBlobs = Array.from({ length: N }, (_, i) => ({
+        x: ((i * 61) % 100) / 100,
+        y: Math.random(),
+        r: 0.06 + ((i * 37) % 40) / 400,
+        v: 0.008 + ((i * 17) % 20) / 1400,
+        ph: (i * 2.399) % 6.283,
+        wob: 0.4 + ((i * 29) % 30) / 50,
+        c: i % 4,
+      }));
+    }
+    const heat = 0.5 + this.sm.bass * 1.1 + this.beat * 0.35;
+    ctx.globalCompositeOperation = 'lighter';
+
+    /* bottom heat pool */
+    const pool = ctx.createLinearGradient(0, h * 0.72, 0, h);
+    pool.addColorStop(0, 'rgba(0,0,0,0)');
+    pool.addColorStop(1, hexRgba(this._color(0), 0.10 + this.sm.bass * 0.16));
+    ctx.fillStyle = pool;
+    ctx.fillRect(0, h * 0.72, w, h * 0.28);
+
+    for (const b of this.lavaBlobs) {
+      /* buoyancy scales with bass — the lamp "heats up" */
+      b.y -= b.v * heat * dt60 * 0.55;
+      if (b.y < -b.r - 0.05) {
+        b.y = 1 + b.r + 0.04;
+        b.x = Math.random();
+      }
+      const px = (b.x + Math.sin(this.t * b.wob + b.ph) * 0.045) * w;
+      const py = b.y * h;
+      const v = freq ? logSample(freq, (b.ph % 1)) : 0.4;
+      const pr = Math.min(w, h) * b.r * (0.85 + v * 0.7 * this.sensitivity + this.beat * 0.18);
+      const sprite = this._dot(this._color(b.c));
+      ctx.globalAlpha = clamp(0.34 + v * 0.4 + this.sm.bass * 0.18, 0.12, 0.8);
+      ctx.drawImage(sprite, px - pr, py - pr, pr * 2, pr * 2);
+      /* inner highlight blob */
+      const hr = pr * 0.45;
+      ctx.globalAlpha *= 0.8;
+      ctx.drawImage(sprite, px - pr * 0.3 - hr, py - pr * 0.3 - hr, hr * 2, hr * 2);
+    }
+    void dt;
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }

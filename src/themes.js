@@ -18,6 +18,8 @@ export const MODES = [
   { id: 'void', name: 'Void Core', icon: 'void' },
   { id: 'bloomfield', name: 'Bloom Field', icon: 'flower' },
   { id: 'fractal', name: 'Fractal Bloom', icon: 'snowflake' },
+  { id: 'radar', name: 'Beat Radar', icon: 'radar' },
+  { id: 'lava', name: 'Lava Lamp', icon: 'lava' },
   { id: 'gpu', name: 'GPU Core', icon: 'void' },
 ];
 
@@ -43,4 +45,8 @@ export const THEMES = [
   { id: 'desert', name: 'Desert Mirage', colors: ['#ffd6a6', '#ff8a5c', '#8a4a2a'], css: 'linear-gradient(135deg, #ffd6a6, #ff8a5c)' },
   { id: 'ocean', name: 'Ocean Depth', colors: ['#00d4ff', '#0066cc', '#001a33'], css: 'linear-gradient(135deg, #00d4ff, #001a33)' },
   { id: 'fractal', name: 'Fractal Dawn', colors: ['#ff6b35', '#f7c948', '#2a0a4a'], css: 'linear-gradient(135deg, #ff6b35, #2a0a4a)' },
+  { id: 'solar', name: 'Solar Flare', colors: ['#ffdd00', '#ff7a00', '#ff2e00'], css: 'linear-gradient(135deg, #ffdd00, #ff2e00)' },
+  { id: 'toxic', name: 'Toxic Sludge', colors: ['#aaff00', '#00ff9d', '#00c2b0'], css: 'linear-gradient(135deg, #aaff00, #00c2b0)' },
+  { id: 'cotton', name: 'Cotton Candy', colors: ['#ff9ecf', '#a5d8ff', '#fff6a3'], css: 'linear-gradient(135deg, #ff9ecf, #a5d8ff)' },
+  { id: 'ink', name: 'Midnight Ink', colors: ['#4a5aff', '#8a2be2', '#c0c8ff'], css: 'linear-gradient(135deg, #4a5aff, #8a2be2)' },
 ];

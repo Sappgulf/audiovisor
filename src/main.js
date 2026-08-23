@@ -170,6 +170,92 @@ document.getElementById('autodj-chip')?.addEventListener('click', () => {
   saveSettings();
 });
 
+// Sleep timer — cycles OFF → 15 → 30 → 60 min, then fades out & pauses
+const SLEEP_STEPS = [0, 15, 30, 60];
+let sleepStep = 0;
+let sleepEnd = 0;
+let sleepTick = null;
+const sleepLabel = document.getElementById('sleep-label');
+document.getElementById('sleep-chip')?.addEventListener('click', () => {
+  sleepStep = (sleepStep + 1) % SLEEP_STEPS.length;
+  const mins = SLEEP_STEPS[sleepStep];
+  if (!mins) {
+    if (sleepTick) { clearInterval(sleepTick); sleepTick = null; }
+    sleepEnd = 0;
+    if (sleepLabel) sleepLabel.textContent = 'Sleep';
+    toast('SLEEP timer <b>OFF</b>', { duration: 1400 });
+    return;
+  }
+  sleepEnd = Date.now() + mins * 60000;
+  if (sleepLabel) sleepLabel.textContent = `Sleep ${mins}m`;
+  toast(`SLEEP <b>${mins} min</b> — fade out &amp; pause`, { duration: 1800 });
+  if (sleepTick) clearInterval(sleepTick);
+  sleepTick = setInterval(() => {
+    const rem = sleepEnd - Date.now();
+    if (rem <= 0) { fireSleep(); return; }
+    if (sleepLabel) {
+      if (rem <= 60000) sleepLabel.textContent = `${Math.ceil(rem / 1000)}s`;
+      else sleepLabel.textContent = `Sleep ${Math.ceil(rem / 60000)}m`;
+    }
+  }, 500);
+});
+async function fireSleep() {
+  if (sleepTick) { clearInterval(sleepTick); sleepTick = null; }
+  sleepEnd = 0;
+  const baseVol = engine.volume;
+  for (let i = 10; i > 0; i--) {
+    if (!engine.playing && !engine.micActive && !engine.captureActive) break;
+    engine.setVolume(baseVol * (i / 10));
+    $('volume-fill').style.width = `${engine.volume * 100}%`;
+    await new Promise((r) => setTimeout(r, 700));
+  }
+  engine.pause();
+  engine.setVolume(baseVol);
+  $('volume-fill').style.width = `${baseVol * 100}%`;
+  sleepStep = 0;
+  if (sleepLabel) sleepLabel.textContent = 'Sleep';
+  refreshStatus();
+  saveSettings();
+  toast('SLEEP — <b>goodnight</b>', { duration: 2600 });
+}
+
+// Look presets — click recalls a slot, right-click saves the current look
+const PRESET_KEY = 'audiovisor.presets.v1';
+function getPresets() {
+  try { return JSON.parse(localStorage.getItem(PRESET_KEY)) || {}; } catch { return {}; }
+}
+function savePreset(slot) {
+  const p = getPresets();
+  p[slot] = { mode: state.modeId, theme: state.themeId, fx: { ...state.fx } };
+  try { localStorage.setItem(PRESET_KEY, JSON.stringify(p)); } catch {}
+  toast(`LOOK <b>saved</b> to slot ${slot}`, { duration: 1600 });
+}
+function loadPreset(slot) {
+  const p = getPresets()[slot];
+  if (!p) { toast(`Slot <b>${slot}</b> is empty — right-click to save`, { duration: 2200 }); return; }
+  setMode(p.mode);
+  setTheme(p.theme);
+  if (p.fx) for (const [k, v] of Object.entries(p.fx)) {
+    engine.setFx(k, !!v);
+    fxEls[k]?.classList.toggle('is-active', !!v);
+    state.fx[k] = !!v;
+  }
+  saveSettings();
+  toast(`LOOK <b>recalled</b> from slot ${slot}`, { duration: 1600 });
+}
+const presetRow = document.getElementById('preset-row');
+if (presetRow) {
+  for (const slot of [1, 2, 3]) {
+    const b = document.createElement('button');
+    b.className = 'fx-chip' + (getPresets()[slot] ? ' is-active' : '');
+    b.title = 'Click to recall · right-click to save';
+    b.innerHTML = `<span class="chip-dot"></span><span class="chip-txt">P${slot}</span>`;
+    b.addEventListener('click', () => loadPreset(slot));
+    b.addEventListener('contextmenu', (e) => { e.preventDefault(); savePreset(slot); b.classList.add('is-active'); });
+    presetRow.appendChild(b);
+  }
+}
+
 // AI Remix Studio wiring
 const aiStems = document.getElementById('ai-stems');
 if (aiStems) {
@@ -1001,8 +1087,8 @@ aboutPanel.innerHTML = `
     <h2>AUDIOVISOR</h2>
     <div class="about-tag mono">Real-time audio visualizer</div>
     <p>Drop in a track, stream a URL, capture any app's audio or connect your
-    Spotify account — nine stage modes, eight theme moods, a full FX chain and
-    a beat tracker, all rendered live.</p>
+    Spotify account — twenty-two stage modes, twenty-five theme moods, a full
+    FX chain and a beat tracker, all rendered live.</p>
     <div class="about-keys">
       <div class="about-key"><kbd>SPACE</kbd><span>Play / Pause</span></div>
       <div class="about-key"><kbd>← →</kbd><span>Seek 10s</span></div>
@@ -1264,9 +1350,9 @@ requestAnimationFrame(frame);
 function runTour() {
   const steps = [
     ['Drop <b>audio</b> or press <b>Space</b> to begin', 800],
-    ['<b>M</b> cycles 18 modes · <b>T</b> cycles 16 themes', 3800],
+    ['<b>M</b> cycles 22 modes · <b>T</b> cycles 25 themes', 3800],
     ['<b>C</b> Chop N Screwed · <b>L</b> Library · <b>F</b> Cinema', 6800],
-    ['<b>R</b> random look · <b>P</b> snapshot · <b>Q</b> queue', 9800],
+    ['<b>R</b> random look · right-click P1-P3 to save looks', 9800],
   ];
   steps.forEach(([msg, at]) => setTimeout(() => toast(msg, { duration: 3000 }), at));
   localStorage.setItem('audiovisor.tour', '1');
@@ -1285,6 +1371,11 @@ function buildCmds() {
   THEMES.forEach(th => cmds.push({ label: `Theme: ${th.name}`, action: () => setTheme(th.id), keys: th.id }));
   FX.forEach(fx => cmds.push({ label: `FX: ${fx.toUpperCase()}`, action: () => { const btn = fxEls[fx]; if (btn) btn.click(); }, keys: fx }));
   cmds.push({ label: 'Random Look', action: randomizeLook, keys: 'random' });
+  for (const slot of [1, 2, 3]) {
+    cmds.push({ label: `Save Preset ${slot}`, action: () => savePreset(slot), keys: `save preset ${slot}` });
+    cmds.push({ label: `Load Preset ${slot}`, action: () => loadPreset(slot), keys: `load preset ${slot}` });
+  }
+  cmds.push({ label: 'Sleep Timer 30m', action: () => document.getElementById('sleep-chip')?.click(), keys: 'sleep timer' });
   cmds.push({ label: 'Toggle Library', action: () => toggleLibrary(), keys: 'library' });
   cmds.push({ label: 'Toggle Queue', action: () => toggleQueue(), keys: 'queue' });
   cmds.push({ label: 'Toggle Fullscreen', action: () => document.getElementById('fullscreen-btn')?.click(), keys: 'fullscreen' });

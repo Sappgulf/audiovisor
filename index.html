@@ -10,7 +10,7 @@
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#d9b089" />
   <meta property="og:title" content="AUDIOVISOR — Real-time Audio Visualizer" />
-  <meta property="og:description" content="19 stage modes, 18 themes, AI Studio, Library, Chop N Screwed, Auto DJ — drop a track and watch it dance." />
+  <meta property="og:description" content="22 stage modes, 25 themes, AI Studio, Library, Chop N Screwed, Auto DJ — drop a track and watch it dance." />
   <meta property="og:image" content="/og.png" />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary_large_image" />
@@ -114,6 +114,7 @@
             <section>
               <h3 class="section-title">Stage Mode</h3>
               <div class="mode-list" id="mode-list"></div>
+              <div class="fx-row" id="preset-row" style="margin-top:8px"></div>
             </section>
 
             <div class="divider"></div>
@@ -176,6 +177,7 @@
               <div class="fx-row">
                 <button class="fx-chip" id="autopilot-chip" data-fx="autopilot"><span class="chip-txt">Auto</span></button>
                 <button class="fx-chip" id="autodj-chip" data-fx="autodj"><span class="chip-txt">Auto DJ</span></button>
+                <button class="fx-chip" id="sleep-chip" data-fx="sleep"><span class="chip-txt" id="sleep-label">Sleep</span></button>
               </div>
             </section>
 
