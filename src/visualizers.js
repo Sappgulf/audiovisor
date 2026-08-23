@@ -374,7 +374,7 @@ export class Renderer {
       // blend trail under live scene
       ctx.save();
       ctx.setTransform(s, 0, 0, s, 0, 0);
-      ctx.globalAlpha = 0.30;
+      ctx.globalAlpha = 0.22;
       ctx.globalCompositeOperation = 'lighter';
       ctx.drawImage(this.trailCv, 0, 0, w, h);
       ctx.restore();
@@ -464,15 +464,15 @@ export class Renderer {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.imageSmoothingEnabled = true;
-    // chromatic bloom on strong beats
+    // chromatic bloom on strong beats (soft offset split, capped hard)
     if (punch > 0.6) {
-      ctx.globalAlpha = clamp((0.14 + punch * 0.06) * (0.5 + this.bloomAmount), 0, 0.26);
+      ctx.globalAlpha = clamp((0.08 + punch * 0.03) * (0.5 + this.bloomAmount), 0, 0.14);
       ctx.drawImage(this.glowB, -w * 0.02 + 1.2, -h * 0.02, w * 1.04, h * 1.04);
       ctx.drawImage(this.glowB, -w * 0.02 - 1.2, -h * 0.02, w * 1.04, h * 1.04);
     }
-    ctx.globalAlpha = clamp((0.22 + punch * 0.08) * (0.5 + this.bloomAmount), 0, 0.4);
+    ctx.globalAlpha = clamp((0.20 + punch * 0.05) * (0.5 + this.bloomAmount), 0, 0.30);
     ctx.drawImage(this.glowB, -w * 0.02, -h * 0.02, w * 1.04, h * 1.04);
-    ctx.globalAlpha = clamp((0.15 + punch * 0.06) * (0.5 + this.bloomAmount), 0, 0.32);
+    ctx.globalAlpha = clamp((0.14 + punch * 0.04) * (0.5 + this.bloomAmount), 0, 0.24);
     ctx.drawImage(this.glowA, 0, 0, w, h);
     ctx.restore();
   }
@@ -1055,8 +1055,8 @@ export class Renderer {
     const P = this.quality === 'low' ? 28 : 56;
     void dt;
     ctx.globalCompositeOperation = 'lighter';
-    const bloomR = minDim * Math.min(0.30, 0.07 + this.sm.bass * 0.07 + this.beat * 0.05);
-    ctx.globalAlpha = 0.55;
+    const bloomR = minDim * Math.min(0.26, 0.06 + this.sm.bass * 0.06 + this.beat * 0.03);
+    ctx.globalAlpha = 0.42;
     ctx.drawImage(this._dot(this._color(0)), cx - bloomR, cy - bloomR, bloomR * 2, bloomR * 2);
     ctx.globalAlpha = 1;
     for (let s = 0; s < slices; s++) {
@@ -1077,8 +1077,8 @@ export class Renderer {
       for (const [px, py] of pts) ctx.lineTo(px, py);
       ctx.closePath();
       const fg = ctx.createRadialGradient(0, 0, inner, 0, 0, inner + maxR);
-      fg.addColorStop(0, hexRgba(c, 0.04));
-      fg.addColorStop(1, hexRgba(c, 0.18));
+      fg.addColorStop(0, hexRgba(c, 0.02));
+      fg.addColorStop(1, hexRgba(c, 0.13));
       ctx.fillStyle = fg;
       ctx.fill();
       ctx.beginPath();
@@ -1086,8 +1086,8 @@ export class Renderer {
         if (i === 0) ctx.moveTo(pts[i][0], pts[i][1]);
         else ctx.lineTo(pts[i][0], pts[i][1]);
       }
-      ctx.strokeStyle = hexRgba(c, 0.85);
-      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = hexRgba(c, 0.7);
+      ctx.lineWidth = 1.4;
       ctx.stroke();
       if (this.sm.bass > 0.5) {
         ctx.strokeStyle = hexRgba(this._color(2), 0.4 + this.sm.bass * 0.3);
@@ -1365,11 +1365,12 @@ export class Renderer {
     ctx.globalAlpha = 0.7;
     ctx.drawImage(this._dot(this._color(1)), w / 2 - sunR, sunY - sunR, sunR * 2, sunR * 2);
     ctx.globalAlpha = 1;
-    const sky = ctx.createLinearGradient(0, horizon - depth * 0.4, 0, horizon);
-    sky.addColorStop(0, hexRgba(this._color(0), 0));
-    sky.addColorStop(1, hexRgba(this._color(0), 0.08 + this.beat * 0.08));
+    const sky = ctx.createLinearGradient(0, horizon - depth * 0.45, 0, horizon);
+    sky.addColorStop(0, hexRgba(this._color(0), this.beat * 0.08));
+    sky.addColorStop(0.55, hexRgba(this._color(0), 0.05 + this.sm.level * 0.05));
+    sky.addColorStop(1, hexRgba(this._color(0), 0.10 + this.sm.bass * 0.10 + this.beat * 0.10));
     ctx.fillStyle = sky;
-    ctx.fillRect(0, horizon - depth * 0.4, w, depth * 0.4);
+    ctx.fillRect(0, horizon - depth * 0.45, w, depth * 0.45);
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, horizon, w, depth);
@@ -1378,6 +1379,22 @@ export class Renderer {
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineWidth = 1.1;
     const ampBase = depth * 0.42;
+    /* parallax halo ridge behind the mesh — same displacement, dimmed,
+       shifted slowly sideways so the range never looks frozen */
+    {
+      const drift = Math.sin(this.t * 0.11) * w * 0.035;
+      ctx.beginPath();
+      for (let i = 0; i <= COLS; i++) {
+        const ci = Math.min(COLS - 1, i);
+        const x = ((ci / COLS) - 0.5) * w * 1.3 + drift;
+        const yy = depth * 0.06 - this.terrainRows[Math.min(this.terrainRows.length - 1, 2)]?.[ci] * ampBase * 0.5;
+        if (i === 0) ctx.moveTo(x, yy);
+        else ctx.lineTo(x, yy);
+      }
+      ctx.strokeStyle = hexRgba(this._color(3), 0.035 + this.sm.level * 0.04);
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
     for (let r = ROWS - 1; r >= 0; r--) {
       const row = this.terrainRows[r];
       const u = (r + 1) / ROWS;
@@ -1394,8 +1411,25 @@ export class Renderer {
         else ctx.lineTo(x, yy);
       }
       const c = this._color(r % this.theme.colors.length);
-      ctx.strokeStyle = hexRgba(c, 0.42 + persp * 0.5);
+      /* front rows get the beat light */
+      const isFront = r < 3;
+      ctx.strokeStyle = hexRgba(isFront ? this._color(0) : c,
+        (isFront ? 0.55 + this.beat * 0.45 : 0.42 + persp * 0.5));
+      ctx.lineWidth = isFront ? 1.6 : 1.1;
       ctx.stroke();
+      if (isFront && this.beat > 0.4) {
+        /* peak glints along the lit ridge */
+        for (let i = 0; i < COLS; i += 3) {
+          if (row[i] > 0.8) {
+            const gx = ((i / COLS) - 0.5) * w * spread;
+            const gy = y - row[i] * amp;
+            const gr = 1.5 + row[i] * 2.2;
+            ctx.globalAlpha = (this.beat - 0.4) * 0.9;
+            ctx.drawImage(this._dot(this._color(1)), gx - gr, gy - gr, gr * 2, gr * 2);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
       if (r > 0) {
         const uPrev = r / ROWS;
         const yPrev = depth * uPrev * uPrev;
@@ -1837,13 +1871,13 @@ export class Renderer {
     /* blobs */
     for (let i = 0; i < blobs.length; i++) {
       const { x, y, v } = blobs[i];
-      const r = Math.min(w, h) * 0.12 * (0.6 + v * 0.9) * (0.7 + this.sm.bass * 0.6 + this.beat * 0.25);
+      const r = Math.min(w, h) * 0.11 * (0.6 + v * 0.85) * (0.7 + this.sm.bass * 0.5 + this.beat * 0.15);
       const c = this._color(i + Math.floor(this.t * 0.7));
-      ctx.globalAlpha = 0.42 + v * 0.35;
+      ctx.globalAlpha = clamp(0.34 + v * 0.30, 0, 0.62);
       ctx.drawImage(this._dot(c), x - r, y - r, r * 2, r * 2);
     }
-    const cr = Math.min(w, h) * 0.08 * (1 + this.sm.level * 0.6);
-    ctx.globalAlpha = 0.85;
+    const cr = Math.min(w, h) * 0.075 * (1 + this.sm.level * 0.5);
+    ctx.globalAlpha = 0.7;
     ctx.drawImage(this._dot(this._color(0)), cx - cr, cy - cr, cr * 2, cr * 2);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
@@ -1932,8 +1966,8 @@ export class Renderer {
         const py = rowY(gy);
         const off = Math.sin(u * 6 + this.t * 1.4 + gy * 0.22) * v * 26 * this.sensitivity;
         const pull = (px - w / 2) * (1 - spread(gy));
-        const a = clamp(0.08 + v * 0.45 + this.beat * v * 0.5, 0, 0.75);
-        const r = nodeR + v * 3 + this.beat * 1.5;
+        const a = clamp(0.08 + v * 0.40 + this.beat * v * 0.35, 0, 0.62);
+        const r = nodeR + v * 2.6 + this.beat * 1.2;
         ctx.globalAlpha = a;
         ctx.drawImage(this._dot(this._color((gx + gy) % this.theme.colors.length)), px + pull - r, py + off - r, r * 2, r * 2);
       }
@@ -2198,9 +2232,9 @@ export class Renderer {
     const spd = (0.9 + this.sm.level * 2.2) * (1 + this.beat * 1.4);
     this._sweepAng += spd * dt;
 
-    /* range rings + graticule */
+    /* range rings + graticule — read at a glance, brighter than before */
     ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = hexRgba(this._color(0), 0.10);
+    ctx.strokeStyle = hexRgba(this._color(0), 0.16);
     ctx.lineWidth = 1;
     for (let i = 1; i <= 4; i++) {
       ctx.beginPath();
@@ -2211,14 +2245,49 @@ export class Renderer {
     ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
     ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
     ctx.stroke();
+    /* outer bezel + tick marks every 15deg */
+    ctx.strokeStyle = hexRgba(this._color(2), 0.10);
+    ctx.beginPath();
+    ctx.arc(cx, cy, R + 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = hexRgba(this._color(2), 0.22);
+    for (let i = 0; i < 24; i++) {
+      const ang = (i / 24) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * (R + 2), cy + Math.sin(ang) * (R + 2));
+      ctx.lineTo(cx + Math.cos(ang) * (R + 7), cy + Math.sin(ang) * (R + 7));
+      ctx.stroke();
+    }
+    /* rotating crosshair that reads as a hard grid pointer */
+    ctx.strokeStyle = hexRgba(this._color(0), 0.12 + this.beat * 0.1);
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(this._sweepAng) * R * 0.25, cy + Math.sin(this._sweepAng) * R * 0.25);
+    ctx.lineTo(cx + Math.cos(this._sweepAng) * R * 0.86, cy + Math.sin(this._sweepAng) * R * 0.86);
+    ctx.stroke();
 
-    /* trailing sweep — fan of decaying rays */
-    const rays = this.quality === 'low' ? 14 : 26;
+    /* sweep wedge — soft sector that fades behind the leading edge */
+    const wedge = 0.62;
+    const lead = this._sweepAng;
+    const wg = ctx.createLinearGradient(
+      cx + Math.cos(lead) * R, cy + Math.sin(lead) * R,
+      cx + Math.cos(lead - wedge) * R, cy + Math.sin(lead - wedge) * R
+    );
+    wg.addColorStop(0, hexRgba(this._color(0), 0.16 + this.sm.level * 0.20));
+    wg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = wg;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, lead - wedge, lead);
+    ctx.lineTo(cx, cy);
+    ctx.closePath();
+    ctx.fill();
+
+    /* trailing sweep — few rays, wider spacing, decay along angle */
+    const rays = this.quality === 'low' ? 8 : 13;
     for (let i = 0; i < rays; i++) {
-      const ang = this._sweepAng - i * 0.03;
-      const a = (1 - i / rays) * (0.30 + this.sm.level * 0.25);
-      ctx.strokeStyle = hexRgba(this._color(Math.floor(i / 9)), a);
-      ctx.lineWidth = i === 0 ? 2 : 1.2;
+      const ang = this._sweepAng - i * 0.045;
+      const a = (1 - i / rays) * (0.28 + this.sm.level * 0.18);
+      ctx.strokeStyle = hexRgba(this._color(Math.floor(i / 5)), a);
+      ctx.lineWidth = i === 0 ? 1.8 : 1;
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(cx + Math.cos(ang) * R, cy + Math.sin(ang) * R);
@@ -2226,7 +2295,7 @@ export class Renderer {
     }
     /* leading edge glow */
     const tipR = minDim * 0.02 * (1 + this.beat);
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 0.8;
     ctx.drawImage(
       this._dot(this._color(0)),
       cx + Math.cos(this._sweepAng) * R - tipR,
@@ -2380,34 +2449,37 @@ export class Renderer {
     }
     cells.sort((a, b) => a.d - b.d);
 
-    ctx.globalCompositeOperation = 'lighter';
     /* energy color per depth slice so the core reads as a compute stack */
     const sliceColors = this.theme.colors;
     for (let i = 0; i < cells.length; i++) {
       const c = cells[i];
       const u = clamp((c.d + 2) / 4, 0, 1);
       const amp = freq ? logSample(freq, u * 0.8 + 0.1) : 0.5;
-      const bright = 0.5 + amp * 0.6 * this.sensitivity;
+      const bright = clamp(0.5 + amp * 0.42 * this.sensitivity, 0, 1.05);
       const ci = Math.floor(u * sliceColors.length) % sliceColors.length;
       const col = sliceColors[ci];
-      /* core cell */
-      ctx.globalAlpha = 0.85 * bright;
+      /* cell body — source-over so overlapping cells stay saturated,
+         never stack to white */
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = clamp(0.62 + amp * 0.26, 0, 0.86);
       ctx.fillStyle = col;
       ctx.fillRect(c.px - c.s / 2, c.py - c.s / 2, c.s, c.s);
       /* hot top face (fake isometric) */
-      ctx.globalAlpha = 0.9 * bright;
+      ctx.globalAlpha = clamp((0.4 + amp * 0.2) * bright, 0, 0.62);
       ctx.fillStyle = 'rgba(255,252,243,0.9)';
       ctx.fillRect(c.px - c.s / 2, c.py - c.s / 2, c.s, c.s * 0.30);
       /* soft halo on loud cells */
-      if (amp > 0.45) {
-        const hr = c.s * (1.6 + amp);
-        ctx.globalAlpha = (amp - 0.45) * 1.1;
+      if (amp > 0.55) {
+        ctx.globalCompositeOperation = 'lighter';
+        const hr = c.s * (1.1 + amp * 0.5);
+        ctx.globalAlpha = (amp - 0.55) * 0.6;
         ctx.drawImage(this._soft(this._color(ci)), c.px - hr, c.py - hr, hr * 2, hr * 2);
       }
     }
     ctx.globalAlpha = 1;
 
     /* orbiting data nodes — circle the core like bus lines */
+    ctx.globalCompositeOperation = 'lighter';
     const orbit = minDim * 0.66;
     const nodes = 7;
     for (let i = 0; i < nodes; i++) {
@@ -2416,8 +2488,8 @@ export class Renderer {
       const nx = cx + Math.cos(ang) * r;
       const ny = cy + Math.sin(ang) * r * 0.62;
       const v = freq ? logSample(freq, (i + 1) / (nodes + 1)) : 0.5;
-      const rr = 2.2 + v * 4.5 * this.sensitivity + this.beat * 2.2;
-      ctx.globalAlpha = 0.3 + v * 0.55;
+      const rr = 2.0 + v * 3.6 * this.sensitivity + this.beat * 1.6;
+      ctx.globalAlpha = clamp(0.26 + v * 0.42, 0, 0.62);
       ctx.drawImage(this._dot(this._color((i + 1) % this.theme.colors.length)), nx - rr, ny - rr, rr * 2, rr * 2);
       /* link line to core center */
       const gl = ctx.createLinearGradient(nx, ny, cx, cy);
