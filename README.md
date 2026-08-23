@@ -27,6 +27,7 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 - **Phosphor trails** — faded accumulation buffer under every mode (destination-out 0.28, 0.36 lighter blend) = milkdrop look
 - **Kick flare** — soft lens-flare core + horizontal streak replaces full-screen flash
 - **Bars bounce** — beat stretches bar heights 34% (weighted low-end), default theme now Warm Brass to match UI
+- **Per-mode upgrades** — waves underfill glow shadow; plasma beat star-cross + center halo; terrain shooting-star meteors on kick; kaleido petal burst; orb beat shockwave rings; tensor beat-lit nodes; fluid beat ripples; city beacon light shafts; spiral dust motes; bloomfield mesh lines
 - **Mode polish** — bars backdrop glow, terrain stars + dual aurora washes, nebula stardust (22 drifters), city aurora ribbons, beat punch 1.8%
 - **Beat-grid visuals** — 4 phase dots + pulse ring bottom-center on every non-bars mode; vertical beat lines sliding across bars when BPM locks
 - **Theme-reactive art** — procedural cover regenerates on theme change, breathes while playing (3.2s)

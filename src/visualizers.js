@@ -616,6 +616,20 @@ export class Renderer {
 
     const pts = samplePts(wave, midY, ampScale, 1);
 
+    /* underfill glow shadow (depth cue) */
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._color(2), 0.10 + this.sm.level * 0.08 + this.beat * 0.06);
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+      const my = (pts[i][1] + pts[i + 1][1]) / 2;
+      ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+    }
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length - 1; i++) {
@@ -940,7 +954,9 @@ export class Renderer {
     const span = (Math.PI * 2) / slices;
     const rot = this.t * (0.12 + this.sm.level * 1.1) + this.beat * 0.4;
     const inner = minDim * 0.07 + this.sm.bass * minDim * 0.09;
-    const maxR = minDim * 0.4 * (0.75 + this.sensitivity * 0.35);
+    /* petals burst outward on the beat */
+    const burst = 1 + this.beat * 0.30;
+    const maxR = minDim * 0.4 * (0.75 + this.sensitivity * 0.35) * burst;
     const P = this.quality === 'low' ? 28 : 56;
     void dt;
 
@@ -955,7 +971,7 @@ export class Renderer {
       for (let i = 0; i <= P; i++) {
         const v = logSample(freq, i / P);
         const ang = (i / P) * span * 0.94;
-        const r = inner + v * maxR * this.sensitivity * 0.85;
+        const r = inner + v * maxR * this.sensitivity * 0.85 + this.beat * minDim * 0.02;
         pts.push([Math.cos(ang) * r, Math.sin(ang) * r]);
       }
 
@@ -1079,6 +1095,22 @@ export class Renderer {
         ctx.stroke();
       }
     }
+    /* center burst star-cross on beat */
+    if (this.beat > 0.25) {
+      const br = minDim * 0.5 * this.beat;
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = hexRgba(this._color(0), this.beat * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(cx - br, cy); ctx.lineTo(cx + br, cy);
+      ctx.moveTo(cx, cy - br); ctx.lineTo(cx, cy + br);
+      ctx.moveTo(cx - br * 0.62, cy - br * 0.62); ctx.lineTo(cx + br * 0.62, cy + br * 0.62);
+      ctx.moveTo(cx + br * 0.62, cy - br * 0.62); ctx.lineTo(cx - br * 0.62, cy + br * 0.62);
+      ctx.stroke();
+    }
+    /* warm center halo */
+    const haloR = minDim * 0.05 * (1 + this.sm.bass * 1.4 + this.beat * 0.8);
+    ctx.globalAlpha = 0.8;
+    ctx.drawImage(this._dot(this._color(0)), cx - haloR, cy - haloR, haloR * 2, haloR * 2);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -1135,6 +1167,26 @@ export class Renderer {
       aur.addColorStop(1, hexRgba(this._color(1 + i), 0.10 + this.sm.level * 0.06 + this.beat * 0.04));
       ctx.fillStyle = aur;
       ctx.fillRect(ax, horizon - ah, w * 0.34, ah);
+    }
+
+    /* shooting star on beat */
+    if (this.beat > 0.8) {
+      if (!this._meteor) this._meteor = { x: w * 0.12, y: horizon * 0.18, spd: 14, life: 1 };
+      const m = this._meteor;
+      m.x += m.spd * (this.beat * 4 + 12) * 0.05;
+      m.y += m.spd * 0.028;
+      const tailR = 26;
+      const streak = ctx.createLinearGradient(m.x - tailR, m.y - tailR * 0.2, m.x, m.y);
+      streak.addColorStop(0, hexRgba(this._color(1), 0));
+      streak.addColorStop(1, hexRgba(this._color(1), 0.9));
+      ctx.strokeStyle = streak;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(m.x - tailR, m.y - tailR * 0.2);
+      ctx.lineTo(m.x, m.y);
+      ctx.stroke();
+    } else {
+      this._meteor = null;
     }
 
     /* sun */
@@ -1333,17 +1385,26 @@ export class Renderer {
       tall.push({ x: x + bodyW / 2, y: y, bh });
     }
 
-    /* rooftop beacons on the three tallest buildings */
+    /* rooftop beacons on the three tallest buildings + light shafts */
     tall.sort((a, b) => b.y - a.y);
     const beaconC = this._color(0);
+    ctx.globalCompositeOperation = 'lighter';
     for (let k = 0; k < Math.min(3, tall.length); k++) {
       const t = tall[k];
       const pulse = Math.max(0, Math.sin(this.t * 2.4 + k * 2.1)) ** 2;
       const r = 2.5 + this.beat * 2;
+      // shaft
+      const sh = ctx.createLinearGradient(0, t.y, 0, h);
+      sh.addColorStop(0, hexRgba(beaconC, 0.05 + pulse * 0.10));
+      sh.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = sh;
+      ctx.fillRect(t.x - 1.2, t.y, 2.4, h - t.y);
+      // beacon dot
       ctx.globalAlpha = 0.25 + 0.75 * pulse;
       ctx.drawImage(this._dot(beaconC), t.x - r, t.y - r - 3, r * 2, r * 2);
     }
     ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   /* ---------------- NEBULA ---------------- */
@@ -1415,6 +1476,19 @@ export class Renderer {
     const outer = minDim * 0.44;
 
     ctx.globalCompositeOperation = 'lighter';
+
+    /* dust motes orbiting the core */
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 16; i++) {
+      const ang = this.t * (0.05 + i * 0.007) * (i % 2 ? 1 : -1) + i * 1.7;
+      const r = inner + ((i * 37) % 96) / 96 * (outer * 0.82);
+      const x = cx + Math.cos(ang) * r;
+      const y = cy + Math.sin(ang) * r * 0.6;
+      const rr = 1 + (i % 3) * 0.7;
+      ctx.globalAlpha = 0.14 + 0.2 * (0.5 + 0.5 * Math.sin(this.t * 1.3 + i));
+      ctx.drawImage(this._dot(this._color((i + 1) % this.theme.colors.length)), x - rr, y - rr, rr * 2, rr * 2);
+    }
+    ctx.globalAlpha = 1;
 
     /* galactic core */
     const coreR = minDim * (0.07 + this.sm.bass * 0.09 + this.beat * 0.02);
@@ -1505,6 +1579,24 @@ export class Renderer {
     }
 
     ctx.globalCompositeOperation = 'lighter';
+    /* beat shockwave rings */
+    if (this.beat > 0.55) {
+      if (!this._orbWaves) this._orbWaves = [];
+      this._orbWaves.push({ r: baseR * 1.05, a: 0.5 });
+    }
+    if (this._orbWaves) {
+      for (let i = this._orbWaves.length - 1; i >= 0; i--) {
+        const wv = this._orbWaves[i];
+        wv.r += minDim * 0.012 * dt60;
+        wv.a *= 0.94;
+        if (wv.a < 0.02 || wv.r > minDim * 0.46) { this._orbWaves.splice(i, 1); continue; }
+        ctx.strokeStyle = hexRgba(this._color(0), wv.a);
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(cx, cy, wv.r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
     const glowR = baseR * 1.55;
     const g = ctx.createRadialGradient(cx, cy, baseR * 0.3, cx, cy, glowR);
     g.addColorStop(0, hexRgba(this._color(0), 0.18 + this.beat * 0.12));
@@ -1576,6 +1668,20 @@ export class Renderer {
       ctx.globalAlpha = 0.42 + v * 0.35;
       ctx.drawImage(this._dot(c), x - r, y - r, r * 2, r * 2);
     }
+    /* ripples on beat */
+    if (this.beat > 0.55) {
+      const rr = Math.min(w, h) * (0.3 + this.beat * 0.2);
+      ctx.strokeStyle = hexRgba(this._color(0), this.beat * 0.4);
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = hexRgba(this._color(1), this.beat * 0.22);
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr * 0.72, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     // central merge
     const cr = Math.min(w, h) * 0.08 * (1 + this.sm.level * 0.6);
     ctx.globalAlpha = 0.85;
@@ -1617,6 +1723,24 @@ export class Renderer {
         else ctx.lineTo(px, py);
       }
       ctx.stroke();
+    }
+    /* beat-lit nodes */
+    if (this.beat > 0.35) {
+      ctx.globalCompositeOperation = 'lighter';
+      const nodeR = 2.6 + this.beat * 2.2;
+      for (let gy = 1; gy < rows; gy += 3) {
+        for (let gx = 1; gx < cols; gx += 3) {
+          const u = gx / cols;
+          const v = freq ? logSample(freq, u) : 0;
+          const off = Math.sin(u * 6 + this.t * 1.4) * v * 22;
+          const nx = gx * cw;
+          const ny = gy * rh + off * (1 - Math.abs(gy - rows/2) / (rows/2));
+          ctx.globalAlpha = clamp(v * this.beat * 0.9, 0, 0.7);
+          ctx.drawImage(this._dot(this._color((gx + gy) % this.theme.colors.length)), nx - nodeR, ny - nodeR, nodeR * 2, nodeR * 2);
+        }
+      }
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
     }
   }
 
@@ -1700,6 +1824,42 @@ export class Renderer {
     const rows = this.quality === 'low' ? 6 : 9;
     const cw = w / cols;
     const rh = h / rows;
+    /* mesh lines between neighbor blooms */
+    if (this.quality !== 'low') {
+      ctx.globalCompositeOperation = 'lighter';
+      const meshA = 0.04 + this.sm.level * 0.06;
+      const dotAt = (x, y) => {
+        const idx = (y * cols + x) % 64;
+        return freq ? logSample(freq, idx / 64) : 0.5;
+      };
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const a1 = dotAt(x, y);
+          const cx1 = x * cw + cw / 2;
+          const cy1 = y * rh + rh / 2;
+          if (x < cols - 1) {
+            const a2 = dotAt(x + 1, y);
+            ctx.strokeStyle = hexRgba(this._color(x % this.theme.colors.length), meshA * (a1 + a2));
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cx1, cy1);
+            ctx.lineTo((x + 1) * cw + cw / 2, cy1);
+            ctx.stroke();
+          }
+          if (y < rows - 1) {
+            const a2 = dotAt(x, y + 1);
+            ctx.strokeStyle = hexRgba(this._color((x + 1) % this.theme.colors.length), meshA * (a1 + a2));
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cx1, cy1);
+            ctx.lineTo(cx1, (y + 1) * rh + rh / 2);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         // u/v kept for future spatial variation
