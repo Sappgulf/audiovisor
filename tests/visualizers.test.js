@@ -75,10 +75,10 @@ describe('themes', () => {
     expect(MODES.length).toBe(13);
     expect(MODES.map(m => m.id)).toContain('orb');
     expect(MODES.find(m => m.id === 'orb').name).toBe('Pulse Orb');
-    expect(MODES.find(m => m.id === 'orb').icon).toBe('zap');
+    expect(MODES.find(m => m.id === 'orb').icon).toBe('orb');
   });
-  it('has 12 themes', () => {
-    expect(THEMES.length).toBe(12);
+  it('has 13 themes', () => {
+    expect(THEMES.length).toBe(13);
   });
   it('all modes have id, name, icon', () => {
     for (const m of MODES) {

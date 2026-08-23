@@ -1,6 +1,6 @@
 # AUDIOVISOR
 
-A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across thirteen stage modes, twelve theme moods, a full FX chain, tempo-locked beat tracking, session recording, and autopilot.
+A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across thirteen stage modes, thirteen theme moods, a full FX chain, tempo-locked beat tracking, session recording, and autopilot.
 
 ## Features
 
@@ -15,7 +15,7 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 
 ### Stage
 - **13 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Pulse Orb
-- **12 themes** — Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic, Monolith, Sunset, Matrix, Ultraviolet
+- **13 themes** — Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic, Monolith, Sunset, Matrix, Ultraviolet, Warm Brass
 - **Interpolated log spectra** — smoother, more accurate frequency mapping across every mode (bars, terrain, city, kaleido, tunnel, orb) with gravity-fall peak caps
 - **Phosphor scope & wobble tunnel** — vectorscope with true persistence afterglow, radial tunnel with spectral wobble per ring, beat-synced stage punch + bloom
 - **Bloom compositing** — two-pass downscale glow replaces per-element shadow blur

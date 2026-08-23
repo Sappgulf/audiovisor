@@ -119,29 +119,43 @@ export class Renderer {
     this._dotSprites = new Map();
     this._barSprites = new Map();
     for (const c of this.theme.colors) {
+      // dot: warm highlight + soft outer bloom, 64x64
       const d = document.createElement('canvas');
       d.width = d.height = 64;
       const dc = d.getContext('2d');
-      const g = dc.createRadialGradient(32, 32, 0, 32, 32, 32);
-      g.addColorStop(0, 'rgba(255,255,255,0.95)');
-      g.addColorStop(0.22, hexRgba(c, 0.85));
+      const g = dc.createRadialGradient(30, 29, 0, 32, 32, 32);
+      g.addColorStop(0, 'rgba(255, 252, 243, 0.96)');
+      g.addColorStop(0.10, 'rgba(255, 255, 255, 0.88)');
+      g.addColorStop(0.24, hexRgba(c, 0.90));
+      g.addColorStop(0.42, hexRgba(c, 0.52));
       g.addColorStop(1, hexRgba(c, 0));
       dc.fillStyle = g;
       dc.fillRect(0, 0, 64, 64);
+      // tiny specular highlight
+      dc.fillStyle = 'rgba(255,255,255,0.52)';
+      dc.beginPath();
+      dc.ellipse(26, 24, 6, 4.5, -0.6, 0, Math.PI * 2);
+      dc.fill();
       this._dotSprites.set(c, d);
 
+      // bar: polished metal with top highlight and inner sheen, 8x256
       const b = document.createElement('canvas');
       b.width = 8;
       b.height = 256;
       const bc = b.getContext('2d');
       const bg = bc.createLinearGradient(0, 0, 0, 256);
       bg.addColorStop(0, hexRgba(c, 1));
-      bg.addColorStop(0.82, hexRgba(c, 0.55));
-      bg.addColorStop(1, hexRgba(c, 0.16));
+      bg.addColorStop(0.10, 'rgba(255,255,255,0.42)');
+      bg.addColorStop(0.14, hexRgba(c, 1));
+      bg.addColorStop(0.78, hexRgba(c, 0.62));
+      bg.addColorStop(1, hexRgba(c, 0.18));
       bc.fillStyle = bg;
       bc.beginPath();
       bc.roundRect(0, 0, 8, 256, [4, 4, 0, 0]);
       bc.fill();
+      // inner sheen line
+      bc.fillStyle = 'rgba(255,255,255,0.18)';
+      bc.fillRect(1.2, 0, 1, 256);
       this._barSprites.set(c, b);
     }
     this._floorGrads = null;

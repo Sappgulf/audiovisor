@@ -11,7 +11,7 @@ export const MODES = [
   { id: 'city', name: 'Neon City', icon: 'building' },
   { id: 'nebula', name: 'Nebula Clouds', icon: 'cloud' },
   { id: 'spiral', name: 'Spiral Galaxy', icon: 'galaxy' },
-  { id: 'orb', name: 'Pulse Orb', icon: 'zap' },
+  { id: 'orb', name: 'Pulse Orb', icon: 'orb' },
 ];
 
 export const THEMES = [
@@ -27,4 +27,5 @@ export const THEMES = [
   { id: 'sunset', name: 'Sunset', colors: ['#ff6b35', '#ff2e63', '#7b2bff'], css: 'linear-gradient(135deg, #ff6b35, #7b2bff)' },
   { id: 'matrix', name: 'Matrix', colors: ['#00ff41', '#00c22e', '#aaffcc'], css: 'linear-gradient(135deg, #00ff41, #008f11)' },
   { id: 'ultra', name: 'Ultraviolet', colors: ['#b366ff', '#66a3ff', '#ff66c4'], css: 'linear-gradient(135deg, #b366ff, #ff66c4)' },
+  { id: 'brass', name: 'Warm Brass', colors: ['#d9b089', '#c49a6e', '#f5e6d3'], css: 'linear-gradient(135deg, #d9b089, #8a6a4a)' },
 ];
