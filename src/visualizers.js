@@ -82,6 +82,12 @@ export class Renderer {
     this.trailCv = null;
     this.trailCtx = null;
 
+    /* post-fx caches (noise grain tiles, vignette) */
+    this._noiseTiles = null;
+    this._vigCv = null;
+    this._vigW = 0;
+    this._vigH = 0;
+
     this.resize();
   }
 
@@ -241,6 +247,9 @@ export class Renderer {
       return;
     }
 
+    /* atmosphere: slow drifting theme glows behind the scene */
+    this._backdrop();
+
     const chop = !!levels?.chop;
     const chopGlitch = chop && ((this.t * 1000) % 420) < 95;
     if (chopGlitch) {
@@ -273,7 +282,7 @@ export class Renderer {
     if (punched) ctx.restore();
 
     // ray-trace SSR floor (subtle reflection of the scene)
-    if (this.quality !== 'low' && this.mode !== 'bars') {
+    if (this.quality !== 'low' && this.mode !== 'bars' && this.mode !== 'spectro' && this.mode !== 'scope') {
       const fh = Math.round(h * 0.28);
       const sy = h - fh;
       ctx.save();
@@ -308,14 +317,14 @@ export class Renderer {
       const s = this.quality === 'low' ? 1 : this.dpr;
       tc.setTransform(1, 0, 0, 1, 0, 0);
       tc.globalCompositeOperation = 'destination-out';
-      tc.fillStyle = 'rgba(0,0,0,0.28)';
+      tc.fillStyle = 'rgba(0,0,0,0.24)';
       tc.fillRect(0, 0, this.canvas.width, this.canvas.height);
       tc.globalCompositeOperation = 'source-over';
       tc.drawImage(this.canvas, 0, 0);
       // blend trail under live scene
       ctx.save();
       ctx.setTransform(s, 0, 0, s, 0, 0);
-      ctx.globalAlpha = 0.36;
+      ctx.globalAlpha = 0.40;
       ctx.globalCompositeOperation = 'lighter';
       ctx.drawImage(this.trailCv, 0, 0, w, h);
       ctx.restore();
@@ -323,16 +332,15 @@ export class Renderer {
 
     if (this.mode !== 'bars' && this.beatInfo?.bpm > 0) this._beatGrid();
     this._bloom(this.beat);
-    // subtle film grain
+    // cinematic vignette
+    this._vignette();
+    // real film grain (cycling noise tiles)
     if (this.quality !== 'low') {
+      this._ensureNoise();
+      const tile = this._noiseTiles[Math.floor(this.t * 12) % this._noiseTiles.length];
       ctx.save();
-      ctx.globalAlpha = 0.04 + this.beat * 0.02;
-      ctx.fillStyle = 'rgba(255,250,243,0.08)';
-      for (let i = 0; i < 18; i++) {
-        const x = (Math.sin(this.t * 13 + i * 91) * 0.5 + 0.5) * w;
-        const y = (Math.sin(this.t * 7 + i * 137) * 0.5 + 0.5) * h;
-        ctx.fillRect(x, y, 1, 1);
-      }
+      ctx.globalAlpha = clamp(0.30 + this.beat * 0.25, 0, 0.6);
+      ctx.drawImage(tile, 0, 0, w, h);
       ctx.restore();
     }
   }
@@ -433,6 +441,70 @@ export class Renderer {
     ctx.drawImage(this._dot(this._color(1)), cx - sr, cy - sr * 0.22, sr * 2, sr * 0.44);
     ctx.restore();
     ctx.globalAlpha = 1;
+  }
+
+  /* ---------------- POST-FX: backdrop / vignette / grain ---------------- */
+
+  _backdrop() {
+    const { ctx, w, h } = this;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 3; i++) {
+      const x = w * (0.5 + 0.33 * Math.sin(this.t * 0.043 + i * 2.1));
+      const y = h * (0.45 + 0.30 * Math.cos(this.t * 0.037 + i * 1.7));
+      const r = Math.min(w, h) * (0.55 + 0.10 * Math.sin(this.t * 0.05 + i));
+      ctx.globalAlpha = 0.05 + this.sm.level * 0.03 + this.beat * 0.02;
+      ctx.drawImage(this._dot(this._color(i)), x - r, y - r, r * 2, r * 2);
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  _vignette() {
+    if (this.quality === 'low') return;
+    const { ctx } = this;
+    const hw = Math.max(2, Math.round(this.w / 2));
+    const hh = Math.max(2, Math.round(this.h / 2));
+    if (!this._vigCv || this._vigW !== hw || this._vigH !== hh) {
+      this._vigW = hw;
+      this._vigH = hh;
+      this._vigCv = document.createElement('canvas');
+      this._vigCv.width = hw;
+      this._vigCv.height = hh;
+      const vc = this._vigCv.getContext('2d');
+      const R = Math.hypot(hw, hh) / 2;
+      const g = vc.createRadialGradient(hw / 2, hh / 2, R * 0.52, hw / 2, hh / 2, R);
+      g.addColorStop(0, 'rgba(4,5,9,0)');
+      g.addColorStop(0.78, 'rgba(4,5,9,0.16)');
+      g.addColorStop(1, 'rgba(4,5,9,0.52)');
+      vc.fillStyle = g;
+      vc.fillRect(0, 0, hw, hh);
+    }
+    ctx.drawImage(this._vigCv, 0, 0, this.w, this.h);
+  }
+
+  _ensureNoise() {
+    if (this._noiseTiles && this._noiseW === Math.round(this.w / 2) && this._noiseH === Math.round(this.h / 2)) return;
+    this._noiseW = Math.round(this.w / 2);
+    this._noiseH = Math.round(this.h / 2);
+    this._noiseTiles = [];
+    for (let n = 0; n < 2; n++) {
+      const c = document.createElement('canvas');
+      c.width = Math.max(2, this._noiseW);
+      c.height = Math.max(2, this._noiseH);
+      const nc = c.getContext('2d');
+      const img = nc.createImageData(c.width, c.height);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = Math.random();
+        if (v > 0.86) {
+          d[i] = d[i + 1] = d[i + 2] = 255;
+          d[i + 3] = (v - 0.86) * 620;
+        }
+      }
+      nc.putImageData(img, 0, 0);
+      this._noiseTiles.push(c);
+    }
   }
 
   /* ---------------- IDLE AURORA ---------------- */
@@ -654,6 +726,12 @@ export class Renderer {
     g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.fill();
+
+    /* depth layers — staggered silk bands above/below the main line */
+    ctx.globalCompositeOperation = 'lighter';
+    strokeSmooth(samplePts(wave, midY - ampScale * 0.16, ampScale * 0.60, 0.82), hexRgba(this._color(1), 0.30 + this.sm.level * 0.10), 1.5, 0.9);
+    strokeSmooth(samplePts(wave, midY + ampScale * 0.24, ampScale * 0.48, 0.68), hexRgba(this._color(2), 0.20 + this.sm.level * 0.08), 1.2, 0.8);
+    ctx.globalCompositeOperation = 'source-over';
 
     /* echo pass */
     if (this.echo) {

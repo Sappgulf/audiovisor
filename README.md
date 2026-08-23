@@ -1,4 +1,4 @@
-# AUDIOVISOR — v8.1
+# AUDIOVISOR — v8.2
 
 A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across eighteen stage modes, sixteen themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
 
@@ -21,6 +21,7 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 - **Interpolated log spectra** — smoother, more accurate frequency mapping across every mode (bars, terrain, city, kaleido, tunnel, orb) with gravity-fall peak caps
 - **Phosphor scope & wobble tunnel** — vectorscope with true persistence afterglow, radial tunnel with spectral wobble per ring, beat-synced stage punch + bloom
 - **Bloom compositing** — two-pass downscale glow replaces per-element shadow blur
+- **Post-FX stack** — atmosphere backdrop (drifting theme glows), cinematic vignette, tiled film grain, longer phosphor trails, layered silk depth in waves
 - **Delta-time animation** — identical motion at 60 Hz, 120 Hz, 144 Hz+
 - **Adaptive quality** — auto-scales rendering (DPR, particle caps, bloom) to hold 60fps
 
