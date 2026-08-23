@@ -797,9 +797,7 @@ export class Renderer {
   _particles(dt, dt60) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h * 0.5;
-    const mem2 = navigator.deviceMemory || 8;
-    const capBase = this.quality === 'low' ? 120 : 240;
-    const cap = mem2 < 4 ? Math.floor(capBase * 0.7) : capBase;
+    const cap = this.quality === 'low' ? 120 : 240;
 
     const rate = (12 + this.sm.level * 160 * this.sensitivity * 0.5) + (this.beat > 0.6 ? 260 : 0);
     this._spawnAcc += rate * dt;
@@ -885,7 +883,7 @@ export class Renderer {
     }
     ctx.globalCompositeOperation = 'source-over';
   }
-  /* ---------------- CRYSTAL MIRROR KALEIDOSCOPE ---------------- */
+  /* ---------------- CRYSTAL KALEIDOSCOPE ---------------- */
 
   _kaleido(freq, dt) {
     const { ctx, w, h } = this;
@@ -899,19 +897,16 @@ export class Renderer {
     const maxR = minDim * 0.4 * (0.75 + this.sensitivity * 0.35) * burst;
     const P = this.quality === 'low' ? 28 : 56;
     void dt;
-
     ctx.globalCompositeOperation = 'lighter';
     const bloomR = minDim * 0.09 * (1 + this.sm.bass * 1.2 + this.beat * 0.6);
     ctx.globalAlpha = 0.85;
     ctx.drawImage(this._dot(this._color(0)), cx - bloomR, cy - bloomR, bloomR * 2, bloomR * 2);
     ctx.globalAlpha = 1;
-
     for (let s = 0; s < slices; s++) {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(s * span + rot);
       const c = this._color(s);
-
       const pts = [];
       for (let i = 0; i <= P; i++) {
         const v = logSample(freq, i / P);
@@ -919,7 +914,6 @@ export class Renderer {
         const r = inner + v * maxR * this.sensitivity * 0.85 + this.beat * minDim * 0.02;
         pts.push([Math.cos(ang) * r, Math.sin(ang) * r]);
       }
-
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(pts[0][0], pts[0][1]);
@@ -930,7 +924,6 @@ export class Renderer {
       fg.addColorStop(1, hexRgba(c, 0.18));
       ctx.fillStyle = fg;
       ctx.fill();
-
       ctx.beginPath();
       for (let i = 0; i < pts.length; i++) {
         if (i === 0) ctx.moveTo(pts[i][0], pts[i][1]);
@@ -939,7 +932,6 @@ export class Renderer {
       ctx.strokeStyle = hexRgba(c, 0.85);
       ctx.lineWidth = 1.6;
       ctx.stroke();
-
       if (this.sm.bass > 0.5) {
         ctx.strokeStyle = hexRgba(this._color(2), 0.4 + this.sm.bass * 0.3);
         ctx.lineWidth = 1;
@@ -953,7 +945,7 @@ export class Renderer {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ---------------- MATRIX WATERFALL SPECTROGRAM ---------------- */
+  /* ---------------- SPECTROGRAM WATERFALL ---------------- */
 
   _buildSpectroLut() {
     const stops = [[5, 7, 13]];
@@ -962,11 +954,7 @@ export class Renderer {
       stops.push([(n >> 16) & 255, (n >> 8) & 255, n & 255]);
     }
     const last = stops[stops.length - 1];
-    stops.push([
-      Math.min(255, last[0] + 150),
-      Math.min(255, last[1] + 150),
-      Math.min(255, last[2] + 150),
-    ]);
+    stops.push([Math.min(255, last[0] + 150), Math.min(255, last[1] + 150), Math.min(255, last[2] + 150)]);
     const lut = this.specLut = new Uint8Array(256 * 3);
     const segs = stops.length - 1;
     for (let i = 0; i < 256; i++) {
@@ -993,7 +981,6 @@ export class Renderer {
       this._specAcc = 0;
       this._buildSpectroLut();
     }
-
     const colW = this.quality === 'low' ? 3 : 2;
     const W = this.specCv.width;
     const H = this.specCv.height;
@@ -1006,28 +993,19 @@ export class Renderer {
       const d = img.data;
       for (let y = 0; y < H; y++) {
         const t = 1 - y / H;
-        const bin = Math.min(
-          freq.length - 1,
-          2 + Math.floor(Math.pow(t, 1.7) * freq.length * 0.72),
-        );
+        const bin = Math.min(freq.length - 1, 2 + Math.floor(Math.pow(t, 1.7) * freq.length * 0.72));
         let v = (freq[bin] / 255) * this.sensitivity;
         v = v > 1 ? 1 : v < 0.04 ? 0 : v;
         const o = ((v * 255) | 0) * 3;
         const lut = this.specLut;
         for (let x = 0; x < colW; x++) {
           const p = (y * colW + x) * 4;
-          d[p] = lut[o];
-          d[p + 1] = lut[o + 1];
-          d[p + 2] = lut[o + 2];
-          d[p + 3] = 235;
+          d[p] = lut[o]; d[p + 1] = lut[o + 1]; d[p + 2] = lut[o + 2]; d[p + 3] = 235;
         }
       }
       this.specCtx.putImageData(img, W - colW, 0);
     }
-
     ctx.drawImage(this.specCv, 0, 0, w, h);
-
-    /* scanline sweep */
     const scanX = w - ((this.t * 140) % (w + 80));
     ctx.globalCompositeOperation = 'lighter';
     const beam = ctx.createLinearGradient(scanX - 30, 0, scanX, 0);
@@ -1036,7 +1014,6 @@ export class Renderer {
     ctx.fillStyle = beam;
     ctx.fillRect(scanX - 30, 0, 30, h);
     ctx.globalCompositeOperation = 'source-over';
-
     ctx.fillStyle = hexRgba(this._color(0), 0.5);
     ctx.fillRect(w - colW - 1, 0, 1, h);
   }
@@ -1049,16 +1026,12 @@ export class Renderer {
     const minDim = Math.min(w, h);
     const rings = this.quality === 'low' ? 16 : 26;
     const maxR = minDim * 0.46;
-
     while (this.history.length < rings) this.history.push(0);
-
     ctx.globalCompositeOperation = 'lighter';
-
     const glowR = maxR * 0.16 * (1 + this.sm.bass * 1.3 + this.beat * 0.4);
     ctx.globalAlpha = 0.95;
     ctx.drawImage(this._dot(this._color(0)), cx - glowR, cy - glowR, glowR * 2, glowR * 2);
     ctx.globalAlpha = 1;
-
     const SEG = this.quality === 'low' ? 28 : 44;
     for (let i = 0; i < rings; i++) {
       const baseR = maxR * Math.pow((i + 1) / rings, 1.15);
@@ -1082,8 +1055,6 @@ export class Renderer {
       ctx.closePath();
       ctx.stroke();
     }
-
-    /* vortex rays */
     const rays = 9;
     ctx.lineWidth = 1.2;
     for (let i = 0; i < rays; i++) {
@@ -1095,7 +1066,11 @@ export class Renderer {
       ctx.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
       ctx.stroke();
     }
-
+    const vig = ctx.createRadialGradient(cx, cy, maxR * 0.7, cx, cy, maxR * 1.25);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.32)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, w, h);
     ctx.globalCompositeOperation = 'source-over';
   }
 
@@ -1108,7 +1083,6 @@ export class Renderer {
     const rings = this.quality === 'low' ? 2 : 3;
     const P = this.quality === 'low' ? 44 : 80;
     void dt;
-
     ctx.globalCompositeOperation = 'lighter';
     for (let r = 0; r < rings; r++) {
       const baseR = minDim * (0.1 + r * 0.15);
@@ -1118,9 +1092,7 @@ export class Renderer {
       for (let i = 0; i < P; i++) {
         const ang = (i / P) * Math.PI * 2 + spin;
         const v = logSample(freq, ((i * 7 + Math.floor(this.t * 3) * 3) % P) / P);
-        const mod =
-          Math.sin(ang * (2 + r * 2) - this.t * 1.4) * this.sm.mid * 0.4 +
-          Math.cos(ang * 3 + this.t * 1.1) * this.sm.high * 0.5;
+        const mod = Math.sin(ang * (2 + r * 2) - this.t * 1.4) * this.sm.mid * 0.4 + Math.cos(ang * 3 + this.t * 1.1) * this.sm.high * 0.5;
         const rad = baseR * (1 + v * 0.5 * this.sensitivity + mod) + this.beat * baseR * 0.06;
         const x = cx + Math.cos(ang) * rad;
         const y = cy + Math.sin(ang) * rad;
@@ -1138,8 +1110,6 @@ export class Renderer {
         ctx.stroke();
       }
     }
-
-    /* beat star-cross + center halo */
     if (this.beat > 0.25) {
       const br = minDim * 0.5 * this.beat;
       ctx.lineWidth = 1.6;
@@ -1157,7 +1127,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
-  /* ---------------- SUNSET TERRAIN ---------------- */
+  /* ---------------- SUNSET TERRAIN — stars + meteor ---------------- */
 
   _terrain(freq, dt) {
     const { ctx, w, h } = this;
@@ -1165,20 +1135,16 @@ export class Renderer {
     const COLS = this.quality === 'low' ? 36 : 60;
     const ROWS = this.quality === 'low' ? 16 : 26;
     const depth = h - horizon;
-
     this._terrainAcc += dt;
     const SAMPLE = 0.055;
     while (this._terrainAcc >= SAMPLE) {
       this._terrainAcc -= SAMPLE;
       const row = new Float32Array(COLS);
-      for (let i = 0; i < COLS; i++) {
-        row[i] = clamp(logSample(freq, i / COLS) * this.sensitivity, 0, 1.2);
-      }
+      for (let i = 0; i < COLS; i++) row[i] = clamp(logSample(freq, i / COLS) * this.sensitivity, 0, 1.2);
       this.terrainRows.unshift(row);
       if (this.terrainRows.length > ROWS) this.terrainRows.pop();
     }
     while (this.terrainRows.length < ROWS) this.terrainRows.push(new Float32Array(COLS));
-
     const starSig = `${w}x${h}|terrain`;
     if (this._starSig !== starSig || !this.stars.length) {
       this._starSig = starSig;
@@ -1196,7 +1162,6 @@ export class Renderer {
       ctx.fillRect(s.x, s.y, s.r, s.r);
     }
     ctx.globalAlpha = 1;
-
     for (let i = 0; i < 2; i++) {
       const ax = w * (0.25 + i * 0.35) + Math.sin(this.t * 0.14 + i * 2.2) * w * 0.14;
       const ah = depth * (0.24 + i * 0.1);
@@ -1206,7 +1171,6 @@ export class Renderer {
       ctx.fillStyle = aur;
       ctx.fillRect(ax, horizon - ah, w * 0.34, ah);
     }
-
     if (this.beat > 0.7) {
       if (!this._meteor) this._meteor = { x: w * 0.12, y: horizon * 0.18 };
       const m = this._meteor;
@@ -1221,10 +1185,7 @@ export class Renderer {
       ctx.moveTo(m.x - tailR, m.y - tailR * 0.2);
       ctx.lineTo(m.x, m.y);
       ctx.stroke();
-    } else {
-      this._meteor = null;
-    }
-
+    } else this._meteor = null;
     const sunR = Math.min(w, h) * (0.11 + this.sm.bass * 0.03 + this.beat * 0.012);
     const sunY = horizon - Math.min(w, h) * 0.16;
     ctx.globalAlpha = 0.9;
@@ -1235,7 +1196,6 @@ export class Renderer {
     sky.addColorStop(1, hexRgba(this._color(0), 0.08 + this.beat * 0.08));
     ctx.fillStyle = sky;
     ctx.fillRect(0, horizon - depth * 0.4, w, depth * 0.4);
-
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, horizon, w, depth);
@@ -1243,7 +1203,6 @@ export class Renderer {
     ctx.translate(w / 2, horizon);
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineWidth = 1.1;
-
     const ampBase = depth * 0.34;
     for (let r = ROWS - 1; r >= 0; r--) {
       const row = this.terrainRows[r];
@@ -1252,7 +1211,6 @@ export class Renderer {
       const y = depth * u * u;
       const spread = 0.22 + 1.9 * persp * persp;
       const amp = ampBase * persp * (0.5 + this.sm.level * 1.1);
-
       ctx.beginPath();
       for (let i = 0; i <= COLS; i++) {
         const ci = Math.min(COLS - 1, i);
@@ -1264,7 +1222,6 @@ export class Renderer {
       const c = this._color(r % this.theme.colors.length);
       ctx.strokeStyle = hexRgba(c, 0.7 * persp);
       ctx.stroke();
-
       if (r > 0) {
         const uPrev = r / ROWS;
         const yPrev = depth * uPrev * uPrev;
@@ -1288,7 +1245,6 @@ export class Renderer {
     const N = Math.max(14, Math.min(this.quality === 'low' ? 26 : 42, Math.floor(w / 24)));
     const bw = w / N;
     const colors = this.theme.colors;
-
     const starSig = `${w}x${h}|city`;
     if (this._starSig !== starSig || !this.stars.length) {
       this._starSig = starSig;
@@ -1306,8 +1262,6 @@ export class Renderer {
       ctx.fillRect(s.x, s.y, s.r, s.r);
     }
     ctx.globalAlpha = 1;
-
-    /* aurora ribbons */
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineWidth = 2;
     for (let i = 0; i < 2; i++) {
@@ -1321,7 +1275,6 @@ export class Renderer {
       ctx.stroke();
     }
     ctx.globalCompositeOperation = 'source-over';
-
     if (this.cityCols.length !== N) {
       this.cityCols = Array.from({ length: N }, (_, i) => ({
         v: 0,
@@ -1329,7 +1282,6 @@ export class Renderer {
         seed: ((i + 1) * 2654435761) % 997,
       }));
     }
-
     const fall = 1 - Math.pow(0.88, dt60);
     const fallPeak = Math.pow(0.985, dt60);
     for (let i = 0; i < N; i++) {
@@ -1342,8 +1294,6 @@ export class Renderer {
       c.v += (target - c.v) * (target > c.v ? Math.min(1, dt60 * 0.55) : fall);
       c.peak = Math.max(c.peak * fallPeak, c.v);
     }
-
-    /* back-layer silhouettes */
     ctx.fillStyle = 'rgba(8, 11, 20, 0.85)';
     for (let i = 0; i < N; i += 2) {
       const src = this.cityCols[(i * 7 + 3) % N];
@@ -1351,15 +1301,11 @@ export class Renderer {
       const x = i * bw - bw * 0.35;
       ctx.fillRect(x, baseline - bh, bw * 0.62, bh);
     }
-
-    /* ground glow */
     const gGrad = ctx.createLinearGradient(0, baseline, 0, h);
     gGrad.addColorStop(0, hexRgba(this._color(0), 0.14));
     gGrad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = gGrad;
     ctx.fillRect(0, baseline, w, h - baseline);
-
-    /* buildings */
     const tall = [];
     for (let i = 0; i < N; i++) {
       const col = this.cityCols[i];
@@ -1368,15 +1314,12 @@ export class Renderer {
       const x = i * bw + (bw - bodyW) / 2;
       const y = baseline - bh;
       const c = colors[i % colors.length];
-
       ctx.fillStyle = '#070a12';
       ctx.fillRect(x, y, bodyW, bh);
-
       ctx.globalAlpha = 0.1;
       ctx.fillStyle = c;
       ctx.fillRect(x, baseline + 2, bodyW, Math.min(bh * 0.4, maxH * 0.3));
       ctx.globalAlpha = 1;
-
       ctx.fillStyle = hexRgba(c, 0.9);
       ctx.fillRect(x, y, bodyW, 2);
       if (col.peak > 0.04) {
@@ -1385,13 +1328,11 @@ export class Renderer {
         ctx.fillRect(x, py, bodyW, 1.5);
         ctx.globalAlpha = 1;
       }
-
       const wxMax = Math.max(1, Math.floor((bodyW - 5) / 5));
       const rows = Math.min(14, Math.floor((bh - 10) / 10));
       for (let wy = 0; wy < rows; wy++) {
         for (let wx = 0; wx < wxMax; wx++) {
-          const hsh =
-            (((Math.sin(col.seed + wx * 37 + wy * 101) + 1) / 2) * 43758.5453) % 1;
+          const hsh = (((Math.sin(col.seed + wx * 37 + wy * 101) + 1) / 2) * 43758.5453) % 1;
           if (hsh < 0.42) continue;
           const flick = 0.55 + 0.45 * Math.sin(this.t * (0.8 + hsh * 2.2) + col.seed + wx);
           const a = (0.14 + 0.6 * col.v) * (0.3 + 0.7 * hsh) * flick;
@@ -1400,11 +1341,8 @@ export class Renderer {
           ctx.fillRect(x + 3 + wx * 5, y + 7 + wy * 10, 2.5, 3.5);
         }
       }
-
       tall.push({ x: x + bodyW / 2, y: y });
     }
-
-    /* beacon shafts */
     tall.sort((a, b) => b.y - a.y);
     const beaconC = this._color(0);
     ctx.globalCompositeOperation = 'lighter';
@@ -1423,15 +1361,14 @@ export class Renderer {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
+
   /* ---------------- NEBULA DEEP FIELD ---------------- */
 
   _nebula() {
     const { ctx, w, h } = this;
-    const cx = w / 2;
-    const cy = h / 2;
+    const cx = w / 2, cy = h / 2;
     const N = this.quality === 'low' ? 5 : 9;
     const minDim = Math.min(w, h);
-
     if (!this.nebula || this.nebula.length !== N) {
       this.nebula = Array.from({ length: N }, (_, i) => ({
         ax: 0.16 + ((i * 37) % 11) / 34,
@@ -1444,7 +1381,6 @@ export class Renderer {
         band: i % 3,
       }));
     }
-
     ctx.globalCompositeOperation = 'lighter';
     const bands = [this.sm.bass, this.sm.mid, this.sm.high];
     const swirl = this.t * (0.05 + this.sm.level * 0.35);
@@ -1463,7 +1399,6 @@ export class Renderer {
       ctx.drawImage(sprite, -r, -r, r * 2, r * 2);
       ctx.restore();
     }
-    /* stardust */
     for (let i = 0; i < 22; i++) {
       const fx = ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1;
       const fy = ((Math.sin(i * 78.233) * 12543.123) % 1 + 1) % 1;
@@ -1477,23 +1412,18 @@ export class Renderer {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
-
   /* ---------------- SPIRAL GALAXY ---------------- */
 
   _spiral(freq) {
     const { ctx, w, h } = this;
-    const cx = w / 2;
-    const cy = h / 2;
+    const cx = w / 2, cy = h / 2;
     const minDim = Math.min(w, h);
     const arms = this.quality === 'low' ? 2 : 3;
     const PTS = this.quality === 'low' ? 90 : 170;
     const rot = this.t * (0.08 + this.sm.level * 0.8) - this.beat * 0.25;
     const inner = minDim * 0.03;
     const outer = minDim * 0.44;
-
     ctx.globalCompositeOperation = 'lighter';
-
-    /* dust motes */
     for (let i = 0; i < 16; i++) {
       const ang = this.t * (0.05 + i * 0.007) * (i % 2 ? 1 : -1) + i * 1.7;
       const r = inner + ((i * 37) % 96) / 96 * (outer * 0.82);
@@ -1504,24 +1434,20 @@ export class Renderer {
       ctx.drawImage(this._dot(this._color((i + 1) % this.theme.colors.length)), x - rr, y - rr, rr * 2, rr * 2);
     }
     ctx.globalAlpha = 1;
-
     const coreR = minDim * (0.07 + this.sm.bass * 0.09 + this.beat * 0.02);
     ctx.globalAlpha = 0.9;
     ctx.drawImage(this._dot(this._color(1)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
-
     const P = 96;
     for (let a = 0; a < arms; a++) {
       const baseAng = (a / arms) * Math.PI * 2;
       const dir = a % 2 ? 1 : -1;
       const c = this._color(a);
-
       const pt = (i) => {
         const tt = i / PTS;
         const theta = baseAng + tt * 4.6 * dir + rot * (1 - tt * 0.35);
         const r = inner + Math.pow(tt, 1.35) * outer;
         return { x: cx + Math.cos(theta) * r, y: cy + Math.sin(theta) * r, theta, tt };
       };
-
       ctx.beginPath();
       for (let i = 0; i <= PTS; i++) {
         const p = pt(i);
@@ -1531,7 +1457,6 @@ export class Renderer {
       ctx.strokeStyle = hexRgba(c, 0.3 + this.sm.level * 0.25);
       ctx.lineWidth = Math.max(1.2, minDim * 0.007 * (1 + this.sm.bass));
       ctx.stroke();
-
       for (let i = 0; i < PTS; i++) {
         const p = pt(i);
         const idx = logFreqIndex((i * 5 + a * 11) % P, P, freq.length);
@@ -1554,11 +1479,9 @@ export class Renderer {
 
   _orb(freq, dt60, dt) {
     const { ctx, w, h } = this;
-    const cx = w / 2;
-    const cy = h / 2;
+    const cx = w / 2, cy = h / 2;
     const minDim = Math.min(w, h);
     const baseR = minDim * 0.18 * (0.85 + this.sm.level * 0.6);
-
     if (this.beat > 0.72 && this.orbSat.length < 40 && Math.random() < 0.55) {
       const ang = Math.random() * Math.PI * 2;
       this.orbSat.push({
@@ -1577,9 +1500,7 @@ export class Renderer {
       s.life -= s.decay * dt60;
       if (s.life <= 0 || s.dist > minDim * 0.48) this.orbSat.splice(i, 1);
     }
-
     ctx.globalCompositeOperation = 'lighter';
-    /* beat shockwave rings */
     if (this.beat > 0.55) {
       if (!this._orbWaves) this._orbWaves = [];
       this._orbWaves.push({ r: baseR * 1.05, a: 0.5 });
@@ -1597,7 +1518,6 @@ export class Renderer {
         ctx.stroke();
       }
     }
-
     const P = this.quality === 'low' ? 48 : 64;
     const pts = [];
     for (let i = 0; i < P; i++) {
@@ -1609,7 +1529,6 @@ export class Renderer {
       const r = baseR * (1 + rip * 0.42 * this.sensitivity + harm1 + harm2 + this.beat * 0.08);
       pts.push([cx + Math.cos(ang) * r, cy + Math.sin(ang) * r]);
     }
-
     const glowR = baseR * 1.55;
     const g = ctx.createRadialGradient(cx, cy, baseR * 0.3, cx, cy, glowR);
     g.addColorStop(0, hexRgba(this._color(0), 0.18 + this.beat * 0.12));
@@ -1618,7 +1537,6 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
     ctx.fill();
-
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) {
@@ -1637,7 +1555,6 @@ export class Renderer {
     ctx.globalAlpha = 0.9;
     ctx.stroke();
     ctx.globalAlpha = 1;
-
     ctx.strokeStyle = hexRgba(this._color(2), 0.14 + this.sm.level * 0.12);
     ctx.lineWidth = 1;
     for (let r = 0; r < 2; r++) {
@@ -1646,12 +1563,10 @@ export class Renderer {
       ctx.ellipse(cx, cy, rr, rr * 0.52, this.t * (0.12 + r * 0.07) * (r % 2 ? -1 : 1), 0, Math.PI * 2);
       ctx.stroke();
     }
-
     const coreR = minDim * 0.04 * (1 + this.beat * 1.4 + this.sm.bass * 0.5);
     ctx.globalAlpha = 0.95;
     ctx.drawImage(this._dot(this._color(1)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
     ctx.globalAlpha = 1;
-
     for (const s of this.orbSat) {
       const x = cx + Math.cos(s.ang) * s.dist;
       const y = cy + Math.sin(s.ang) * s.dist * 0.58;
@@ -1664,14 +1579,13 @@ export class Renderer {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ---------------- LIQUID METAL FLUID ---------------- */
+  /* ---------------- FLUID METAL ---------------- */
 
   _fluid(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h / 2;
     const n = this.quality === 'low' ? 5 : 9;
     ctx.globalCompositeOperation = 'lighter';
-    /* beat ripples */
     if (this.beat > 0.55) {
       const rr = Math.min(w, h) * (0.3 + this.beat * 0.2);
       ctx.strokeStyle = hexRgba(this._color(0), this.beat * 0.4);
@@ -1737,7 +1651,6 @@ export class Renderer {
       }
       ctx.stroke();
     }
-    /* beat-lit nodes */
     if (this.beat > 0.35) {
       ctx.globalCompositeOperation = 'lighter';
       const nodeR = 2.6 + this.beat * 2.2;
@@ -1789,7 +1702,6 @@ export class Renderer {
       ctx.lineTo(x2, y2);
       ctx.stroke();
     }
-    /* glitter on beat */
     if (this.beat > 0.5) {
       ctx.fillStyle = hexRgba(this._color(2), this.beat * 0.7);
       for (let i = 0; i < 8; i++) {
@@ -1844,8 +1756,6 @@ export class Renderer {
     const rows = this.quality === 'low' ? 6 : 9;
     const cw = w / cols;
     const rh = h / rows;
-
-    /* mesh lines between neighbor blooms */
     if (this.quality !== 'low') {
       ctx.globalCompositeOperation = 'lighter';
       const meshA = 0.04 + this.sm.level * 0.06;
@@ -1880,7 +1790,6 @@ export class Renderer {
       }
       ctx.globalCompositeOperation = 'source-over';
     }
-
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const idx = (y * cols + x) % 64;
@@ -1919,10 +1828,8 @@ export class Renderer {
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < (this.quality === 'low' ? 3 : 5); i++) {
       const ang = (i / 5) * Math.PI * 2 + this.t * 0.2;
-      const col = i;
-      drawBranch(cx, cy, base, ang, depth, col);
+      drawBranch(cx, cy, base, ang, depth, i);
     }
-    // central bloom
     const cr = base * 0.35 * (1 + this.beat * 0.8);
     ctx.globalAlpha = 0.9;
     ctx.drawImage(this._dot(this._color(0)), cx - cr, cy - cr, cr * 2, cr * 2);
