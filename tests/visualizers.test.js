@@ -77,8 +77,8 @@ describe('themes', () => {
     expect(MODES.find(m => m.id === 'orb').name).toBe('Pulse Orb');
     expect(MODES.find(m => m.id === 'orb').icon).toBe('orb');
   });
-  it('has 18 themes', () => {
-    expect(THEMES.length).toBe(18);
+  it('has 20 themes', () => {
+    expect(THEMES.length).toBe(20);
   });
   it('all modes have id, name, icon', () => {
     for (const m of MODES) {

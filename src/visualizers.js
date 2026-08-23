@@ -15,7 +15,9 @@ export class Renderer {
     this.canvas = canvas;
     this.ctx = canvas.getContext && canvas.getContext('2d');
     this._dead = !this.ctx;
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const mem = navigator.deviceMemory || 8;
+    const dprCap = mem < 4 ? 1.5 : 2;
+    this.dpr = Math.min(window.devicePixelRatio || 1, dprCap);
     this.w = 0;
     this.h = 0;
     this.t = 0;
@@ -314,6 +316,18 @@ export class Renderer {
 
     if (this.mode !== 'bars' && this.beatInfo?.bpm > 0) this._beatGrid();
     this._bloom(this.beat);
+    // subtle film grain
+    if (this.quality !== 'low') {
+      ctx.save();
+      ctx.globalAlpha = 0.04 + this.beat * 0.02;
+      ctx.fillStyle = 'rgba(255,250,243,0.08)';
+      for (let i = 0; i < 18; i++) {
+        const x = (Math.sin(this.t * 13 + i * 91) * 0.5 + 0.5) * w;
+        const y = (Math.sin(this.t * 7 + i * 137) * 0.5 + 0.5) * h;
+        ctx.fillRect(x, y, 1, 1);
+      }
+      ctx.restore();
+    }
   }
 
   /* beat-grid: 4 phase dots + pulse ring, bottom-center */
@@ -381,6 +395,12 @@ export class Renderer {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.imageSmoothingEnabled = true;
+    // chromatic bloom on strong beats
+    if (punch > 0.45) {
+      ctx.globalAlpha = clamp((0.22 + punch * 0.08) * (0.5 + this.bloomAmount), 0, 0.42);
+      ctx.drawImage(this.glowB, -w * 0.02 + 1.2, -h * 0.02, w * 1.04, h * 1.04);
+      ctx.drawImage(this.glowB, -w * 0.02 - 1.2, -h * 0.02, w * 1.04, h * 1.04);
+    }
     ctx.globalAlpha = clamp((0.36 + punch * 0.12) * (0.5 + this.bloomAmount), 0, 0.62);
     ctx.drawImage(this.glowB, -w * 0.02, -h * 0.02, w * 1.04, h * 1.04);
     ctx.globalAlpha = clamp((0.28 + punch * 0.10) * (0.5 + this.bloomAmount), 0, 0.52);
@@ -776,7 +796,9 @@ export class Renderer {
   _particles(dt, dt60) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h * 0.5;
-    const cap = this.quality === 'low' ? 120 : 240;
+    const mem2 = navigator.deviceMemory || 8;
+    const capBase = this.quality === 'low' ? 120 : 240;
+    const cap = mem2 < 4 ? Math.floor(capBase * 0.7) : capBase;
 
     const rate = (12 + this.sm.level * 160 * this.sensitivity * 0.5) + (this.beat > 0.6 ? 260 : 0);
     this._spawnAcc += rate * dt;

@@ -452,8 +452,9 @@ $('queue-btn').addEventListener('click', () => toggleQueue());
 $('save-library-btn')?.addEventListener('click', saveToLibrary);
 
 async function renderLibrary() {
-  const meta = await Library.listLibraryMeta();
-  let html = `<div class="library-head"><span class="ic ic-lime" data-icon="layers"></span><span class="mono library-title">LIBRARY · ${meta.length}</span><button class="icon-x" id="lib-close" title="Close"><span class="ic ic-sm" data-icon="close"></span></button></div>`;
+  let meta = await Library.listLibraryMeta();
+  let html = `<div class="library-head"><span class="ic ic-lime" data-icon="layers"></span><span class="mono library-title">LIBRARY · ${meta.length}</span><button class="icon-x" id="lib-close" title="Close"><span class="ic ic-sm" data-icon="close"></span></button></div>
+  <div style="padding:8px 12px; border-bottom:1px solid var(--border-soft)"><input id="lib-search" class="connect-input" placeholder="Search library…" style="width:100%; padding:7px 10px; font-size:11px"/></div>`;
   if (!meta.length) {
     html += `<div class="library-empty mono">NO SAVED TRACKS — PLAY A TRACK THEN HIT SAVE</div>`;
   } else {
@@ -470,8 +471,20 @@ async function renderLibrary() {
         </div>
       </div>`).join('') + `</div>`;
   }
+  // filter by search
+  const q = (document.getElementById('lib-search')?.value || '').toLowerCase();
+  if (q) meta = meta.filter(m => m.name.toLowerCase().includes(q) || (m.ext||'').toLowerCase().includes(q));
   libraryPanel.innerHTML = html;
   libraryPanel.querySelectorAll('[data-icon]').forEach(el => setIcon(el, el.dataset.icon));
+  // re-attach search listener
+  const sInput = libraryPanel.querySelector('#lib-search');
+  if (sInput) {
+    sInput.value = q;
+    sInput.addEventListener('input', () => renderLibrary());
+    // focus and keep cursor at end
+    sInput.focus();
+    sInput.setSelectionRange(sInput.value.length, sInput.value.length);
+  }
   libraryPanel.querySelector('#lib-close')?.addEventListener('click', () => toggleLibrary(false));
   libraryPanel.querySelectorAll('.lib-play').forEach(b => b.addEventListener('click', async () => {
     const rec = await Library.getLibraryEntry(b.dataset.id);

@@ -39,4 +39,6 @@ export const THEMES = [
   { id: 'screwed', name: 'Chop N Screwed', colors: ['#2a0a2a', '#7a2a5a', '#d9b089'], css: 'linear-gradient(135deg, #1a0a1e, #7a2a5a)' },
   { id: 'jade', name: 'Jade', colors: ['#3df2c4', '#16a085', '#e8fff5'], css: 'linear-gradient(135deg, #3df2c4, #16a085)' },
   { id: 'crimson', name: 'Crimson Silk', colors: ['#ff4d6d', '#8a0f2a', '#ffd6dd'], css: 'linear-gradient(135deg, #ff4d6d, #8a0f2a)' },
+  { id: 'desert', name: 'Desert Mirage', colors: ['#ffd6a6', '#ff8a5c', '#8a4a2a'], css: 'linear-gradient(135deg, #ffd6a6, #ff8a5c)' },
+  { id: 'ocean', name: 'Ocean Depth', colors: ['#00d4ff', '#0066cc', '#001a33'], css: 'linear-gradient(135deg, #00d4ff, #001a33)' },
 ];
