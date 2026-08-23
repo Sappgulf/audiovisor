@@ -59,7 +59,7 @@ export class AudioEngine {
     this.smoothing = 0.82;
     this.bassFocus = 0.5;
 
-    this.fx = { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false };
+    this.fx = { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false, widener: false };
     this.speed = 1;
 
     this.offset = 0;
@@ -159,6 +159,11 @@ export class AudioEngine {
       this.chopGate.gain.value = 1;
       this._chopTimer = null;
 
+      this.widener = this.ctx.createBiquadFilter();
+      this.widener.type = 'highshelf';
+      this.widener.frequency.value = 8000;
+      this.widener.gain.value = 0;
+
       // 5-band parametric EQ (60, 250, 1k, 4k, 12k) in series
       this.eqFilters = [60, 250, 1000, 4000, 12000].map((f) => {
         const b = this.ctx.createBiquadFilter();
@@ -179,7 +184,8 @@ export class AudioEngine {
       this.tuneFilter.connect(this.crushShaper);
       this.crushShaper.connect(this.compressor);
       this.compressor.connect(this.chopGate);
-      this.chopGate.connect(this.master);
+      this.chopGate.connect(this.widener);
+      this.widener.connect(this.master);
       // parallel verb
       this.filter.connect(this.convolver);
       this.convolver.connect(this.reverbGain);
@@ -559,6 +565,7 @@ export class AudioEngine {
         this.crushShaper.curve = null;
       }
     }
+    if (name === 'widener') this.widener.gain.setTargetAtTime(on ? 7 : 0, t, 0.08);
     if (name === 'chop') {
       if (on) {
         // screwed: slow + lowpass

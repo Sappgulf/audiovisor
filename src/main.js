@@ -30,7 +30,7 @@ const state = {
   autopilot: false,
   autopilotTimer: null,
   drawerOpen: true,
-  fx: { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false },
+  fx: { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false, widener: false },
 };
 
 /* ---------- toasts ---------- */
@@ -123,7 +123,7 @@ function applySlider(id, v) {
   }
 }
 
-const FX = ['reverb', 'limiter', 'lowpass', 'speed', 'autotune', 'chorus', 'echo', 'crush', 'chop'];
+const FX = ['reverb', 'limiter', 'lowpass', 'speed', 'autotune', 'chorus', 'echo', 'crush', 'chop', 'widener'];
 const fxRow = $('fx-row');
 const fxEls = {};
 FX.forEach((fx) => {
@@ -1272,6 +1272,48 @@ function runTour() {
 }
 if (!localStorage.getItem('audiovisor.tour')) runTour();
 document.getElementById('tour-replay')?.addEventListener('click', () => { toast('TOUR <b>restarted</b>'); runTour(); });
+
+// Command palette (Cmd+K)
+const cmdPalette = document.getElementById('cmd-palette');
+const cmdInput = document.getElementById('cmd-input');
+const cmdList = document.getElementById('cmd-list');
+let cmdActive = 0;
+function buildCmds() {
+  const cmds = [];
+  MODES.forEach(m => cmds.push({ label: `Mode: ${m.name}`, action: () => setMode(m.id), keys: m.id }));
+  THEMES.forEach(th => cmds.push({ label: `Theme: ${th.name}`, action: () => setTheme(th.id), keys: th.id }));
+  FX.forEach(fx => cmds.push({ label: `FX: ${fx.toUpperCase()}`, action: () => { const on = !state.fx[fx]; const btn = fxEls[fx]; if (btn) btn.click(); }, keys: fx }));
+  cmds.push({ label: 'Random Look', action: randomizeLook, keys: 'random' });
+  cmds.push({ label: 'Toggle Library', action: () => toggleLibrary(), keys: 'library' });
+  cmds.push({ label: 'Toggle Queue', action: () => toggleQueue(), keys: 'queue' });
+  cmds.push({ label: 'Toggle Fullscreen', action: () => document.getElementById('fullscreen-btn')?.click(), keys: 'fullscreen' });
+  cmds.push({ label: 'Snapshot PNG', action: snapshot, keys: 'snapshot' });
+  cmds.push({ label: 'Export Remix', action: () => document.getElementById('export-remix-btn')?.click(), keys: 'export' });
+  return cmds;
+}
+let allCmds = buildCmds();
+function renderCmds(filter = '') {
+  const q = filter.toLowerCase();
+  const filtered = q ? allCmds.filter(c => c.label.toLowerCase().includes(q) || c.keys.includes(q)) : allCmds.slice(0, 12);
+  cmdList.innerHTML = filtered.map((c, i) => `<div class="cmd-item ${i===cmdActive?'is-active':''}" data-i="${i}"><span>${c.label}</span><kbd>↵</kbd></div>`).join('') || '<div style="padding:12px; font-size:11px; color:var(--text-40)">No matches</div>';
+  cmdList.querySelectorAll('.cmd-item').forEach(el => el.addEventListener('click', () => { const c = filtered[Number(el.dataset.i)]; if (c) { c.action(); closeCmd(); }}));
+}
+function openCmd() { cmdPalette.classList.remove('is-hidden'); cmdInput.value = ''; cmdActive = 0; renderCmds(''); cmdInput.focus(); }
+function closeCmd() { cmdPalette.classList.add('is-hidden'); }
+cmdPalette?.addEventListener('click', (e) => { if (e.target === cmdPalette) closeCmd(); });
+cmdInput?.addEventListener('input', () => { cmdActive = 0; renderCmds(cmdInput.value); });
+cmdInput?.addEventListener('keydown', (e) => {
+  const items = cmdList.querySelectorAll('.cmd-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); cmdActive = Math.min(cmdActive + 1, items.length - 1); renderCmds(cmdInput.value); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); cmdActive = Math.max(cmdActive - 1, 0); renderCmds(cmdInput.value); }
+  else if (e.key === 'Enter') { e.preventDefault(); const q = cmdInput.value.toLowerCase(); const filtered = q ? allCmds.filter(c => c.label.toLowerCase().includes(q) || c.keys.includes(q)) : allCmds.slice(0, 12); const c = filtered[cmdActive]; if (c) { c.action(); closeCmd(); } }
+  else if (e.key === 'Escape') closeCmd();
+});
+window.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); if (cmdPalette.classList.contains('is-hidden')) openCmd(); else closeCmd(); }
+  if (e.key === 'Escape' && !cmdPalette.classList.contains('is-hidden')) closeCmd();
+});
+
 document.getElementById('settings-reset')?.addEventListener('click', () => {
   localStorage.removeItem(SETTINGS_KEY);
   localStorage.removeItem('audiovisor.tour');
