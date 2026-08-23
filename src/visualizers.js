@@ -446,30 +446,34 @@ export class Renderer {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
+  /* ---------------- SPECTRUM GLASS BARS ---------------- */
 
-  /* ---------------- SPECTRUM BARS ---------------- */
+  _rr(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+    else ctx.rect(x, y, w, h);
+  }
 
   _bars(freq, dt60, dt) {
     const { ctx, w, h } = this;
-    const horizon = h * 0.65;
-    const N = Math.min(96, Math.max(48, Math.round(w / (this.quality === 'low' ? 22 : 13))));
-    const gap = Math.max(1.5, w / N / 5);
-    const bw = (w - gap * (N - 1) - 32) / N;
+    const horizon = h * 0.66;
+    const N = Math.min(88, Math.max(44, Math.round(w / (this.quality === 'low' ? 24 : 14))));
+    const gap = Math.max(2, w / N / 6);
+    const bw = (w - gap * (N - 1) - 24) / N;
 
     if (this.peaks.length !== N) {
       this.peaks = new Array(N).fill(0);
       this.peakVels = new Array(N).fill(0);
     }
-    if (!this.peakVels || this.peakVels.length !== N) this.peakVels = new Array(N).fill(0);
-
-    const maxH = horizon - h * 0.06;
-
+    const maxH = horizon - h * 0.05;
     const c0 = this._color(0);
+
+    /* floor glow */
     if (!this._floorGrads) {
       this._floorGrads = {};
       for (const c of this.theme.colors) {
         const g = ctx.createLinearGradient(0, horizon, 0, h);
-        g.addColorStop(0, hexRgba(c, 0.07));
+        g.addColorStop(0, hexRgba(c, 0.08));
         g.addColorStop(1, 'rgba(0,0,0,0)');
         this._floorGrads[c] = g;
       }
@@ -477,112 +481,97 @@ export class Renderer {
     ctx.fillStyle = this._floorGrads[c0];
     ctx.fillRect(0, horizon, w, h - horizon);
 
-    /* wide soft backdrop glow behind the bars */
-    const backdrop = this._dot(c0);
-    const bgh = maxH * 0.9;
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.10 + this.sm.level * 0.12;
-    ctx.drawImage(backdrop, 0, horizon - bgh, w, bgh * 2);
-    ctx.restore();
-    ctx.globalAlpha = 1;
-
-    // ray-trace AO: soft contact shadow at horizon
-    const ao = ctx.createLinearGradient(0, horizon - 1, 0, horizon + 22);
-    ao.addColorStop(0, 'rgba(0,0,0,0)');
-    ao.addColorStop(0.45, 'rgba(0,0,0,0.22)');
-    ao.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = ao;
-    ctx.fillRect(0, horizon - 1, w, 23);
-
     const colors = [];
     const amps = new Array(N);
+    const hueFlow = Math.floor(this.t * 0.5);
     for (let i = 0; i < N; i++) {
       const v = logSample(freq, i / N) * this.sensitivity;
       const weight = 1 + this.bassFocus * 2.2 * (1 - i / N);
       const bounce = 1 + this.beat * 0.34 * (1 - i / N);
       amps[i] = clamp(v * weight * bounce, 0.008, 1.25);
-      if (amps[i] >= this.peaks[i]) {
-        this.peaks[i] = amps[i];
-        this.peakVels[i] = 0;
-      } else {
-        this.peakVels[i] += 3.2 * dt;
-        this.peaks[i] = Math.max(amps[i], this.peaks[i] - this.peakVels[i] * dt);
-      }
-      colors[i] = this._color(Math.floor((i / N) * this.theme.colors.length));
+      if (amps[i] >= this.peaks[i]) { this.peaks[i] = amps[i]; this.peakVels[i] = 0; }
+      else { this.peakVels[i] += 3.2 * dt; this.peaks[i] = Math.max(amps[i], this.peaks[i] - this.peakVels[i] * dt); }
+      colors[i] = this._color(Math.floor((i / N) * this.theme.colors.length + hueFlow) % this.theme.colors.length);
     }
 
-    for (let i = 0; i < N; i++) {
-      const barH = amps[i] * maxH;
-      if (barH < 0.5) continue;
-      ctx.drawImage(
-        this._barS(colors[i]),
-        16 + i * (bw + gap),
-        horizon - barH,
-        bw,
-        barH + 2,
-      );
-    }
+    const barX = (i) => 12 + i * (bw + gap);
 
-    /* reflections — one transform for the whole strip */
+    /* soft backdrop halo per bar */
     ctx.save();
-    ctx.translate(0, horizon * 2);
-    ctx.scale(1, -1);
-    ctx.globalAlpha = 0.18;
+    ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < N; i++) {
-      const barH = amps[i] * maxH;
-      if (barH < 0.5) continue;
-      ctx.drawImage(
-        this._barS(colors[i]),
-        16 + i * (bw + gap),
-        horizon - barH,
-        bw,
-        Math.min(barH, maxH * 0.34),
-      );
+      const bh = amps[i] * maxH;
+      if (bh < 2) continue;
+      const x = barX(i);
+      const halo = this._dot(colors[i]);
+      const hr = bw * 1.6;
+      ctx.globalAlpha = 0.10 + amps[i] * 0.12;
+      ctx.drawImage(halo, x + bw / 2 - hr, horizon - bh - hr * 0.4, hr * 2, hr * 2);
     }
     ctx.restore();
     ctx.globalAlpha = 1;
 
-    /* beat grid lines from phase when locked */
-    if (this.beatInfo?.bpm > 0 && this.beatInfo.beatPhase != null) {
-      const sub = 4;
-      const ph = (this.beatInfo.beatPhase % 1) * sub;
-      const lineW = w / (sub);
-      ctx.fillStyle = hexRgba(this._color(0), 0.05 + (this.beat > 0.4 ? 0.05 : 0));
-      for (let s = 0; s < sub; s++) {
-        const x = (s - ph) * lineW;
-        if (x < -lineW || x > w + lineW) continue;
-        ctx.fillRect(x, 0, 1, horizon);
-      }
+    /* glass slab body */
+    for (let i = 0; i < N; i++) {
+      const bh = amps[i] * maxH;
+      if (bh < 1.5) continue;
+      const x = barX(i);
+      const col = colors[i];
+      const g = ctx.createLinearGradient(0, horizon - bh, 0, horizon);
+      g.addColorStop(0, hexRgba(col, 0.95));
+      g.addColorStop(0.12, 'rgba(255,255,255,0.28)');
+      g.addColorStop(0.2, hexRgba(col, 0.9));
+      g.addColorStop(1, hexRgba(col, 0.35));
+      ctx.fillStyle = g;
+      this._rr(ctx, x, horizon - bh, bw, bh, Math.min(4, bw / 2));
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.16)';
+      ctx.fillRect(x + bw * 0.28, horizon - bh + 2, Math.max(1, bw * 0.1), Math.max(1, bh - 3));
     }
 
-    /* peak caps with gravity fall + glow dot */
+    /* reflections under horizon */
+    ctx.save();
+    ctx.translate(0, horizon * 2);
+    ctx.scale(1, -1);
+    ctx.globalAlpha = 0.16;
+    for (let i = 0; i < N; i++) {
+      const bh = amps[i] * maxH;
+      if (bh < 1.5) continue;
+      const x = barX(i);
+      ctx.fillStyle = hexRgba(colors[i], 0.5);
+      this._rr(ctx, x, horizon - bh, bw, Math.min(bh, maxH * 0.3), Math.min(4, bw / 2));
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+
+    /* peak caps */
     for (let i = 0; i < N; i++) {
       if (this.peaks[i] <= 0.03) continue;
-      const x = 16 + i * (bw + gap);
+      const x = barX(i);
       const y = horizon - this.peaks[i] * maxH - 2;
       ctx.fillStyle = colors[i];
-      ctx.globalAlpha = 0.85;
+      ctx.globalAlpha = 0.9;
       ctx.fillRect(x, y, bw, 2);
       if (this.quality !== 'low' && this.peaks[i] > 0.22) {
-        const r = bw * 0.7;
-        ctx.globalAlpha = 0.45;
+        const r = bw * 0.8;
+        ctx.globalAlpha = 0.5;
         ctx.drawImage(this._dot(colors[i]), x + bw / 2 - r, y - r + 1, r * 2, r * 2);
       }
     }
     ctx.globalAlpha = 1;
   }
 
-  /* ---------------- LINEAR WAVE ---------------- */
+  /* ---------------- SILK HORIZON WAVES ---------------- */
 
   _waves(wave, dt60) {
     const { ctx, w, h } = this;
-    const midY = h * 0.5;
-    const ampScale = h * 0.3 * (0.4 + this.sensitivity * 0.5);
+    const midY = h * 0.52;
+    const ampScale = h * 0.32 * (0.4 + this.sensitivity * 0.5);
+    const step = 6;
 
     const samplePts = (data, yBase, yScale, mul) => {
       const pts = [];
-      const step = 6;
       for (let x = 0; x <= w; x += step) {
         const i = Math.min(data.length - 1, Math.floor((x / w) * data.length));
         const v = (data[i] - 128) / 128;
@@ -607,61 +596,67 @@ export class Renderer {
       ctx.globalAlpha = 1;
     };
 
-    if (this.echo) {
-      ctx.globalCompositeOperation = 'lighter';
-      const ePts = samplePts(this.echo, midY + 14, ampScale * 0.7, 0.5);
-      strokeSmooth(ePts, hexRgba(this._color(2), 0.28), 1);
-      ctx.globalCompositeOperation = 'source-over';
-    }
-
     const pts = samplePts(wave, midY, ampScale, 1);
 
-    /* underfill glow shadow (depth cue) */
+    /* under-glow band */
     ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = hexRgba(this._color(2), 0.10 + this.sm.level * 0.08 + this.beat * 0.06);
-    ctx.lineWidth = 9;
+    ctx.strokeStyle = hexRgba(this._color(2), 0.12 + this.sm.level * 0.1 + this.beat * 0.08);
+    ctx.lineWidth = 10;
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length - 1; i++) {
-      const mx = (pts[i][0] + pts[i + 1][0]) / 2;
-      const my = (pts[i][1] + pts[i + 1][1]) / 2;
+      const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
       ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
     }
     ctx.stroke();
     ctx.globalCompositeOperation = 'source-over';
 
+    /* fill below */
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length - 1; i++) {
-      const mx = (pts[i][0] + pts[i + 1][0]) / 2;
-      const my = (pts[i][1] + pts[i + 1][1]) / 2;
+      const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
       ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
     }
-    ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
-    ctx.lineTo(w, h);
-    ctx.lineTo(0, h);
-    ctx.closePath();
+    ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
     const g = ctx.createLinearGradient(0, midY - ampScale, 0, h);
-    g.addColorStop(0, hexRgba(this._color(0), 0.16));
+    g.addColorStop(0, hexRgba(this._color(0), 0.20));
     g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.fill();
 
-    // center glow spine
-    ctx.save();
+    /* echo pass */
+    if (this.echo) {
+      ctx.globalCompositeOperation = 'lighter';
+      const ePts = samplePts(this.echo, midY + 16, ampScale * 0.7, 0.5);
+      strokeSmooth(ePts, hexRgba(this._color(1), 0.35), 1.1);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    /* crest beads */
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.35;
-    ctx.drawImage(this._dot(this._color(0)), 0, midY - h*0.028, w, h*0.056);
-    ctx.restore();
+    const beadStep = 96;
+    const sprite = this._dot(this._color(0));
+    for (let x = beadStep; x < w; x += beadStep) {
+      let bi = 0, best = 1e9;
+      for (let i = 0; i < pts.length; i++) { const d = Math.abs(pts[i][0] - x); if (d < best) { best = d; bi = i; } }
+      const v = Math.max(0, (wave[Math.min(wave.length - 1, Math.floor((x / w) * wave.length))] - 128) / 128);
+      const r = 3 + v * 8 + this.beat * 4;
+      ctx.globalAlpha = 0.5 + v * 0.5;
+      ctx.drawImage(sprite, pts[bi][0] - r, pts[bi][1] - r, r * 2, r * 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
 
-    strokeSmooth(pts, this._color(0), 2.2);
+    strokeSmooth(pts, this._color(0), 2.3);
 
+    /* mirrored ghost above */
     ctx.save();
-    ctx.globalAlpha = 0.14;
+    ctx.globalAlpha = 0.16;
     ctx.globalCompositeOperation = 'lighter';
     ctx.translate(0, midY * 2);
     ctx.scale(1, -1);
-    strokeSmooth(pts, hexRgba(this._color(0), 0.55), 1.4);
+    strokeSmooth(pts, hexRgba(this._color(2), 0.6), 1.4);
     ctx.restore();
 
     this.echo = this.echo || new Uint8Array(wave.length);
@@ -671,29 +666,38 @@ export class Renderer {
     }
   }
 
-  /* ---------------- VECTORSCOPE ---------------- */
+  /* ---------------- AZURE VECTORSCOPE ---------------- */
 
   _scope(wave, dt60) {
     const { ctx, w, h } = this;
-    const cx = w / 2;
-    const cy = h / 2;
+    const cx = w / 2, cy = h / 2;
     const minDim = Math.min(w, h);
     const R = minDim * 0.36 * (0.78 + this.sm.level * 0.5 * this.sensitivity);
-    const N = this.quality === 'low' ? 120 : 220;
+    const N = this.quality === 'low' ? 110 : 200;
     const delay = Math.floor(wave.length / 4);
-    const c0 = this._color(0);
-    const c1 = this._color(1);
+    const c0 = this._color(0), c1 = this._color(1);
 
+    /* graticule + ring frame + ticks */
     ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = hexRgba(c0, 0.07);
+    ctx.strokeStyle = hexRgba(c0, 0.08);
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(cx, cy, R * 1.06, 0, Math.PI * 2);
-    ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
-    ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
+    ctx.arc(cx, cy, R * 1.1, 0, Math.PI * 2);
+    ctx.moveTo(cx - R * 1.1, cy); ctx.lineTo(cx + R * 1.1, cy);
+    ctx.moveTo(cx, cy - R * 1.1); ctx.lineTo(cx, cy + R * 1.1);
     ctx.stroke();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = hexRgba(c0, 0.14);
+    for (let a = 0; a < 12; a++) {
+      const ang = (a / 12) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * R * 1.1, cy + Math.sin(ang) * R * 1.1);
+      ctx.lineTo(cx + Math.cos(ang) * R * 1.18, cy + Math.sin(ang) * R * 1.18);
+      ctx.stroke();
+    }
     ctx.globalCompositeOperation = 'source-over';
 
+    /* phosphor buffer */
     const sig = `${w}x${h}|${this.quality}`;
     if (!this.scopeCv || this.scopeSig !== sig) {
       this.scopeSig = sig;
@@ -720,56 +724,213 @@ export class Renderer {
 
     sctx.save();
     sctx.translate(cx, cy);
-    sctx.rotate(this.t * 0.1);
+    sctx.rotate(this.t * 0.08);
     sctx.lineJoin = 'round';
+    /* colored trace segments */
+    const segs = 8;
+    for (let s = 0; s < segs; s++) {
+      const s0 = Math.floor((N / segs) * s);
+      const s1 = Math.min(N - 1, Math.floor((N / segs) * (s + 1)));
+      sctx.beginPath();
+      for (let i = s0; i <= s1; i++) {
+        if (i === s0) sctx.moveTo(pts[i * 2], pts[i * 2 + 1]);
+        else sctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
+      }
+      sctx.strokeStyle = hexRgba(this._color(s), 0.7);
+      sctx.lineWidth = 1.6;
+      sctx.stroke();
+    }
+    /* glow pass */
     sctx.beginPath();
     for (let i = 0; i < N; i++) {
-      if (i === 0) sctx.moveTo(pts[i * 2], pts[i * 2 + 1]);
+      if (i === 0) sctx.moveTo(pts[0], pts[1]);
       else sctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
     }
     sctx.closePath();
-    sctx.strokeStyle = hexRgba(c1, 0.20);
-    sctx.lineWidth = 3.5;
-    sctx.stroke();
-    sctx.beginPath();
-    for (let i = 0; i < N; i++) {
-      if (i === 0) sctx.moveTo(pts[i * 2], pts[i * 2 + 1]);
-      else sctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
-    }
-    sctx.closePath();
-    sctx.strokeStyle = hexRgba(c0, 0.92);
-    sctx.lineWidth = 1.5;
+    sctx.strokeStyle = hexRgba(c1, 0.32);
+    sctx.lineWidth = 3.6;
     sctx.stroke();
     sctx.restore();
 
+    /* composite */
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    // ray-trace chromatic micro-shift
-    ctx.globalAlpha = 0.55;
-    ctx.drawImage(this.scopeCv, 0.6, 0, w, h);
-    ctx.globalAlpha = 0.55;
-    ctx.drawImage(this.scopeCv, -0.6, 0, w, h);
-    ctx.globalAlpha = 1;
-    ctx.drawImage(this.scopeCv, 0, 0, w, h);
+    ctx.translate(cx, cy);
+    ctx.rotate(this.t * 0.08);
+    ctx.drawImage(this.scopeCv, -w / 2, -h / 2, w, h);
     ctx.restore();
 
+    /* heart core */
+    const heartR = minDim * 0.012 * (1 + this.beat * 2 + this.sm.bass * 0.5);
     ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     ctx.translate(cx, cy);
-    ctx.rotate(this.t * 0.1);
-    const sprite = this._dot(this._color(2));
-    const sr = 2.5 + this.sm.bass * 6;
-    for (let i = 0; i < N; i += 18) {
-      ctx.globalAlpha = 0.3 + this.beat * 0.4;
-      ctx.drawImage(sprite, pts[i * 2] - sr, pts[i * 2 + 1] - sr, sr * 2, sr * 2);
-    }
-    ctx.globalAlpha = 1;
-    const cr = minDim * 0.012 * (1 + this.beat * 2 + this.sm.bass * 0.6);
-    ctx.drawImage(this._dot(c0), -cr, -cr, cr * 2, cr * 2);
+    ctx.rotate(this.t * 0.08);
+    ctx.drawImage(this._dot(c0), -heartR, -heartR, heartR * 2, heartR * 2);
     ctx.restore();
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ---------------- SPECTROGRAM WATERFALL ---------------- */
+  /* ---------------- EMBER FIELD PARTICLES ---------------- */
+
+  _particles(dt, dt60) {
+    const { ctx, w, h } = this;
+    const cx = w / 2, cy = h * 0.5;
+    const cap = this.quality === 'low' ? 120 : 240;
+
+    const rate = (12 + this.sm.level * 160 * this.sensitivity * 0.5) + (this.beat > 0.6 ? 260 : 0);
+    this._spawnAcc += rate * dt;
+    let spawn = Math.floor(this._spawnAcc);
+    this._spawnAcc -= spawn;
+
+    for (let i = 0; i < spawn && this.particles.length < cap; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const sp = (0.4 + Math.random() * 1.3 + this.sm.bass * 4.5) * this.sensitivity;
+      this.particles.push({
+        x: cx + (Math.random() - 0.5) * 40,
+        y: cy + (Math.random() - 0.5) * 40,
+        vx: Math.cos(ang) * sp,
+        vy: Math.sin(ang) * sp - 0.45,
+        r: 0.8 + Math.random() * 2.6,
+        c: Math.floor(Math.random() * this.theme.colors.length),
+        life: 1,
+        decay: 0.005 + Math.random() * 0.011,
+      });
+    }
+
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx * dt60;
+      p.y += p.vy * dt60;
+      p.vx *= Math.pow(0.985, dt60);
+      p.vy = p.vy * Math.pow(0.985, dt60) - 0.014 * dt60;
+      p.life -= p.decay * dt60;
+      if (p.life <= 0 || p.x < -20 || p.x > w + 20 || p.y < -20 || p.y > h + 20) {
+        this.particles.splice(i, 1);
+        continue;
+      }
+      const sprite = this._dot(this._color(p.c));
+      const r = p.r * 5;
+      ctx.globalAlpha = Math.max(0, 0.66 * p.life);
+      ctx.drawImage(sprite, p.x - r, p.y - r, r * 2, r * 2);
+    }
+    ctx.globalAlpha = 1;
+
+    /* inter-particle lines via spatial grid */
+    if (this.quality !== 'low') {
+      const lineAlpha = 0.1 + this.sm.level * 0.22;
+      if (lineAlpha > 0.12) {
+        ctx.lineWidth = 0.7;
+        const pts = this.particles;
+        const cell = 85;
+        const cols = Math.ceil(w / cell);
+        const grid = new Map();
+        for (let i = 0; i < pts.length; i++) {
+          const k = ((pts[i].x / cell) | 0) + ((pts[i].y / cell) | 0) * cols;
+          let bucket = grid.get(k);
+          if (!bucket) grid.set(k, (bucket = []));
+          bucket.push(i);
+        }
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i];
+          const cx0 = (a.x / cell) | 0, cy0 = (a.y / cell) | 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const bucket = grid.get((cx0 + dx) + (cy0 + dy) * cols);
+              if (!bucket) continue;
+              for (const j of bucket) {
+                if (j <= i) continue;
+                const b = pts[j];
+                const ddx = a.x - b.x;
+                if (ddx > 85 || ddx < -85) continue;
+                const ddy = a.y - b.y;
+                if (ddy > 85 || ddy < -85) continue;
+                const d2 = ddx * ddx + ddy * ddy;
+                if (d2 < 7225) {
+                  ctx.strokeStyle = hexRgba(this._color(a.c), lineAlpha * (1 - d2 / 7225) * a.life * b.life);
+                  ctx.beginPath();
+                  ctx.moveTo(a.x, a.y);
+                  ctx.lineTo(b.x, b.y);
+                  ctx.stroke();
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  /* ---------------- CRYSTAL MIRROR KALEIDOSCOPE ---------------- */
+
+  _kaleido(freq, dt) {
+    const { ctx, w, h } = this;
+    const cx = w / 2, cy = h / 2;
+    const minDim = Math.min(w, h);
+    const slices = this.quality === 'low' ? 6 : 10;
+    const span = (Math.PI * 2) / slices;
+    const rot = this.t * (0.12 + this.sm.level * 1.1) + this.beat * 0.4;
+    const burst = 1 + this.beat * 0.30;
+    const inner = minDim * 0.07 + this.sm.bass * minDim * 0.09;
+    const maxR = minDim * 0.4 * (0.75 + this.sensitivity * 0.35) * burst;
+    const P = this.quality === 'low' ? 28 : 56;
+    void dt;
+
+    ctx.globalCompositeOperation = 'lighter';
+    const bloomR = minDim * 0.09 * (1 + this.sm.bass * 1.2 + this.beat * 0.6);
+    ctx.globalAlpha = 0.85;
+    ctx.drawImage(this._dot(this._color(0)), cx - bloomR, cy - bloomR, bloomR * 2, bloomR * 2);
+    ctx.globalAlpha = 1;
+
+    for (let s = 0; s < slices; s++) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(s * span + rot);
+      const c = this._color(s);
+
+      const pts = [];
+      for (let i = 0; i <= P; i++) {
+        const v = logSample(freq, i / P);
+        const ang = (i / P) * span * 0.94;
+        const r = inner + v * maxR * this.sensitivity * 0.85 + this.beat * minDim * 0.02;
+        pts.push([Math.cos(ang) * r, Math.sin(ang) * r]);
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(pts[0][0], pts[0][1]);
+      for (const [px, py] of pts) ctx.lineTo(px, py);
+      ctx.closePath();
+      const fg = ctx.createRadialGradient(0, 0, inner, 0, 0, inner + maxR);
+      fg.addColorStop(0, hexRgba(c, 0.04));
+      fg.addColorStop(1, hexRgba(c, 0.18));
+      ctx.fillStyle = fg;
+      ctx.fill();
+
+      ctx.beginPath();
+      for (let i = 0; i < pts.length; i++) {
+        if (i === 0) ctx.moveTo(pts[i][0], pts[i][1]);
+        else ctx.lineTo(pts[i][0], pts[i][1]);
+      }
+      ctx.strokeStyle = hexRgba(c, 0.85);
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+
+      if (this.sm.bass > 0.5) {
+        ctx.strokeStyle = hexRgba(this._color(2), 0.4 + this.sm.bass * 0.3);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(pts[Math.floor(P / 2)][0], pts[Math.floor(P / 2)][1]);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ---------------- MATRIX WATERFALL SPECTROGRAM ---------------- */
 
   _buildSpectroLut() {
     const stops = [[5, 7, 13]];
@@ -821,7 +982,6 @@ export class Renderer {
       const img = this.specCtx.createImageData(colW, H);
       const d = img.data;
       for (let y = 0; y < H; y++) {
-        /* bottom = low freq, log-ish mapping up the column */
         const t = 1 - y / H;
         const bin = Math.min(
           freq.length - 1,
@@ -843,168 +1003,26 @@ export class Renderer {
     }
 
     ctx.drawImage(this.specCv, 0, 0, w, h);
-    ctx.fillStyle = hexRgba(this._color(0), 0.3);
+
+    /* scanline sweep */
+    const scanX = w - ((this.t * 140) % (w + 80));
+    ctx.globalCompositeOperation = 'lighter';
+    const beam = ctx.createLinearGradient(scanX - 30, 0, scanX, 0);
+    beam.addColorStop(0, 'rgba(0,0,0,0)');
+    beam.addColorStop(1, hexRgba(this._color(0), 0.22));
+    ctx.fillStyle = beam;
+    ctx.fillRect(scanX - 30, 0, 30, h);
+    ctx.globalCompositeOperation = 'source-over';
+
+    ctx.fillStyle = hexRgba(this._color(0), 0.5);
     ctx.fillRect(w - colW - 1, 0, 1, h);
   }
 
-  /* ---------------- PARTICLE FIELD ---------------- */
-
-  _particles(dt, dt60) {
-    const { ctx, w, h } = this;
-    const cx = w / 2;
-    const cy = h * 0.5;
-    const cap = this.quality === 'low' ? 110 : 220;
-
-    const rate = (14 + this.sm.level * 150 * this.sensitivity * 0.5) + (this.beat > 0.6 ? 240 : 0);
-    this._spawnAcc += rate * dt;
-    let spawn = Math.floor(this._spawnAcc);
-    this._spawnAcc -= spawn;
-
-    for (let i = 0; i < spawn && this.particles.length < cap; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const sp = (0.4 + Math.random() * 1.2 + this.sm.bass * 4.5) * this.sensitivity;
-      this.particles.push({
-        x: cx + (Math.random() - 0.5) * 40,
-        y: cy + (Math.random() - 0.5) * 40,
-        vx: Math.cos(ang) * sp,
-        vy: Math.sin(ang) * sp - 0.3,
-        r: 0.8 + Math.random() * 2.4,
-        c: Math.floor(Math.random() * this.theme.colors.length),
-        life: 1,
-        decay: 0.006 + Math.random() * 0.012,
-      });
-    }
-
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.x += p.vx * dt60;
-      p.y += p.vy * dt60;
-      p.vx *= Math.pow(0.985, dt60);
-      p.vy = p.vy * Math.pow(0.985, dt60) - 0.012 * dt60;
-      p.life -= p.decay * dt60;
-      if (p.life <= 0 || p.x < -20 || p.x > w + 20 || p.y < -20 || p.y > h + 20) {
-        this.particles.splice(i, 1);
-        continue;
-      }
-      const sprite = this._dot(this._color(p.c));
-      const r = p.r * 5;
-      ctx.globalAlpha = Math.max(0, 0.62 * p.life);
-      ctx.drawImage(sprite, p.x - r, p.y - r, r * 2, r * 2);
-    }
-    ctx.globalAlpha = 1;
-
-    if (this.quality !== 'low') {
-      const lineAlpha = (0.1 + this.sm.level * 0.22) * (0.7 + this.colorPop * 0.3);
-      if (lineAlpha > 0.12) {
-        ctx.lineWidth = 0.7;
-        const pts = this.particles;
-        // spatial grid: 85px cells to cull far pairs
-        const cell = 85;
-        const cols = Math.ceil(w / cell);
-        const grid = new Map();
-        for (let i = 0; i < pts.length; i++) {
-          const k = ((pts[i].x / cell) | 0) + ((pts[i].y / cell) | 0) * cols;
-          let bucket = grid.get(k);
-          if (!bucket) grid.set(k, (bucket = []));
-          bucket.push(i);
-        }
-        const neigh = [-1, 0, 1];
-        for (let i = 0; i < pts.length; i++) {
-          const a = pts[i];
-          const cx = (a.x / cell) | 0;
-          const cy = (a.y / cell) | 0;
-          for (const dy of neigh) {
-            for (const dx of neigh) {
-              const nk = (cx + dx) + (cy + dy) * cols;
-              const bucket = grid.get(nk);
-              if (!bucket) continue;
-              for (const j of bucket) {
-                if (j <= i) continue;
-                const b = pts[j];
-                const dx2 = a.x - b.x;
-                if (dx2 > 85 || dx2 < -85) continue;
-                const dy2 = a.y - b.y;
-                if (dy2 > 85 || dy2 < -85) continue;
-                const d2 = dx2 * dx2 + dy2 * dy2;
-                if (d2 < 7225) {
-                  ctx.strokeStyle = hexRgba(this._color(a.c), lineAlpha * (1 - d2 / 7225) * a.life * b.life);
-                  ctx.beginPath();
-                  ctx.moveTo(a.x, a.y);
-                  ctx.lineTo(b.x, b.y);
-                  ctx.stroke();
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    ctx.globalCompositeOperation = 'source-over';
-  }
-
-  /* ---------------- KALEIDOSCOPE ---------------- */
-
-  _kaleido(freq, dt) {
-    const { ctx, w, h } = this;
-    const cx = w / 2;
-    const cy = h / 2;
-    const minDim = Math.min(w, h);
-    const slices = this.quality === 'low' ? 6 : 10;
-    const span = (Math.PI * 2) / slices;
-    const rot = this.t * (0.12 + this.sm.level * 1.1) + this.beat * 0.4;
-    const inner = minDim * 0.07 + this.sm.bass * minDim * 0.09;
-    /* petals burst outward on the beat */
-    const burst = 1 + this.beat * 0.30;
-    const maxR = minDim * 0.4 * (0.75 + this.sensitivity * 0.35) * burst;
-    const P = this.quality === 'low' ? 28 : 56;
-    void dt;
-
-    ctx.globalCompositeOperation = 'lighter';
-    for (let s = 0; s < slices; s++) {
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(s * span + rot);
-      const c = this._color(s);
-
-      const pts = [];
-      for (let i = 0; i <= P; i++) {
-        const v = logSample(freq, i / P);
-        const ang = (i / P) * span * 0.94;
-        const r = inner + v * maxR * this.sensitivity * 0.85 + this.beat * minDim * 0.02;
-        pts.push([Math.cos(ang) * r, Math.sin(ang) * r]);
-      }
-
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(pts[0][0], pts[0][1]);
-      for (const [px, py] of pts) ctx.lineTo(px, py);
-      ctx.closePath();
-      const fg = ctx.createRadialGradient(0, 0, inner, 0, 0, inner + maxR);
-      fg.addColorStop(0, hexRgba(c, 0.02));
-      fg.addColorStop(1, hexRgba(c, 0.14));
-      ctx.fillStyle = fg;
-      ctx.fill();
-
-      ctx.beginPath();
-      for (let i = 0; i < pts.length; i++) {
-        if (i === 0) ctx.moveTo(pts[i][0], pts[i][1]);
-        else ctx.lineTo(pts[i][0], pts[i][1]);
-      }
-      ctx.strokeStyle = hexRgba(c, 0.8);
-      ctx.lineWidth = 1.6;
-      ctx.stroke();
-      ctx.restore();
-    }
-    ctx.globalCompositeOperation = 'source-over';
-  }
-
-  /* ---------------- RADIAL TUNNEL ---------------- */
+  /* ---------------- HYPERSPACE TUNNEL ---------------- */
 
   _tunnel(freq) {
     const { ctx, w, h } = this;
-    const cx = w / 2;
-    const cy = h / 2;
+    const cx = w / 2, cy = h / 2;
     const minDim = Math.min(w, h);
     const rings = this.quality === 'low' ? 16 : 26;
     const maxR = minDim * 0.46;
@@ -1013,52 +1031,56 @@ export class Renderer {
 
     ctx.globalCompositeOperation = 'lighter';
 
-    const glowR = maxR * 0.18 * (1 + this.sm.bass * 1.2);
-    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
-    cg.addColorStop(0, hexRgba(this._color(0), 0.14));
-    cg.addColorStop(1, hexRgba(this._color(0), 0));
-    ctx.fillStyle = cg;
-    ctx.beginPath();
-    ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
-    ctx.fill();
+    const glowR = maxR * 0.16 * (1 + this.sm.bass * 1.3 + this.beat * 0.4);
+    ctx.globalAlpha = 0.95;
+    ctx.drawImage(this._dot(this._color(0)), cx - glowR, cy - glowR, glowR * 2, glowR * 2);
+    ctx.globalAlpha = 1;
 
+    const SEG = this.quality === 'low' ? 28 : 44;
     for (let i = 0; i < rings; i++) {
       const baseR = maxR * Math.pow((i + 1) / rings, 1.15);
       const pulse = this.history[this.history.length - 1 - i] * maxR * 0.3 * this.sensitivity;
-      const alpha = 0.85 - (i / rings) * 0.6;
+      const alpha = 0.8 - (i / rings) * 0.62;
       const c = this._color(Math.floor(i / 2.5) + Math.floor(this.t * 0.06));
       ctx.strokeStyle = hexRgba(c, alpha);
+      const tilt = Math.sin(i * 0.9 + this.t * 0.9) * 0.05;
       ctx.lineWidth = Math.max(0.6, 2.4 - (i / rings) * 1.6);
-      const SEG = this.quality === 'low' ? 28 : 44;
       ctx.beginPath();
       for (let s = 0; s <= SEG; s++) {
         const ang = (s / SEG) * Math.PI * 2;
         let wob = 0;
-        if (freq) wob = (logSample(freq, (s / SEG + i * 0.11) % 1) - 0.5) * baseR * 0.10 * (0.4 + this.sm.level) * this.sensitivity;
+        if (freq) wob = (logSample(freq, (s / SEG + i * 0.11) % 1) - 0.5) * baseR * 0.1 * (0.4 + this.sm.level) * this.sensitivity;
         const r = baseR + pulse + wob;
-        const x = cx + Math.cos(ang) * r;
-        const y = cy + Math.sin(ang) * r;
+        const x = cx + Math.cos(ang) * r * (1 + tilt);
+        const y = cy + Math.sin(ang) * r * (1 - tilt);
         if (s === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
       ctx.closePath();
       ctx.stroke();
     }
-    // ray-trace vignette for depth
-    const vig = ctx.createRadialGradient(cx, cy, maxR * 0.7, cx, cy, maxR * 1.25);
-    vig.addColorStop(0, 'rgba(0,0,0,0)');
-    vig.addColorStop(1, 'rgba(0,0,0,0.32)');
-    ctx.fillStyle = vig;
-    ctx.fillRect(0, 0, w, h);
+
+    /* vortex rays */
+    const rays = 9;
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < rays; i++) {
+      const ang = this.t * (0.25 + i * 0.02) + (i / rays) * Math.PI * 2;
+      const r0 = maxR * 0.2, r1 = maxR * 0.85;
+      ctx.strokeStyle = hexRgba(this._color(i % this.theme.colors.length), 0.06 + this.sm.level * 0.08);
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
+      ctx.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+      ctx.stroke();
+    }
+
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ---------------- PLASMA ---------------- */
+  /* ---------------- AURORA PLASMA ---------------- */
 
   _plasma(freq, dt) {
     const { ctx, w, h } = this;
-    const cx = w / 2;
-    const cy = h / 2;
+    const cx = w / 2, cy = h / 2;
     const minDim = Math.min(w, h);
     const rings = this.quality === 'low' ? 2 : 3;
     const P = this.quality === 'low' ? 44 : 80;
@@ -1072,8 +1094,7 @@ export class Renderer {
       const trail = [];
       for (let i = 0; i < P; i++) {
         const ang = (i / P) * Math.PI * 2 + spin;
-        const idx = logFreqIndex((i * 7 + Math.floor(this.t * 3) * 3) % P, P, freq.length);
-        const v = freq[idx] / 255;
+        const v = logSample(freq, ((i * 7 + Math.floor(this.t * 3) * 3) % P) / P);
         const mod =
           Math.sin(ang * (2 + r * 2) - this.t * 1.4) * this.sm.mid * 0.4 +
           Math.cos(ang * 3 + this.t * 1.1) * this.sm.high * 0.5;
@@ -1085,17 +1106,17 @@ export class Renderer {
         ctx.drawImage(sprite, x - s, y - s, s * 2, s * 2);
         trail.push([x, y]);
       }
-      // ring trail
       if (trail.length > 4) {
         ctx.beginPath();
         ctx.moveTo(trail[0][0], trail[0][1]);
         for (let i = 1; i < trail.length; i += 2) ctx.lineTo(trail[i][0], trail[i][1]);
-        ctx.strokeStyle = hexRgba(this._color(r), 0.10 + this.sm.level * 0.10);
+        ctx.strokeStyle = hexRgba(this._color(r), 0.12 + this.sm.level * 0.12);
         ctx.lineWidth = 1.2;
         ctx.stroke();
       }
     }
-    /* center burst star-cross on beat */
+
+    /* beat star-cross + center halo */
     if (this.beat > 0.25) {
       const br = minDim * 0.5 * this.beat;
       ctx.lineWidth = 1.6;
@@ -1107,15 +1128,13 @@ export class Renderer {
       ctx.moveTo(cx + br * 0.62, cy - br * 0.62); ctx.lineTo(cx - br * 0.62, cy + br * 0.62);
       ctx.stroke();
     }
-    /* warm center halo */
     const haloR = minDim * 0.05 * (1 + this.sm.bass * 1.4 + this.beat * 0.8);
     ctx.globalAlpha = 0.8;
     ctx.drawImage(this._dot(this._color(0)), cx - haloR, cy - haloR, haloR * 2, haloR * 2);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
-
-  /* ---------------- AURORA TERRAIN ---------------- */
+  /* ---------------- SUNSET TERRAIN ---------------- */
 
   _terrain(freq, dt) {
     const { ctx, w, h } = this;
@@ -1124,7 +1143,6 @@ export class Renderer {
     const ROWS = this.quality === 'low' ? 16 : 26;
     const depth = h - horizon;
 
-    /* sample spectrum rows on a fixed clock */
     this._terrainAcc += dt;
     const SAMPLE = 0.055;
     while (this._terrainAcc >= SAMPLE) {
@@ -1138,14 +1156,13 @@ export class Renderer {
     }
     while (this.terrainRows.length < ROWS) this.terrainRows.push(new Float32Array(COLS));
 
-    /* stars */
     const starSig = `${w}x${h}|terrain`;
     if (this._starSig !== starSig || !this.stars.length) {
       this._starSig = starSig;
-      this.stars = Array.from({ length: 54 }, () => ({
+      this.stars = Array.from({ length: 60 }, () => ({
         x: Math.random() * w,
         y: Math.random() * horizon * 0.85,
-        r: 0.5 + Math.random() * 1.1,
+        r: 0.5 + Math.random() * 1.2,
         ph: Math.random() * Math.PI * 2,
       }));
     }
@@ -1157,8 +1174,6 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
-    /* aurora sky washes */
-    ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 2; i++) {
       const ax = w * (0.25 + i * 0.35) + Math.sin(this.t * 0.14 + i * 2.2) * w * 0.14;
       const ah = depth * (0.24 + i * 0.1);
@@ -1169,13 +1184,11 @@ export class Renderer {
       ctx.fillRect(ax, horizon - ah, w * 0.34, ah);
     }
 
-    /* shooting star on beat */
-    if (this.beat > 0.8) {
-      if (!this._meteor) this._meteor = { x: w * 0.12, y: horizon * 0.18, spd: 14, life: 1 };
+    if (this.beat > 0.7) {
+      if (!this._meteor) this._meteor = { x: w * 0.12, y: horizon * 0.18 };
       const m = this._meteor;
-      m.x += m.spd * (this.beat * 4 + 12) * 0.05;
-      m.y += m.spd * 0.028;
-      const tailR = 26;
+      m.x += 9; m.y += 2.2;
+      const tailR = 30;
       const streak = ctx.createLinearGradient(m.x - tailR, m.y - tailR * 0.2, m.x, m.y);
       streak.addColorStop(0, hexRgba(this._color(1), 0));
       streak.addColorStop(1, hexRgba(this._color(1), 0.9));
@@ -1189,21 +1202,17 @@ export class Renderer {
       this._meteor = null;
     }
 
-    /* sun */
     const sunR = Math.min(w, h) * (0.11 + this.sm.bass * 0.03 + this.beat * 0.012);
     const sunY = horizon - Math.min(w, h) * 0.16;
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 0.9;
     ctx.drawImage(this._dot(this._color(1)), w / 2 - sunR, sunY - sunR, sunR * 2, sunR * 2);
     ctx.globalAlpha = 1;
-
-    /* sky haze */
     const sky = ctx.createLinearGradient(0, horizon - depth * 0.4, 0, horizon);
     sky.addColorStop(0, hexRgba(this._color(0), 0));
-    sky.addColorStop(1, hexRgba(this._color(0), 0.07 + this.beat * 0.07));
+    sky.addColorStop(1, hexRgba(this._color(0), 0.08 + this.beat * 0.08));
     ctx.fillStyle = sky;
     ctx.fillRect(0, horizon - depth * 0.4, w, depth * 0.4);
 
-    /* grid */
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, horizon, w, depth);
@@ -1215,9 +1224,9 @@ export class Renderer {
     const ampBase = depth * 0.34;
     for (let r = ROWS - 1; r >= 0; r--) {
       const row = this.terrainRows[r];
-      const u = (r + 1) / ROWS;               /* 0 = nearest, 1 = farthest */
-      const persp = 1 - u * u;                 /* near rows spread wide     */
-      const y = depth * u * u;                 /* perspective bunching      */
+      const u = (r + 1) / ROWS;
+      const persp = 1 - u * u;
+      const y = depth * u * u;
       const spread = 0.22 + 1.9 * persp * persp;
       const amp = ampBase * persp * (0.5 + this.sm.level * 1.1);
 
@@ -1230,17 +1239,16 @@ export class Renderer {
         else ctx.lineTo(x, yy);
       }
       const c = this._color(r % this.theme.colors.length);
-      ctx.strokeStyle = hexRgba(c, 0.65 * persp);
+      ctx.strokeStyle = hexRgba(c, 0.7 * persp);
       ctx.stroke();
 
-      /* fill ribbon toward the previous (nearer) row */
       if (r > 0) {
         const uPrev = r / ROWS;
         const yPrev = depth * uPrev * uPrev;
         ctx.lineTo(((COLS - 1) / COLS - 0.5) * w * (0.22 + 1.9 * Math.pow(1 - uPrev, 2)), yPrev + 2);
         ctx.lineTo((-0.5) * w * (0.22 + 1.9 * Math.pow(1 - uPrev, 2)), yPrev + 2);
         ctx.closePath();
-        ctx.fillStyle = hexRgba(c, 0.05 * persp);
+        ctx.fillStyle = hexRgba(c, 0.06 * persp);
         ctx.fill();
       }
     }
@@ -1248,7 +1256,7 @@ export class Renderer {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ---------------- NEON CITY ---------------- */
+  /* ---------------- NEON CITY DUSK ---------------- */
 
   _city(freq, dt60) {
     const { ctx, w, h } = this;
@@ -1258,7 +1266,6 @@ export class Renderer {
     const bw = w / N;
     const colors = this.theme.colors;
 
-    /* stars */
     const starSig = `${w}x${h}|city`;
     if (this._starSig !== starSig || !this.stars.length) {
       this._starSig = starSig;
@@ -1277,7 +1284,7 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
-    /* aurora ribbon */
+    /* aurora ribbons */
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineWidth = 2;
     for (let i = 0; i < 2; i++) {
@@ -1292,7 +1299,6 @@ export class Renderer {
     }
     ctx.globalCompositeOperation = 'source-over';
 
-    /* column state */
     if (this.cityCols.length !== N) {
       this.cityCols = Array.from({ length: N }, (_, i) => ({
         v: 0,
@@ -1314,7 +1320,7 @@ export class Renderer {
       c.peak = Math.max(c.peak * fallPeak, c.v);
     }
 
-    /* back-layer silhouettes for parallax depth */
+    /* back-layer silhouettes */
     ctx.fillStyle = 'rgba(8, 11, 20, 0.85)';
     for (let i = 0; i < N; i += 2) {
       const src = this.cityCols[(i * 7 + 3) % N];
@@ -1323,16 +1329,9 @@ export class Renderer {
       ctx.fillRect(x, baseline - bh, bw * 0.62, bh);
     }
 
-    /* ray-trace building contact shadows */
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    for (let i = 0; i < N; i++) {
-      const bodyW = w / N * 0.68;
-      const x = i * (w / N) + (w / N - bodyW) / 2;
-      ctx.fillRect(x + 3, baseline - 2, bodyW, 6);
-    }
     /* ground glow */
     const gGrad = ctx.createLinearGradient(0, baseline, 0, h);
-    gGrad.addColorStop(0, hexRgba(this._color(0), 0.12));
+    gGrad.addColorStop(0, hexRgba(this._color(0), 0.14));
     gGrad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = gGrad;
     ctx.fillRect(0, baseline, w, h - baseline);
@@ -1350,13 +1349,11 @@ export class Renderer {
       ctx.fillStyle = '#070a12';
       ctx.fillRect(x, y, bodyW, bh);
 
-      /* reflection strip under the skyline */
       ctx.globalAlpha = 0.1;
       ctx.fillStyle = c;
       ctx.fillRect(x, baseline + 2, bodyW, Math.min(bh * 0.4, maxH * 0.3));
       ctx.globalAlpha = 1;
 
-      /* colored cap + peak-hold tick */
       ctx.fillStyle = hexRgba(c, 0.9);
       ctx.fillRect(x, y, bodyW, 2);
       if (col.peak > 0.04) {
@@ -1366,7 +1363,6 @@ export class Renderer {
         ctx.globalAlpha = 1;
       }
 
-      /* windows — deterministic grid with flicker */
       const wxMax = Math.max(1, Math.floor((bodyW - 5) / 5));
       const rows = Math.min(14, Math.floor((bh - 10) / 10));
       for (let wy = 0; wy < rows; wy++) {
@@ -1382,32 +1378,29 @@ export class Renderer {
         }
       }
 
-      tall.push({ x: x + bodyW / 2, y: y, bh });
+      tall.push({ x: x + bodyW / 2, y: y });
     }
 
-    /* rooftop beacons on the three tallest buildings + light shafts */
+    /* beacon shafts */
     tall.sort((a, b) => b.y - a.y);
     const beaconC = this._color(0);
     ctx.globalCompositeOperation = 'lighter';
     for (let k = 0; k < Math.min(3, tall.length); k++) {
-      const t = tall[k];
+      const tb = tall[k];
       const pulse = Math.max(0, Math.sin(this.t * 2.4 + k * 2.1)) ** 2;
       const r = 2.5 + this.beat * 2;
-      // shaft
-      const sh = ctx.createLinearGradient(0, t.y, 0, h);
+      const sh = ctx.createLinearGradient(0, tb.y, 0, h);
       sh.addColorStop(0, hexRgba(beaconC, 0.05 + pulse * 0.10));
       sh.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = sh;
-      ctx.fillRect(t.x - 1.2, t.y, 2.4, h - t.y);
-      // beacon dot
+      ctx.fillRect(tb.x - 1.2, tb.y, 2.4, h - tb.y);
       ctx.globalAlpha = 0.25 + 0.75 * pulse;
-      ctx.drawImage(this._dot(beaconC), t.x - r, t.y - r - 3, r * 2, r * 2);
+      ctx.drawImage(this._dot(beaconC), tb.x - r, tb.y - r - 3, r * 2, r * 2);
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
-
-  /* ---------------- NEBULA ---------------- */
+  /* ---------------- NEBULA DEEP FIELD ---------------- */
 
   _nebula() {
     const { ctx, w, h } = this;
@@ -1477,8 +1470,7 @@ export class Renderer {
 
     ctx.globalCompositeOperation = 'lighter';
 
-    /* dust motes orbiting the core */
-    ctx.globalCompositeOperation = 'lighter';
+    /* dust motes */
     for (let i = 0; i < 16; i++) {
       const ang = this.t * (0.05 + i * 0.007) * (i % 2 ? 1 : -1) + i * 1.7;
       const r = inner + ((i * 37) % 96) / 96 * (outer * 0.82);
@@ -1490,7 +1482,6 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
-    /* galactic core */
     const coreR = minDim * (0.07 + this.sm.bass * 0.09 + this.beat * 0.02);
     ctx.globalAlpha = 0.9;
     ctx.drawImage(this._dot(this._color(1)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
@@ -1508,7 +1499,6 @@ export class Renderer {
         return { x: cx + Math.cos(theta) * r, y: cy + Math.sin(theta) * r, theta, tt };
       };
 
-      /* continuous arm stroke — the structural spine of the galaxy */
       ctx.beginPath();
       for (let i = 0; i <= PTS; i++) {
         const p = pt(i);
@@ -1519,7 +1509,6 @@ export class Renderer {
       ctx.lineWidth = Math.max(1.2, minDim * 0.007 * (1 + this.sm.bass));
       ctx.stroke();
 
-      /* spectrum-driven star clusters along the arm */
       for (let i = 0; i < PTS; i++) {
         const p = pt(i);
         const idx = logFreqIndex((i * 5 + a * 11) % P, P, freq.length);
@@ -1566,18 +1555,6 @@ export class Renderer {
       if (s.life <= 0 || s.dist > minDim * 0.48) this.orbSat.splice(i, 1);
     }
 
-    const P = this.quality === 'low' ? 48 : 64;
-    const pts = [];
-    for (let i = 0; i < P; i++) {
-      const u = i / P;
-      const ang = u * Math.PI * 2;
-      const rip = freq ? logSample(freq, u) : 0;
-      const harm1 = Math.sin(ang * 3 + this.t * 1.4) * this.sm.mid * 0.10;
-      const harm2 = Math.cos(ang * 5 - this.t * 2.2) * this.sm.high * 0.08;
-      const r = baseR * (1 + rip * 0.42 * this.sensitivity + harm1 + harm2 + this.beat * 0.08);
-      pts.push([cx + Math.cos(ang) * r, cy + Math.sin(ang) * r]);
-    }
-
     ctx.globalCompositeOperation = 'lighter';
     /* beat shockwave rings */
     if (this.beat > 0.55) {
@@ -1597,6 +1574,19 @@ export class Renderer {
         ctx.stroke();
       }
     }
+
+    const P = this.quality === 'low' ? 48 : 64;
+    const pts = [];
+    for (let i = 0; i < P; i++) {
+      const u = i / P;
+      const ang = u * Math.PI * 2;
+      const rip = freq ? logSample(freq, u) : 0;
+      const harm1 = Math.sin(ang * 3 + this.t * 1.4) * this.sm.mid * 0.10;
+      const harm2 = Math.cos(ang * 5 - this.t * 2.2) * this.sm.high * 0.08;
+      const r = baseR * (1 + rip * 0.42 * this.sensitivity + harm1 + harm2 + this.beat * 0.08);
+      pts.push([cx + Math.cos(ang) * r, cy + Math.sin(ang) * r]);
+    }
+
     const glowR = baseR * 1.55;
     const g = ctx.createRadialGradient(cx, cy, baseR * 0.3, cx, cy, glowR);
     g.addColorStop(0, hexRgba(this._color(0), 0.18 + this.beat * 0.12));
@@ -1651,24 +1641,14 @@ export class Renderer {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ---------------- FLUID METAL ---------------- */
+  /* ---------------- LIQUID METAL FLUID ---------------- */
+
   _fluid(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h / 2;
     const n = this.quality === 'low' ? 5 : 9;
     ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < n; i++) {
-      const ang = (i / n) * Math.PI * 2 + this.t * (0.18 + i * 0.02);
-      const rad = Math.min(w, h) * 0.22 * (0.7 + this.sm.bass * 0.6 + this.beat * 0.25);
-      const x = cx + Math.cos(ang) * rad * 0.7;
-      const y = cy + Math.sin(ang) * rad * 0.5;
-      const v = freq ? logSample(freq, i / n) : 0.5;
-      const r = rad * 0.55 * (0.6 + v * 0.9);
-      const c = this._color(i + Math.floor(this.t * 0.7));
-      ctx.globalAlpha = 0.42 + v * 0.35;
-      ctx.drawImage(this._dot(c), x - r, y - r, r * 2, r * 2);
-    }
-    /* ripples on beat */
+    /* beat ripples */
     if (this.beat > 0.55) {
       const rr = Math.min(w, h) * (0.3 + this.beat * 0.2);
       ctx.strokeStyle = hexRgba(this._color(0), this.beat * 0.4);
@@ -1681,8 +1661,17 @@ export class Renderer {
       ctx.arc(cx, cy, rr * 0.72, 0, Math.PI * 2);
       ctx.stroke();
     }
-
-    // central merge
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * Math.PI * 2 + this.t * (0.18 + i * 0.02);
+      const rad = Math.min(w, h) * 0.22 * (0.7 + this.sm.bass * 0.6 + this.beat * 0.25);
+      const x = cx + Math.cos(ang) * rad * 0.7;
+      const y = cy + Math.sin(ang) * rad * 0.5;
+      const v = freq ? logSample(freq, i / n) : 0.5;
+      const r = rad * 0.55 * (0.6 + v * 0.9);
+      const c = this._color(i + Math.floor(this.t * 0.7));
+      ctx.globalAlpha = 0.42 + v * 0.35;
+      ctx.drawImage(this._dot(c), x - r, y - r, r * 2, r * 2);
+    }
     const cr = Math.min(w, h) * 0.08 * (1 + this.sm.level * 0.6);
     ctx.globalAlpha = 0.85;
     ctx.drawImage(this._dot(this._color(0)), cx - cr, cy - cr, cr * 2, cr * 2);
@@ -1691,6 +1680,7 @@ export class Renderer {
   }
 
   /* ---------------- TENSOR GRID ---------------- */
+
   _tensor(freq) {
     const { ctx, w, h } = this;
     const cols = this.quality === 'low' ? 12 : 20;
@@ -1706,7 +1696,7 @@ export class Renderer {
         const v = freq ? logSample(freq, u) : 0;
         const off = Math.sin(u * 6 + this.t * 1.4) * v * 22 * this.sensitivity;
         const px = x * cw;
-        const py = y * rh + off * (1 - Math.abs(y - rows/2) / (rows/2));
+        const py = y * rh + off * (1 - Math.abs(y - rows / 2) / (rows / 2));
         if (x === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
       }
@@ -1717,7 +1707,7 @@ export class Renderer {
       for (let y = 0; y <= rows; y++) {
         const v = freq ? logSample(freq, y / rows) : 0;
         const off = Math.cos(y * 4 + this.t * 1.1) * v * 14;
-        const px = x * cw + off * (1 - Math.abs(x - cols/2) / (cols/2));
+        const px = x * cw + off * (1 - Math.abs(x - cols / 2) / (cols / 2));
         const py = y * rh;
         if (y === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
@@ -1734,7 +1724,7 @@ export class Renderer {
           const v = freq ? logSample(freq, u) : 0;
           const off = Math.sin(u * 6 + this.t * 1.4) * v * 22;
           const nx = gx * cw;
-          const ny = gy * rh + off * (1 - Math.abs(gy - rows/2) / (rows/2));
+          const ny = gy * rh + off * (1 - Math.abs(gy - rows / 2) / (rows / 2));
           ctx.globalAlpha = clamp(v * this.beat * 0.9, 0, 0.7);
           ctx.drawImage(this._dot(this._color((gx + gy) % this.theme.colors.length)), nx - nodeR, ny - nodeR, nodeR * 2, nodeR * 2);
         }
@@ -1745,12 +1735,12 @@ export class Renderer {
   }
 
   /* ---------------- PRISM RAY ---------------- */
+
   _prism(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h * 0.58;
     const sz = Math.min(w, h) * 0.22;
     ctx.globalCompositeOperation = 'lighter';
-    // prism triangle
     ctx.strokeStyle = hexRgba(this._color(1), 0.9);
     ctx.lineWidth = 1.6;
     ctx.beginPath();
@@ -1759,15 +1749,14 @@ export class Renderer {
     ctx.lineTo(cx + sz * 0.86, cy + sz * 0.5);
     ctx.closePath();
     ctx.stroke();
-    // refracted beams
     const beams = this.quality === 'low' ? 5 : 9;
     for (let i = 0; i < beams; i++) {
       const u = i / beams;
       const v = freq ? logSample(freq, u) : 0.5;
       const ang = -0.9 + u * 1.8 + this.beat * 0.15;
       const len = w * 0.7 * (0.5 + v * 0.7);
-      const x1 = cx + Math.cos(Math.PI/2 + ang) * sz * 0.6;
-      const y1 = cy + Math.sin(Math.PI/2 + ang) * sz * 0.6;
+      const x1 = cx + Math.cos(Math.PI / 2 + ang) * sz * 0.6;
+      const y1 = cy + Math.sin(Math.PI / 2 + ang) * sz * 0.6;
       const x2 = x1 + Math.cos(ang) * len;
       const y2 = y1 + Math.sin(ang) * len * 0.18;
       ctx.strokeStyle = hexRgba(this._color(i), 0.42 + v * 0.4);
@@ -1777,16 +1766,25 @@ export class Renderer {
       ctx.lineTo(x2, y2);
       ctx.stroke();
     }
+    /* glitter on beat */
+    if (this.beat > 0.5) {
+      ctx.fillStyle = hexRgba(this._color(2), this.beat * 0.7);
+      for (let i = 0; i < 8; i++) {
+        const gx = cx + (Math.sin(i * 91.7 + this.t * 3) * sz * 0.9);
+        const gy = cy + sz * 0.5 + this.beat * 7 + ((i % 3) * 6);
+        ctx.fillRect(gx, gy, 2, 2);
+      }
+    }
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ---------------- VOID CORE ---------------- */
+  /* ---------------- BLACK HOLE VOID ---------------- */
+
   _void(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h / 2;
     const base = Math.min(w, h) * 0.11 * (1 + this.sm.bass * 0.3);
     ctx.globalCompositeOperation = 'lighter';
-    // accretion disk
     const rings = this.quality === 'low' ? 22 : 36;
     for (let i = 0; i < rings; i++) {
       const t = i / rings;
@@ -1799,7 +1797,6 @@ export class Renderer {
       ctx.ellipse(cx, cy, r + wob, r * 0.38 + wob * 0.18, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
-    // core shadow
     ctx.globalCompositeOperation = 'source-over';
     const g = ctx.createRadialGradient(cx, cy, base * 0.7, cx, cy, base);
     g.addColorStop(0, 'rgba(0,0,0,1)');
@@ -1809,7 +1806,6 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(cx, cy, base, 0, Math.PI * 2);
     ctx.fill();
-    // photon ring
     ctx.strokeStyle = hexRgba(this._color(0), 0.85 + this.beat * 0.2);
     ctx.lineWidth = 1.8;
     ctx.beginPath();
@@ -1817,13 +1813,15 @@ export class Renderer {
     ctx.stroke();
   }
 
-  /* ---------------- BLOOM FIELD ---------------- */
+  /* ---------------- BLOOM FIELD MESH ---------------- */
+
   _bloomField(freq) {
     const { ctx, w, h } = this;
     const cols = this.quality === 'low' ? 10 : 16;
     const rows = this.quality === 'low' ? 6 : 9;
     const cw = w / cols;
     const rh = h / rows;
+
     /* mesh lines between neighbor blooms */
     if (this.quality !== 'low') {
       ctx.globalCompositeOperation = 'lighter';
@@ -1862,7 +1860,6 @@ export class Renderer {
 
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        // u/v kept for future spatial variation
         const idx = (y * cols + x) % 64;
         const amp = freq ? logSample(freq, (idx / 64)) : 0.5;
         const cx = x * cw + cw / 2 + Math.sin(this.t * 0.6 + idx) * 4;
@@ -1876,4 +1873,3 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 }
-
