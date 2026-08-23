@@ -1,5 +1,5 @@
 import { THEMES } from './themes.js';
-import { lerp, logFreqIndex, hexRgba, clamp } from './utils.js';
+import { lerp, logFreqIndex, logSample, hexRgba, clamp } from './utils.js';
 
 /**
  * Canvas2D renderer — delta-time driven, sprite-cached, bloom-composited.
@@ -37,6 +37,7 @@ export class Renderer {
     this.history = [];
     this.particles = [];
     this.peaks = [];
+    this.peakVels = [];
     this.idleDots = [];
     this.echo = null;
     this.barIndices = [];
@@ -48,8 +49,10 @@ export class Renderer {
     this._spawnAcc = 0;
     this.nebula = null;
 
-    /* vectorscope / spectrogram / city state */
-    this.scopePrev = null;
+    /* vectorscope / spectrogram / city / orb state */
+    this.scopeCv = null;
+    this.scopeCtx = null;
+    this.scopeSig = '';
     this.specCv = null;
     this.specCtx = null;
     this.specLut = null;
@@ -58,6 +61,7 @@ export class Renderer {
     this.cityCols = [];
     this.stars = [];
     this._starSig = '';
+    this.orbSat = [];
 
     /* caches */
     this._dotSprites = null;
@@ -89,9 +93,12 @@ export class Renderer {
     this.history = [];
     this.echo = null;
     this.terrainRows = [];
-    this.scopePrev = null;
     this.cityCols = [];
     this.specSig = '';
+    this.scopeSig = '';
+    this.scopeCv = null;
+    this.scopeCtx = null;
+    this.orbSat = [];
   }
   setTheme(t) {
     this.theme = t;
@@ -150,13 +157,10 @@ export class Renderer {
     const t = levels
       ? { bass: Math.min(1.2, levels.bass * (1 + this.bassFocus * 0.6)), mid: levels.mid, high: levels.high, level: levels.level }
       : { bass: 0, mid: 0, high: 0, level: 0 };
-    const prevBass = this.sm.bass;
     this.sm.bass = lerp(this.sm.bass, t.bass, k);
     this.sm.mid = lerp(this.sm.mid, t.mid, k);
     this.sm.high = lerp(this.sm.high, t.high, k);
     this.sm.level = lerp(this.sm.level, t.level, k);
-
-    if (this.sm.bass - prevBass > 0.18 && this.sm.bass > 0.45) this.beat = 1;
 
     // level history sampled on a fixed clock so tunnel/terrain speed is
     // refresh-rate independent
@@ -176,7 +180,12 @@ export class Renderer {
     const dt60 = dt * 60;
 
     this.t += dt;
-    this.beat *= Math.pow(0.86, dt60);
+    const tracked = levels?.beatPulse;
+    if (tracked != null) {
+      this.beat = Math.max(tracked, this.beat * Math.pow(0.86, dt60));
+    } else {
+      this.beat *= Math.pow(0.86, dt60);
+    }
     this._updateLevels(levels, dt);
     this._buildCache();
 
@@ -186,31 +195,46 @@ export class Renderer {
 
     if (idle) {
       this._idle(dt60);
+      this._bloom(this.beat);
       return;
     }
 
+    const punched = this.beat > 0.02;
+    if (punched) {
+      ctx.save();
+      const z = 1 + this.beat * 0.012;
+      ctx.translate(w / 2, h / 2);
+      ctx.scale(z, z);
+      ctx.translate(-w / 2, -h / 2);
+    }
+    this._scene(freq, wave, dt, dt60);
+    if (punched) ctx.restore();
+
+    if (this.beat > 0.45) this._beatFlash();
+    this._bloom(this.beat);
+  }
+
+  _scene(freq, wave, dt, dt60) {
     switch (this.mode) {
-      case 'bars': this._bars(freq, dt60); break;
+      case 'bars': this._bars(freq, dt60, dt); break;
       case 'waves': this._waves(wave, dt60); break;
       case 'scope': this._scope(wave, dt60); break;
       case 'particles': this._particles(dt, dt60); break;
       case 'kaleido': this._kaleido(freq, dt); break;
       case 'spectro': this._spectro(freq, dt); break;
-      case 'tunnel': this._tunnel(); break;
+      case 'tunnel': this._tunnel(freq); break;
       case 'plasma': this._plasma(freq, dt); break;
       case 'terrain': this._terrain(freq, dt); break;
       case 'city': this._city(freq, dt60); break;
       case 'nebula': this._nebula(); break;
       case 'spiral': this._spiral(freq); break;
+      case 'orb': this._orb(freq, dt60, dt); break;
     }
-
-    if (this.beat > 0.5) this._beatFlash();
-    this._bloom();
   }
 
   /* ---------------- bloom ---------------- */
 
-  _bloom() {
+  _bloom(punch = 0) {
     if (this.quality === 'low') return;
     const { ctx, w, h } = this;
     const gw = Math.max(2, Math.floor(w / 4));
@@ -231,16 +255,16 @@ export class Renderer {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.imageSmoothingEnabled = true;
-    ctx.globalAlpha = 0.38;
+    ctx.globalAlpha = clamp(0.36 + punch * 0.12, 0, 0.62);
     ctx.drawImage(this.glowB, -w * 0.02, -h * 0.02, w * 1.04, h * 1.04);
-    ctx.globalAlpha = 0.3;
+    ctx.globalAlpha = clamp(0.28 + punch * 0.10, 0, 0.52);
     ctx.drawImage(this.glowA, 0, 0, w, h);
     ctx.restore();
   }
 
   _beatFlash() {
     const { ctx, w, h } = this;
-    const a = (this.beat - 0.5) * 0.5 * 0.08;
+    const a = clamp((this.beat - 0.45) * 0.14, 0, 0.07);
     const g = ctx.createRadialGradient(w / 2, h * 0.45, 0, w / 2, h * 0.45, Math.max(w, h) * 0.75);
     g.addColorStop(0, 'rgba(255,255,255,0)');
     g.addColorStop(0.75, hexRgba(this._color(0), a));
@@ -293,20 +317,19 @@ export class Renderer {
 
   /* ---------------- SPECTRUM BARS ---------------- */
 
-  _bars(freq, dt60) {
+  _bars(freq, dt60, dt) {
     const { ctx, w, h } = this;
     const horizon = h * 0.65;
     const N = Math.min(96, Math.max(48, Math.round(w / (this.quality === 'low' ? 22 : 13))));
     const gap = Math.max(1.5, w / N / 5);
     const bw = (w - gap * (N - 1) - 32) / N;
 
-    if (this.barIndices.length !== N) {
-      this.barIndices = [];
-      for (let i = 0; i < N; i++) this.barIndices.push(logFreqIndex(i, N, freq.length));
+    if (this.peaks.length !== N) {
+      this.peaks = new Array(N).fill(0);
+      this.peakVels = new Array(N).fill(0);
     }
-    if (this.peaks.length !== N) this.peaks = new Array(N).fill(0);
+    if (!this.peakVels || this.peakVels.length !== N) this.peakVels = new Array(N).fill(0);
 
-    const peakDecay = Math.pow(0.985, dt60);
     const maxH = horizon - h * 0.06;
 
     const c0 = this._color(0);
@@ -325,11 +348,16 @@ export class Renderer {
     const colors = [];
     const amps = new Array(N);
     for (let i = 0; i < N; i++) {
-      const idx = this.barIndices[i];
-      const v = (freq[idx] / 255) * this.sensitivity;
+      const v = logSample(freq, i / N) * this.sensitivity;
       const weight = 1 + this.bassFocus * 2.2 * (1 - i / N);
       amps[i] = clamp(v * weight, 0.008, 1);
-      this.peaks[i] = Math.max(this.peaks[i] * peakDecay, amps[i]);
+      if (amps[i] >= this.peaks[i]) {
+        this.peaks[i] = amps[i];
+        this.peakVels[i] = 0;
+      } else {
+        this.peakVels[i] += 3.2 * dt;
+        this.peaks[i] = Math.max(amps[i], this.peaks[i] - this.peakVels[i] * dt);
+      }
       colors[i] = this._color(Math.floor((i / N) * this.theme.colors.length));
     }
 
@@ -364,12 +392,19 @@ export class Renderer {
     ctx.restore();
     ctx.globalAlpha = 1;
 
-    /* peak caps */
+    /* peak caps with gravity fall + glow dot */
     for (let i = 0; i < N; i++) {
       if (this.peaks[i] <= 0.03) continue;
+      const x = 16 + i * (bw + gap);
+      const y = horizon - this.peaks[i] * maxH - 2;
       ctx.fillStyle = colors[i];
       ctx.globalAlpha = 0.85;
-      ctx.fillRect(16 + i * (bw + gap), horizon - this.peaks[i] * maxH - 2, bw, 2);
+      ctx.fillRect(x, y, bw, 2);
+      if (this.quality !== 'low' && this.peaks[i] > 0.22) {
+        const r = bw * 0.7;
+        ctx.globalAlpha = 0.45;
+        ctx.drawImage(this._dot(colors[i]), x + bw / 2 - r, y - r + 1, r * 2, r * 2);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -381,27 +416,50 @@ export class Renderer {
     const midY = h * 0.5;
     const ampScale = h * 0.3 * (0.4 + this.sensitivity * 0.5);
 
-    const buildPath = (data, yBase, yScale, smoothing) => {
-      ctx.beginPath();
-      for (let x = 0; x <= w; x += 4) {
+    const samplePts = (data, yBase, yScale, mul) => {
+      const pts = [];
+      const step = 6;
+      for (let x = 0; x <= w; x += step) {
         const i = Math.min(data.length - 1, Math.floor((x / w) * data.length));
         const v = (data[i] - 128) / 128;
-        const y = yBase + v * yScale * smoothing;
-        if (x === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+        pts.push([x, yBase + v * yScale * mul]);
       }
+      return pts;
+    };
+    const strokeSmooth = (pts, color, width, alpha = 1) => {
+      if (pts.length < 2) return;
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length - 1; i++) {
+        const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+        const my = (pts[i][1] + pts[i + 1][1]) / 2;
+        ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+      }
+      ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.globalAlpha = alpha;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     };
 
     if (this.echo) {
       ctx.globalCompositeOperation = 'lighter';
-      buildPath(this.echo, midY + 14, ampScale * 0.7, 0.5);
-      ctx.strokeStyle = hexRgba(this._color(2), 0.3);
-      ctx.lineWidth = 1;
-      ctx.stroke();
+      const ePts = samplePts(this.echo, midY + 14, ampScale * 0.7, 0.5);
+      strokeSmooth(ePts, hexRgba(this._color(2), 0.28), 1);
       ctx.globalCompositeOperation = 'source-over';
     }
 
-    buildPath(wave, midY, ampScale, 1);
+    const pts = samplePts(wave, midY, ampScale, 1);
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+      const my = (pts[i][1] + pts[i + 1][1]) / 2;
+      ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+    }
+    ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
     ctx.lineTo(w, h);
     ctx.lineTo(0, h);
     ctx.closePath();
@@ -411,10 +469,15 @@ export class Renderer {
     ctx.fillStyle = g;
     ctx.fill();
 
-    buildPath(wave, midY, ampScale, 1);
-    ctx.strokeStyle = this._color(0);
-    ctx.lineWidth = 2.2;
-    ctx.stroke();
+    strokeSmooth(pts, this._color(0), 2.2);
+
+    ctx.save();
+    ctx.globalAlpha = 0.14;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.translate(0, midY * 2);
+    ctx.scale(1, -1);
+    strokeSmooth(pts, hexRgba(this._color(0), 0.55), 1.4);
+    ctx.restore();
 
     this.echo = this.echo || new Uint8Array(wave.length);
     const k = 1 - Math.pow(0.85, dt60);
@@ -436,7 +499,6 @@ export class Renderer {
     const c0 = this._color(0);
     const c1 = this._color(1);
 
-    /* graticule */
     ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = hexRgba(c0, 0.07);
     ctx.lineWidth = 1;
@@ -445,11 +507,23 @@ export class Renderer {
     ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
     ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
     ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
 
-    if (!this.scopePrev || this.scopePrev.length !== N * 2) {
-      this.scopePrev = new Float32Array(N * 2);
+    const sig = `${w}x${h}|${this.quality}`;
+    if (!this.scopeCv || this.scopeSig !== sig) {
+      this.scopeSig = sig;
+      this.scopeCv = document.createElement('canvas');
+      this.scopeCv.width = Math.max(2, Math.round(w));
+      this.scopeCv.height = Math.max(2, Math.round(h));
+      this.scopeCtx = this.scopeCv.getContext('2d');
     }
-    const prev = this.scopePrev;
+    const sctx = this.scopeCtx;
+    const fade = clamp(1 - Math.pow(0.78, dt60), 0.08, 0.55);
+    sctx.globalCompositeOperation = 'destination-out';
+    sctx.fillStyle = `rgba(0,0,0,${fade})`;
+    sctx.fillRect(0, 0, w, h);
+    sctx.globalCompositeOperation = 'lighter';
+
     const pts = new Float32Array(N * 2);
     for (let i = 0; i < N; i++) {
       const si = ((i / N) * wave.length) | 0;
@@ -458,38 +532,38 @@ export class Renderer {
       pts[i * 2 + 1] = ((wave[sj] - 128) / 128) * R;
     }
 
+    sctx.save();
+    sctx.translate(cx, cy);
+    sctx.rotate(this.t * 0.1);
+    sctx.lineJoin = 'round';
+    sctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      if (i === 0) sctx.moveTo(pts[i * 2], pts[i * 2 + 1]);
+      else sctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
+    }
+    sctx.closePath();
+    sctx.strokeStyle = hexRgba(c1, 0.20);
+    sctx.lineWidth = 3.5;
+    sctx.stroke();
+    sctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      if (i === 0) sctx.moveTo(pts[i * 2], pts[i * 2 + 1]);
+      else sctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
+    }
+    sctx.closePath();
+    sctx.strokeStyle = hexRgba(c0, 0.92);
+    sctx.lineWidth = 1.5;
+    sctx.stroke();
+    sctx.restore();
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(this.scopeCv, 0, 0, w, h);
+    ctx.restore();
+
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(this.t * 0.1);
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.lineJoin = 'round';
-
-    /* phosphor ghost trail */
-    const k = 1 - Math.pow(0.7, dt60);
-    ctx.beginPath();
-    for (let i = 0; i < N; i++) {
-      prev[i * 2] += (pts[i * 2] - prev[i * 2]) * k;
-      prev[i * 2 + 1] += (pts[i * 2 + 1] - prev[i * 2 + 1]) * k;
-      if (i === 0) ctx.moveTo(prev[0], prev[1]);
-      else ctx.lineTo(prev[i * 2], prev[i * 2 + 1]);
-    }
-    ctx.closePath();
-    ctx.strokeStyle = hexRgba(c1, 0.22);
-    ctx.lineWidth = 3.5;
-    ctx.stroke();
-
-    /* live trace */
-    ctx.beginPath();
-    for (let i = 0; i < N; i++) {
-      if (i === 0) ctx.moveTo(pts[0], pts[1]);
-      else ctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
-    }
-    ctx.closePath();
-    ctx.strokeStyle = hexRgba(c0, 0.9);
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    /* sparkle nodes + beat core */
     const sprite = this._dot(this._color(2));
     const sr = 2.5 + this.sm.bass * 6;
     for (let i = 0; i < N; i += 18) {
@@ -680,8 +754,7 @@ export class Renderer {
 
       const pts = [];
       for (let i = 0; i <= P; i++) {
-        const idx = logFreqIndex(i, P, freq.length);
-        const v = freq[idx] / 255;
+        const v = logSample(freq, i / P);
         const ang = (i / P) * span * 0.94;
         const r = inner + v * maxR * this.sensitivity * 0.85;
         pts.push([Math.cos(ang) * r, Math.sin(ang) * r]);
@@ -713,7 +786,7 @@ export class Renderer {
 
   /* ---------------- RADIAL TUNNEL ---------------- */
 
-  _tunnel() {
+  _tunnel(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2;
     const cy = h / 2;
@@ -737,13 +810,23 @@ export class Renderer {
     for (let i = 0; i < rings; i++) {
       const baseR = maxR * Math.pow((i + 1) / rings, 1.15);
       const pulse = this.history[this.history.length - 1 - i] * maxR * 0.3 * this.sensitivity;
-      const r = baseR + pulse;
       const alpha = 0.85 - (i / rings) * 0.6;
       const c = this._color(Math.floor(i / 2.5) + Math.floor(this.t * 0.06));
       ctx.strokeStyle = hexRgba(c, alpha);
       ctx.lineWidth = Math.max(0.6, 2.4 - (i / rings) * 1.6);
+      const SEG = this.quality === 'low' ? 28 : 44;
       ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      for (let s = 0; s <= SEG; s++) {
+        const ang = (s / SEG) * Math.PI * 2;
+        let wob = 0;
+        if (freq) wob = (logSample(freq, (s / SEG + i * 0.11) % 1) - 0.5) * baseR * 0.10 * (0.4 + this.sm.level) * this.sensitivity;
+        const r = baseR + pulse + wob;
+        const x = cx + Math.cos(ang) * r;
+        const y = cy + Math.sin(ang) * r;
+        if (s === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
       ctx.stroke();
     }
     ctx.globalCompositeOperation = 'source-over';
@@ -800,8 +883,7 @@ export class Renderer {
       this._terrainAcc -= SAMPLE;
       const row = new Float32Array(COLS);
       for (let i = 0; i < COLS; i++) {
-        const idx = logFreqIndex(i, COLS, freq.length);
-        row[i] = clamp((freq[idx] / 255) * this.sensitivity, 0, 1.2);
+        row[i] = clamp(logSample(freq, i / COLS) * this.sensitivity, 0, 1.2);
       }
       this.terrainRows.unshift(row);
       if (this.terrainRows.length > ROWS) this.terrainRows.pop();
@@ -910,9 +992,9 @@ export class Renderer {
     const fall = 1 - Math.pow(0.88, dt60);
     const fallPeak = Math.pow(0.985, dt60);
     for (let i = 0; i < N; i++) {
-      const idx = logFreqIndex(i, N, freq.length);
-      const idx2 = Math.min(freq.length - 1, idx + 2);
-      const raw = ((freq[idx] + freq[idx2]) / 510) * this.sensitivity;
+      const s0 = logSample(freq, i / N);
+      const s1 = logSample(freq, Math.min(1, (i + 0.7) / N));
+      const raw = ((s0 + s1) / 2) * this.sensitivity;
       const weight = 1 + this.bassFocus * 1.4 * (1 - i / N);
       const target = Math.min(1, raw * weight);
       const c = this.cityCols[i];
@@ -1103,4 +1185,100 @@ export class Renderer {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
+
+  /* ---------------- PULSE ORB ---------------- */
+
+  _orb(freq, dt60, dt) {
+    const { ctx, w, h } = this;
+    const cx = w / 2;
+    const cy = h / 2;
+    const minDim = Math.min(w, h);
+    const baseR = minDim * 0.18 * (0.85 + this.sm.level * 0.6);
+
+    if (this.beat > 0.72 && this.orbSat.length < 40 && Math.random() < 0.55) {
+      const ang = Math.random() * Math.PI * 2;
+      this.orbSat.push({
+        ang,
+        dist: baseR * (1.45 + Math.random() * 0.7),
+        spd: (0.5 + Math.random() * 1.0) * (Math.random() < 0.5 ? 1 : -1),
+        c: Math.floor(Math.random() * this.theme.colors.length),
+        life: 1,
+        decay: 0.006 + Math.random() * 0.011,
+      });
+    }
+    for (let i = this.orbSat.length - 1; i >= 0; i--) {
+      const s = this.orbSat[i];
+      s.ang += s.spd * dt;
+      s.dist += 0.4 * dt60;
+      s.life -= s.decay * dt60;
+      if (s.life <= 0 || s.dist > minDim * 0.48) this.orbSat.splice(i, 1);
+    }
+
+    const P = this.quality === 'low' ? 48 : 64;
+    const pts = [];
+    for (let i = 0; i < P; i++) {
+      const u = i / P;
+      const ang = u * Math.PI * 2;
+      const rip = freq ? logSample(freq, u) : 0;
+      const harm1 = Math.sin(ang * 3 + this.t * 1.4) * this.sm.mid * 0.10;
+      const harm2 = Math.cos(ang * 5 - this.t * 2.2) * this.sm.high * 0.08;
+      const r = baseR * (1 + rip * 0.42 * this.sensitivity + harm1 + harm2 + this.beat * 0.08);
+      pts.push([cx + Math.cos(ang) * r, cy + Math.sin(ang) * r]);
+    }
+
+    ctx.globalCompositeOperation = 'lighter';
+    const glowR = baseR * 1.55;
+    const g = ctx.createRadialGradient(cx, cy, baseR * 0.3, cx, cy, glowR);
+    g.addColorStop(0, hexRgba(this._color(0), 0.18 + this.beat * 0.12));
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) {
+      const mx = (pts[i][0] + pts[(i + 1) % pts.length][0]) / 2;
+      const my = (pts[i][1] + pts[(i + 1) % pts.length][1]) / 2;
+      ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
+    }
+    ctx.closePath();
+    const fg = ctx.createRadialGradient(cx, cy, baseR * 0.2, cx, cy, baseR * 1.2);
+    fg.addColorStop(0, hexRgba(this._color(1), 0.26));
+    fg.addColorStop(1, hexRgba(this._color(0), 0.06));
+    ctx.fillStyle = fg;
+    ctx.fill();
+    ctx.strokeStyle = this._color(0);
+    ctx.lineWidth = 1.8;
+    ctx.globalAlpha = 0.9;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    ctx.strokeStyle = hexRgba(this._color(2), 0.14 + this.sm.level * 0.12);
+    ctx.lineWidth = 1;
+    for (let r = 0; r < 2; r++) {
+      const rr = baseR * (1.35 + r * 0.22);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rr, rr * 0.52, this.t * (0.12 + r * 0.07) * (r % 2 ? -1 : 1), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    const coreR = minDim * 0.04 * (1 + this.beat * 1.4 + this.sm.bass * 0.5);
+    ctx.globalAlpha = 0.95;
+    ctx.drawImage(this._dot(this._color(1)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
+    ctx.globalAlpha = 1;
+
+    for (const s of this.orbSat) {
+      const x = cx + Math.cos(s.ang) * s.dist;
+      const y = cy + Math.sin(s.ang) * s.dist * 0.58;
+      const col = this._color(s.c);
+      const sr = 2.8 + s.life * 3.2;
+      ctx.globalAlpha = clamp(s.life * 0.78, 0, 0.85);
+      ctx.drawImage(this._dot(col), x - sr, y - sr, sr * 2, sr * 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
 }
+

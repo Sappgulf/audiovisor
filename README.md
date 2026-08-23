@@ -1,6 +1,6 @@
 # AUDIOVISOR
 
-A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across twelve stage modes, twelve theme moods, a full FX chain, beat tracking, session recording, and autopilot.
+A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across thirteen stage modes, twelve theme moods, a full FX chain, tempo-locked beat tracking, session recording, and autopilot.
 
 ## Features
 
@@ -14,8 +14,10 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 > **Note on streaming services:** DRM-protected streams (Spotify/Apple Music in-app playback) can't be tapped by the Web Audio API directly. When Spotify plays through the built-in player without capture, AUDIOVISOR drives the visuals with a procedural synth feed seeded from the track — hit **Capture** and share the current tab for true spectrum-reactive visuals of the actual audio.
 
 ### Stage
-- **12 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy
+- **13 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Pulse Orb
 - **12 themes** — Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic, Monolith, Sunset, Matrix, Ultraviolet
+- **Interpolated log spectra** — smoother, more accurate frequency mapping across every mode (bars, terrain, city, kaleido, tunnel, orb) with gravity-fall peak caps
+- **Phosphor scope & wobble tunnel** — vectorscope with true persistence afterglow, radial tunnel with spectral wobble per ring, beat-synced stage punch + bloom
 - **Bloom compositing** — two-pass downscale glow replaces per-element shadow blur
 - **Delta-time animation** — identical motion at 60 Hz, 120 Hz, 144 Hz+
 - **Adaptive quality** — auto-scales rendering (DPR, particle caps, bloom) to hold 60fps
@@ -27,7 +29,7 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 - **Session recorder** — record visuals + master audio mix to WebM (record button)
 - FX chain — Reverb (generated impulse), Limiter, Lowpass, Speed ×1.5
 - Reactivity — sensitivity, bass focus, smoothing controls
-- Beat tracking — live BPM chip + bass-active indicator
+- Beat tracking — tempo-locked spectral-flux detector with octave folding, beat-phase prediction & confidence gating; live BPM chip + bass-active indicator; stage punch + bloom react on every predicted beat
 - Autopilot — cycles modes and themes every 12s
 - MediaSession — OS media keys, lock-screen metadata & album art, seek-to
 

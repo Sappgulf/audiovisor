@@ -308,6 +308,8 @@ export class AudioEngine {
   }
 
   seek(t) {
+    /* onsets are timestamped in song time — a jump invalidates the grid */
+    this.beat.reset();
     if (this.mode === 'spotify') {
       if (this.external?.seek) this.external.seek(Math.max(0, t));
       return;
@@ -692,6 +694,11 @@ export class AudioEngine {
 
   /* ---------- analysis ---------- */
 
+  /**
+   * Snapshot the active source once. Call at most once per frame —
+   * getLevels() reuses this frame so every consumer sees the same
+   * instant of audio (no double-sampling skew).
+   */
   getData() {
     if (this.micActive || this.captureActive) {
       if (!this.tapAnalyser) return null;
@@ -723,8 +730,8 @@ export class AudioEngine {
     return { freq: this.freqData, wave: this.waveData };
   }
 
-  getLevels() {
-    const d = this.getData();
+  getLevels(preFetched = null) {
+    const d = preFetched || this.getData();
     if (!d) return { bass: 0, mid: 0, high: 0, level: 0 };
     const { freq } = d;
     const n = freq.length;
@@ -741,12 +748,26 @@ export class AudioEngine {
     const mid = avg(iBass, iMid);
     const high = avg(iMid, iHigh);
     const level = avg(2, n);
-    this.beat.tick(bass);
-    return { bass, mid, high, level };
+
+    /* beat clock runs on song position + full spectrum, not wall time */
+    this.beat.process(freq, this.getTime());
+    const bi = this.beat;
+    return {
+      bass, mid, high, level,
+      bpm: bi.bpm,
+      beatPhase: bi.phase,
+      beatPulse: bi.pulse,
+      beatConfidence: bi.confidence,
+    };
   }
 
   getBpm() {
     return this.beat.bpm;
+  }
+
+  /** Live tempo/phase state for beat-synced visuals. */
+  get beatInfo() {
+    return this.beat.info;
   }
 
   _emit() {

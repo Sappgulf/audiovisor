@@ -762,10 +762,14 @@ function frame(now) {
   let wave = null;
   if (!idle) {
     const d = engine.getData();
-    freq = d.freq;
-    wave = d.wave;
-    if (engine.playing || engine.micActive || engine.captureActive) {
-      levels = engine.getLevels();
+    if (!d) {
+      freq = wave = null;
+    } else {
+      freq = d.freq;
+      wave = d.wave;
+      if (engine.playing || engine.micActive || engine.captureActive) {
+        levels = engine.getLevels(d);
+      }
     }
   }
 
@@ -776,8 +780,8 @@ function frame(now) {
     const dur = engine.getDuration();
     $('seek-fill').style.width = `${dur ? (t / dur) * 100 : 0}%`;
     $('time-current').textContent = fmtTime(t);
-    const bpm = engine.getBpm();
-    $('bpm-value').textContent = bpm ? bpm.toFixed(2) : '--.--';
+    const bi = engine.beatInfo;
+    $('bpm-value').textContent = bi.bpm && bi.confidence > 0.25 ? bi.bpm.toFixed(2) : '--.--';
     $('bass-chip').classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));
   }
 

@@ -17,6 +17,19 @@ export function logFreqIndex(i, count, bins) {
   return Math.min(bins - 1, Math.floor(Math.pow(i / count, 2) * bins));
 }
 
+/**
+ * Sample a spectrum at fraction t01 (0..1) along a log frequency curve,
+ * linearly interpolating between adjacent bins for staircase-free output.
+ * Returns normalized 0..1 amplitude.
+ */
+export function logSample(freq, t01) {
+  const max = freq.length - 1;
+  const x = clamp(Math.pow(t01, 2) * max, 0, max);
+  const i = x | 0;
+  const f = x - i;
+  return (freq[i] + (freq[i + 1 > max ? max : i + 1] - freq[i]) * f) / 255;
+}
+
 export function pickRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }

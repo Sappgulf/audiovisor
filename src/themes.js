@@ -11,6 +11,7 @@ export const MODES = [
   { id: 'city', name: 'Neon City', icon: 'building' },
   { id: 'nebula', name: 'Nebula Clouds', icon: 'cloud' },
   { id: 'spiral', name: 'Spiral Galaxy', icon: 'galaxy' },
+  { id: 'orb', name: 'Pulse Orb', icon: 'zap' },
 ];
 
 export const THEMES = [
