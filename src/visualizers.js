@@ -145,6 +145,12 @@ export class Renderer {
       dc.beginPath();
       dc.ellipse(26, 24, 6, 4.5, -0.6, 0, Math.PI * 2);
       dc.fill();
+      // rim light (soft edge ring)
+      dc.strokeStyle = 'rgba(255,255,255,0.28)';
+      dc.lineWidth = 1.6;
+      dc.beginPath();
+      dc.arc(32, 32, 21, 0, Math.PI * 2);
+      dc.stroke();
       this._dotSprites.set(c, d);
 
       // bar: polished metal with top highlight and inner sheen, 8x256
