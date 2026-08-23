@@ -238,14 +238,15 @@ button:focus-visible, input:focus-visible {
   color: var(--text-40);
   padding: 7px 16px;
   border-radius: 999px;
-  transition: all 0.2s var(--ease);
+  transition: all 0.18s var(--ease);
+  position: relative;
 }
 .nav-link:hover { color: var(--text); background: var(--glass-hover); }
 .nav-link.is-active {
-  color: var(--bg);
+  color: #1a1816;
   background: var(--accent);
-  box-shadow: 0 1px 8px rgba(217,176,137,0.24);
-  font-weight: 600;
+  box-shadow: 0 1px 8px rgba(217,176,137,0.24), 0 0 0 1px rgba(255,250,243,0.06) inset;
+  font-weight: 650;
 }
 
 .nav-sep { display: none; }
@@ -340,9 +341,9 @@ button:focus-visible, input:focus-visible {
 .toast {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  background: rgba(28, 26, 24, 0.92);
+  gap: 9px;
+  padding: 9px 14px 9px 12px;
+  background: rgba(28, 26, 24, 0.94);
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
   border-radius: 8px;
@@ -461,10 +462,10 @@ button:focus-visible, input:focus-visible {
 .dropzone-wrap.is-hidden { opacity: 0; pointer-events: none; }
 
 .dropzone {
-  width: 420px;
+  width: 440px;
   max-width: calc(100% - 48px);
   padding: 36px 32px;
-  border: 1.5px dashed rgba(255,235,205,0.14);
+  border: 1.5px dashed rgba(255,235,205,0.16);
   border-radius: 1.5rem;
   display: flex;
   flex-direction: column;
@@ -547,8 +548,12 @@ button:focus-visible, input:focus-visible {
   text-transform: uppercase;
   color: var(--text-40);
   margin-bottom: 14px;
-  font-weight: 500;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+.section-title::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); margin-left: 8px; }
 
 .divider { height: 1px; background: var(--border-soft); flex-shrink: 0; }
 
@@ -560,9 +565,9 @@ button:focus-visible, input:focus-visible {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 8px 10px;
+  padding: 9px 11px;
   border-radius: 12px;
-  background: transparent;
+  background: rgba(255,250,243,0.015);
   border: 1px solid transparent;
   text-align: left;
   transition: all 0.2s var(--ease);
@@ -614,13 +619,13 @@ button:focus-visible, input:focus-visible {
 }
 
 .theme-dot {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: 2px solid transparent;
   background-clip: padding-box;
-  opacity: 0.9;
-  box-shadow: 0 0 0 1px rgba(255,250,243,0.06), 0 2px 8px rgba(0,0,0,0.2);
+  opacity: 0.92;
+  box-shadow: 0 0 0 1px rgba(255,250,243,0.06), 0 2px 10px rgba(0,0,0,0.22);
   transition: all 0.18s var(--ease);
   position: relative;
 }
@@ -661,11 +666,12 @@ input[type="range"].ctrl-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 4px;
-  background: rgba(255,235,205,0.09);
+  height: 5px;
+  background: rgba(255,235,205,0.08);
   border-radius: 99px;
   cursor: pointer;
   outline: none;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.22) inset;
 }
 input[type="range"].ctrl-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -712,10 +718,10 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 .fx-chip:hover { color: var(--text); border-color: var(--border-strong); background: var(--glass-hover); transform: translateY(-1px); }
 .fx-chip.is-active {
   border-color: var(--accent-line);
-  background: var(--accent);
+  background: linear-gradient(to bottom, var(--accent), var(--accent-strong));
   color: #1a1816;
-  box-shadow: 0 2px 10px var(--accent-glow);
-  font-weight: 600;
+  box-shadow: 0 2px 10px var(--accent-glow), 0 1px 0 rgba(255,250,243,0.18) inset;
+  font-weight: 650;
 }
 .fx-chip .chip-dot {
   width: 5px;
@@ -847,7 +853,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   min-width: 0;
 }
 
-.time-label { font-size: 10px; color: var(--text-40); font-variant-numeric: tabular-nums; letter-spacing: 0.04em; min-width: 3ch; text-align: center; }
+.time-label { font-size: 10px; color: var(--text-40); font-variant-numeric: tabular-nums; letter-spacing: 0.06em; min-width: 3.2ch; text-align: center; font-weight: 500; }
 
 .seek-track {
   flex: 1;
@@ -1069,6 +1075,10 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   font-size: 10px;
   letter-spacing: 0.12em;
   color: var(--text-40);
+  background: var(--glass);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  margin: 8px;
 }
 
 @media (max-width: 1024px) {
