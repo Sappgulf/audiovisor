@@ -497,6 +497,17 @@ button:focus-visible, input:focus-visible {
 .chip-accent { border-color: var(--accent-line); background: var(--accent-dim); }
 .chip-accent .chip-label { color: var(--accent); }
 
+/* beat-reactive chrome */
+#shell { --beat: 0; }
+.logo-mark {
+  transform: scale(calc(1 + var(--beat, 0) * 0.14));
+  box-shadow: 0 2px 10px rgba(217, 176, 137, calc(0.28 + var(--beat, 0) * 0.30)), 0 0 0 1px rgba(255,250,243,0.06) inset;
+}
+#bpm-chip {
+  transform: scale(calc(1 + var(--beat, 0) * 0.09));
+  border-color: rgba(217, 176, 137, calc(0.25 + var(--beat, 0) * 0.55));
+}
+
 /* Dropzone */
 
 .dropzone-wrap {

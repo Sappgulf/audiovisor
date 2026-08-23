@@ -1288,6 +1288,7 @@ function frameStep(now) {
 
   const gpuReady = !!(webgpuState || webgl2State);
   const gpuMode = state.modeId === 'gpu' && gpuReady;
+  $('shell').style.setProperty('--beat', renderer.beat.toFixed(3));
   // fit GPU canvas to stage
   if (webgpuCanvas && gpuReady && (webgpuCanvas.width !== Math.round(renderer.w * renderer.dpr) || webgpuCanvas.height !== Math.round(renderer.h * renderer.dpr))) {
     webgpuCanvas.width = Math.round(renderer.w * renderer.dpr);

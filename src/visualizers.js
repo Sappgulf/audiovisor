@@ -242,8 +242,18 @@ export class Renderer {
     ctx.clearRect(0, 0, w, h);
 
     if (idle || !freq || !wave) {
+      this._backdrop();
       this._idle(dt60);
       this._bloom(this.beat);
+      this._vignette();
+      if (this.quality !== 'low') {
+        this._ensureNoise();
+        const tile = this._noiseTiles[Math.floor(this.t * 12) % this._noiseTiles.length];
+        ctx.save();
+        ctx.globalAlpha = 0.30;
+        ctx.drawImage(tile, 0, 0, w, h);
+        ctx.restore();
+      }
       return;
     }
 
@@ -380,7 +390,7 @@ export class Renderer {
       case 'spiral': this._spiral(freq); break;
       case 'orb': this._orb(freq, dt60, dt); break;
       case 'fluid': this._fluid(freq); break;
-      case 'tensor': this._tensor(freq); break;
+      case 'tensor': this._tensor(freq, dt, dt60); break;
       case 'prism': this._prism(freq); break;
       case 'void': this._void(freq); break;
       case 'bloomfield': this._bloomField(freq); break;
@@ -1666,13 +1676,44 @@ export class Renderer {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ---------------- FLUID METAL ---------------- */
+  /* ---------------- FLUID METAL — metaball membrane ---------------- */
 
   _fluid(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h / 2;
     const n = this.quality === 'low' ? 5 : 9;
     ctx.globalCompositeOperation = 'lighter';
+
+    /* blob positions computed up front so the membrane can link them */
+    const blobs = [];
+    for (let i = 0; i < n; i++) {
+      const ang = (i / n) * Math.PI * 2 + this.t * (0.18 + i * 0.02);
+      const rad = Math.min(w, h) * 0.22 * (0.7 + this.sm.bass * 0.6 + this.beat * 0.25);
+      const x = cx + Math.cos(ang) * rad * 0.7;
+      const y = cy + Math.sin(ang) * rad * 0.5;
+      const v = freq ? logSample(freq, i / n) : 0.5;
+      blobs.push({ x, y, v });
+    }
+
+    /* metaball membrane — connective tissue between close blobs */
+    const linkD = Math.min(w, h) * 0.30;
+    for (let i = 0; i < blobs.length; i++) {
+      for (let j = i + 1; j < blobs.length; j++) {
+        const a = blobs[i], b = blobs[j];
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > linkD * linkD) continue;
+        const t = 1 - Math.sqrt(d2) / linkD;
+        ctx.strokeStyle = hexRgba(this._color(i % this.theme.colors.length), t * (0.14 + this.sm.level * 0.22));
+        ctx.lineWidth = 1 + t * 5;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+
+    /* beat ripple rings */
     if (this.beat > 0.55) {
       const rr = Math.min(w, h) * (0.3 + this.beat * 0.2);
       ctx.strokeStyle = hexRgba(this._color(0), this.beat * 0.4);
@@ -1680,18 +1721,20 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(cx, cy, rr, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.strokeStyle = hexRgba(this._color(1), this.beat * 0.22);
-      ctx.beginPath();
-      ctx.arc(cx, cy, rr * 0.72, 0, Math.PI * 2);
-      ctx.stroke();
     }
-    for (let i = 0; i < n; i++) {
-      const ang = (i / n) * Math.PI * 2 + this.t * (0.18 + i * 0.02);
-      const rad = Math.min(w, h) * 0.22 * (0.7 + this.sm.bass * 0.6 + this.beat * 0.25);
-      const x = cx + Math.cos(ang) * rad * 0.7;
-      const y = cy + Math.sin(ang) * rad * 0.5;
-      const v = freq ? logSample(freq, i / n) : 0.5;
-      const r = rad * 0.55 * (0.6 + v * 0.9);
+
+    /* precessing orbit ring around the cluster */
+    const orbR = Math.min(w, h) * (0.34 + this.sm.bass * 0.06);
+    ctx.strokeStyle = hexRgba(this._color(2), 0.10 + this.sm.level * 0.12);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, orbR, orbR * 0.62, Math.sin(this.t * 0.23) * 0.7, 0, Math.PI * 2);
+    ctx.stroke();
+
+    /* blobs */
+    for (let i = 0; i < blobs.length; i++) {
+      const { x, y, v } = blobs[i];
+      const r = Math.min(w, h) * 0.12 * (0.6 + v * 0.9) * (0.7 + this.sm.bass * 0.6 + this.beat * 0.25);
       const c = this._color(i + Math.floor(this.t * 0.7));
       ctx.globalAlpha = 0.42 + v * 0.35;
       ctx.drawImage(this._dot(c), x - r, y - r, r * 2, r * 2);
@@ -1703,98 +1746,177 @@ export class Renderer {
     ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ---------------- TENSOR GRID ---------------- */
+  /* ---------------- TENSOR GRID — perspective wireframe ---------------- */
 
-  _tensor(freq) {
+  _tensor(freq, dt, dt60) {
     const { ctx, w, h } = this;
     const cols = this.quality === 'low' ? 12 : 20;
     const rows = this.quality === 'low' ? 8 : 14;
     const cw = w / cols;
-    const rh = h / rows;
-    ctx.strokeStyle = hexRgba(this._color(0), 0.18);
-    ctx.lineWidth = 1;
+    /* perspective: rows compress toward the top (far plane) */
+    const rowY = (gy) => h * (0.16 + 0.84 * Math.pow(gy / rows, 1.4));
+    const spread = (gy) => 0.72 + 0.28 * (gy / rows); /* far rows pull inward */
+    void dt;
+
+    /* beat shockwaves ripple outward through the mesh */
+    if (this.beat > 0.6) {
+      if (!this._tensorWaves) this._tensorWaves = [];
+      this._tensorWaves.push({ r: 0, a: 0.45 });
+    }
+    if (this._tensorWaves) {
+      for (let i = this._tensorWaves.length - 1; i >= 0; i--) {
+        const wv = this._tensorWaves[i];
+        wv.r += Math.min(w, h) * 0.016 * dt60;
+        wv.a *= 0.93;
+        if (wv.a < 0.02) this._tensorWaves.splice(i, 1);
+      }
+    }
+    const waveBoost = (x, y) => {
+      if (!this._tensorWaves || !this._tensorWaves.length) return 0;
+      const d = Math.hypot(x - w / 2, y - h / 2);
+      let boost = 0;
+      for (const wv of this._tensorWaves) {
+        const band = Math.max(0, 1 - Math.abs(d - wv.r) / 90);
+        boost += band * wv.a;
+      }
+      return boost;
+    };
+
+    ctx.globalCompositeOperation = 'lighter';
+    /* horizontal wires with frequency displacement */
     for (let y = 0; y <= rows; y++) {
       ctx.beginPath();
       for (let x = 0; x <= cols; x++) {
         const u = x / cols;
         const v = freq ? logSample(freq, u) : 0;
-        const off = Math.sin(u * 6 + this.t * 1.4) * v * 22 * this.sensitivity;
         const px = x * cw;
-        const py = y * rh + off * (1 - Math.abs(y - rows / 2) / (rows / 2));
-        if (x === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
+        const py = rowY(y);
+        const off = Math.sin(u * 6 + this.t * 1.4 + y * 0.22) * v * 26 * this.sensitivity
+          + waveBoost(px, py) * -14;
+        const pull = (px - w / 2) * (1 - spread(y));
+        if (x === 0) ctx.moveTo(px + pull, py + off);
+        else ctx.lineTo(px + pull, py + off);
       }
+      const depth = y / rows;
+      ctx.strokeStyle = hexRgba(this._color(y % this.theme.colors.length), 0.10 + depth * 0.16);
+      ctx.lineWidth = 0.7 + depth * 0.9;
       ctx.stroke();
     }
+    /* vertical struts */
     for (let x = 0; x <= cols; x++) {
       ctx.beginPath();
       for (let y = 0; y <= rows; y++) {
+        const u = x / cols;
         const v = freq ? logSample(freq, y / rows) : 0;
-        const off = Math.cos(y * 4 + this.t * 1.1) * v * 14;
-        const px = x * cw + off * (1 - Math.abs(x - cols / 2) / (cols / 2));
-        const py = y * rh;
-        if (y === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
+        const px = x * cw;
+        const py = rowY(y);
+        const off = Math.sin(u * 6 + this.t * 1.4 + y * 0.22) * v * 26 * this.sensitivity;
+        const pull = (px - w / 2) * (1 - spread(y));
+        if (y === 0) ctx.moveTo(px + pull, py + off);
+        else ctx.lineTo(px + pull, py + off);
       }
+      ctx.strokeStyle = hexRgba(this._color(x % this.theme.colors.length), 0.07);
+      ctx.lineWidth = 0.7;
       ctx.stroke();
     }
-    if (this.beat > 0.35) {
-      ctx.globalCompositeOperation = 'lighter';
-      const nodeR = 2.6 + this.beat * 2.2;
-      for (let gy = 1; gy < rows; gy += 3) {
-        for (let gx = 1; gx < cols; gx += 3) {
-          const u = gx / cols;
-          const v = freq ? logSample(freq, u) : 0;
-          const off = Math.sin(u * 6 + this.t * 1.4) * v * 22;
-          const nx = gx * cw;
-          const ny = gy * rh + off * (1 - Math.abs(gy - rows / 2) / (rows / 2));
-          ctx.globalAlpha = clamp(v * this.beat * 0.9, 0, 0.7);
-          ctx.drawImage(this._dot(this._color((gx + gy) % this.theme.colors.length)), nx - nodeR, ny - nodeR, nodeR * 2, nodeR * 2);
-        }
+    /* node lattice — always on, amplitude-lit */
+    const nodeR = 1.6 + this.sm.level * 2.2;
+    for (let gy = 1; gy < rows; gy++) {
+      for (let gx = 1; gx < cols; gx++) {
+        const u = gx / cols;
+        const v = freq ? logSample(freq, u * ((gy % 3) + 1) / 3) : 0.2;
+        const px = gx * cw;
+        const py = rowY(gy);
+        const off = Math.sin(u * 6 + this.t * 1.4 + gy * 0.22) * v * 26 * this.sensitivity;
+        const pull = (px - w / 2) * (1 - spread(gy));
+        const a = clamp(0.08 + v * 0.45 + this.beat * v * 0.5, 0, 0.75);
+        const r = nodeR + v * 3 + this.beat * 1.5;
+        ctx.globalAlpha = a;
+        ctx.drawImage(this._dot(this._color((gx + gy) % this.theme.colors.length)), px + pull - r, py + off - r, r * 2, r * 2);
       }
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = 'source-over';
     }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
   }
 
-  /* ---------------- PRISM RAY ---------------- */
+  /* ---------------- PRISM RAY — dispersion ---------------- */
 
   _prism(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h * 0.58;
     const sz = Math.min(w, h) * 0.22;
+    const ax = cx, ay = cy - sz;
+    const bx = cx - sz * 0.86, by = cy + sz * 0.5;
+    const qx = cx + sz * 0.86, qy = cy + sz * 0.5;
+
+    /* interior glow */
     ctx.globalCompositeOperation = 'lighter';
+    const ig = ctx.createLinearGradient(0, ay, 0, by);
+    ig.addColorStop(0, hexRgba(this._color(1), 0.10 + this.sm.bass * 0.14));
+    ig.addColorStop(1, hexRgba(this._color(0), 0.03));
+    ctx.fillStyle = ig;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(qx, qy);
+    ctx.closePath();
+    ctx.fill();
+
+    /* incoming beam from top */
+    const inLen = h * 0.34;
+    const inGrad = ctx.createLinearGradient(ax, ay - inLen, ax, ay);
+    inGrad.addColorStop(0, hexRgba(this._color(2), 0));
+    inGrad.addColorStop(1, hexRgba(this._color(2), 0.5 + this.sm.level * 0.3));
+    ctx.strokeStyle = inGrad;
+    ctx.lineWidth = 1.6 + this.sm.level * 1.4;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - inLen);
+    ctx.lineTo(ax, ay);
+    ctx.stroke();
+
+    /* frame */
     ctx.strokeStyle = hexRgba(this._color(1), 0.9);
     ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(cx, cy - sz);
-    ctx.lineTo(cx - sz * 0.86, cy + sz * 0.5);
-    ctx.lineTo(cx + sz * 0.86, cy + sz * 0.5);
+    ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(qx, qy);
     ctx.closePath();
     ctx.stroke();
+
+    /* dispersed fan — each beam fades with distance */
     const beams = this.quality === 'low' ? 5 : 9;
     for (let i = 0; i < beams; i++) {
       const u = i / beams;
       const v = freq ? logSample(freq, u) : 0.5;
       const ang = -0.9 + u * 1.8 + this.beat * 0.15;
       const len = w * 0.7 * (0.5 + v * 0.7);
-      const x1 = cx + Math.cos(Math.PI / 2 + ang) * sz * 0.6;
-      const y1 = cy + Math.sin(Math.PI / 2 + ang) * sz * 0.6;
+      const x1 = (bx + qx) / 2 + Math.cos(ang) * sz * 0.3;
+      const y1 = (by + qy) / 2 + Math.sin(ang) * sz * 0.3;
       const x2 = x1 + Math.cos(ang) * len;
       const y2 = y1 + Math.sin(ang) * len * 0.18;
-      ctx.strokeStyle = hexRgba(this._color(i), 0.42 + v * 0.4);
+      const col = this._color(i);
+      const g = ctx.createLinearGradient(x1, y1, x2, y2);
+      g.addColorStop(0, hexRgba(col, 0.55 + v * 0.35));
+      g.addColorStop(0.7, hexRgba(col, 0.18 + v * 0.2));
+      g.addColorStop(1, hexRgba(col, 0));
+      ctx.strokeStyle = g;
       ctx.lineWidth = 1.2 + v * 2.2;
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.stroke();
     }
-    if (this.beat > 0.5) {
+
+    /* beat glints on the faces */
+    if (this.beat > 0.45) {
+      const glintR = 6 + this.beat * 12;
+      const gx = bx + (qx - bx) * (0.5 + 0.4 * Math.sin(this.t * 2.2));
+      const gy = by - sz * 0.28 * Math.abs(Math.sin(this.t * 1.7));
+      ctx.globalAlpha = clamp(this.beat * 0.8, 0, 0.85);
+      ctx.drawImage(this._dot(this._color(0)), gx - glintR, gy - glintR, glintR * 2, glintR * 2);
+      ctx.globalAlpha = 1;
       ctx.fillStyle = hexRgba(this._color(2), this.beat * 0.7);
       for (let i = 0; i < 8; i++) {
-        const gx = cx + (Math.sin(i * 91.7 + this.t * 3) * sz * 0.9);
-        const gy = cy + sz * 0.5 + this.beat * 7 + ((i % 3) * 6);
-        ctx.fillRect(gx, gy, 2, 2);
+        const sx = cx + (Math.sin(i * 91.7 + this.t * 3) * sz * 0.9);
+        const sy = cy + sz * 0.5 + this.beat * 7 + ((i % 3) * 6);
+        ctx.fillRect(sx, sy, 2, 2);
       }
     }
     ctx.globalCompositeOperation = 'source-over';
