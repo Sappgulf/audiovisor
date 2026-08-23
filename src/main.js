@@ -684,11 +684,17 @@ aboutPanel.addEventListener('click', (e) => {
 });
 
 const drawer = $('drawer');
+function syncDrawerA11y() {
+  $('nav-settings').setAttribute('aria-expanded', String(state.drawerOpen));
+  drawer.setAttribute('aria-hidden', String(!state.drawerOpen));
+}
 $('nav-settings').addEventListener('click', () => {
   state.drawerOpen = !state.drawerOpen;
   drawer.classList.toggle('is-closed', !state.drawerOpen);
   $('nav-settings').classList.toggle('is-active', state.drawerOpen);
+  syncDrawerA11y();
 });
+syncDrawerA11y();
 
 /* ---------- keyboard ---------- */
 
@@ -736,6 +742,11 @@ window.addEventListener('keydown', (e) => {
     case 'KeyF':
       $('fullscreen-btn').click();
       break;
+    case 'Escape': {
+      if (!queuePanel.classList.contains('is-hidden')) toggleQueue(false);
+      if (aboutPanel.classList.contains('is-open')) aboutPanel.classList.remove('is-open');
+      break;
+    }
   }
 });
 

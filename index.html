@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
+  <a href="#stage" class="skip-link">Skip to visual stage</a>
   <div class="app-root" id="app-root">
     <div class="glow-sphere sphere-tl"></div>
     <div class="glow-sphere sphere-br"></div>
@@ -22,11 +23,11 @@
           <h1 class="wordmark">Audiovisor</h1>
         </div>
 
-        <nav class="pill-nav">
-          <button class="nav-link is-active" data-nav="stage" id="nav-stage">Stage</button>
-          <div class="nav-sep"></div>
-          <button class="nav-link" data-nav="settings" id="nav-settings">Settings</button>
-          <div class="nav-sep"></div>
+        <nav class="pill-nav" aria-label="Primary">
+          <button class="nav-link is-active" data-nav="stage" id="nav-stage" aria-current="page">Stage</button>
+          <div class="nav-sep" aria-hidden="true"></div>
+          <button class="nav-link" data-nav="settings" id="nav-settings" aria-expanded="true" aria-controls="drawer">Settings</button>
+          <div class="nav-sep" aria-hidden="true"></div>
           <button class="nav-link" data-nav="about" id="nav-about">About</button>
         </nav>
 
@@ -75,7 +76,7 @@
           <div class="toasts" id="toasts"></div>
         </main>
 
-        <aside class="drawer" id="drawer">
+        <aside class="drawer" id="drawer" aria-label="Settings panel">
           <div class="drawer-scroll">
             <section>
               <h3 class="section-title">Connect</h3>

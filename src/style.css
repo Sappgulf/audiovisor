@@ -19,10 +19,10 @@
   --border-soft: rgba(255, 235, 205, 0.06);
   --text: #f5f0e8;
   --text-strong: #fffaf3;
-  --text-60: rgba(245, 240, 232, 0.64);
-  --text-40: rgba(245, 240, 232, 0.42);
-  --text-20: rgba(245, 240, 232, 0.20);
-  --text-12: rgba(245, 240, 232, 0.12);
+  --text-60: rgba(245, 240, 232, 0.72);
+  --text-40: rgba(245, 240, 232, 0.54);
+  --text-20: rgba(245, 240, 232, 0.32);
+  --text-12: rgba(245, 240, 232, 0.16);
   --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --ease: cubic-bezier(0.32, 0.08, 0.24, 1);
@@ -34,6 +34,25 @@
   --shadow-soft: 0 8px 32px rgba(0, 0, 0, 0.36), 0 1px 0 rgba(255, 240, 220, 0.06) inset;
   --shadow-shell: 0 24px 64px rgba(0, 0, 0, 0.48), 0 0 0 1px var(--border-soft), 0 1px 0 rgba(255, 250, 243, 0.06) inset;
 }
+
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 16px;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: #1a1816;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 650;
+  border-radius: 999px;
+  text-decoration: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.24);
+}
+.skip-link:focus { top: 16px; outline: 2px solid var(--text-strong); outline-offset: 2px; }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -1034,6 +1053,9 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   .seek-console { order: 3; flex-basis: 100%; }
   .utility-controls { gap: 10px; }
   .volume-group { display: none; }
+  .mic-btn, .lime-btn { width: 40px; height: 40px; }
+  .ghost-btn { width: 40px; height: 40px; }
+  .play-btn { width: 48px; height: 48px; }
 }
 
 /* ---------- Connect panel ---------- */
