@@ -102,28 +102,36 @@ button:focus-visible, input:focus-visible {
 .app-root {
   position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: stretch;
   overflow: hidden;
-  background:
-    radial-gradient(900px 600px at 18% 12%, rgba(217, 176, 137, 0.08), transparent 55%),
-    radial-gradient(700px 500px at 88% 88%, rgba(196, 154, 110, 0.06), transparent 60%),
-    linear-gradient(to right, rgba(255,240,220,0.018) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255,240,220,0.018) 1px, transparent 1px),
-    var(--bg);
-  background-size: auto, auto, 64px 64px, 64px 64px, auto;
+  background: var(--bg);
 }
-
-.glow-sphere {
+.app-root::before {
+  content: '';
   position: absolute;
-  width: 860px;
-  height: 860px;
-  background: radial-gradient(circle, rgba(217, 176, 137, 0.045) 0%, transparent 68%);
-  filter: blur(80px);
+  inset: 0;
+  background:
+    radial-gradient(1200px 700px at 50% 38%, rgba(217,176,137,0.055), transparent 62%),
+    radial-gradient(900px 900px at 12% 92%, rgba(196,154,110,0.035), transparent 55%),
+    linear-gradient(to bottom, rgba(0,0,0,0.18), transparent 22%, transparent 78%, rgba(0,0,0,0.42));
   pointer-events: none;
   z-index: 0;
 }
+.app-root::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.92' numOctaves='1'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='0.22'/%3E%3C/svg%3E");
+  opacity: 0.035;
+  mix-blend-mode: soft-light;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.glow-sphere { display: none; }
 .sphere-tl { top: -320px; left: -280px; }
 .sphere-br { bottom: -360px; right: -300px; opacity: 0.7; }
 
@@ -139,12 +147,13 @@ button:focus-visible, input:focus-visible {
 .shell {
   position: relative;
   z-index: 20;
-  width: min(1380px, calc(100vw - 32px));
-  height: min(860px, calc(100vh - 32px));
-  background: var(--surface);
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--border-soft);
-  box-shadow: var(--shadow-shell);
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: transparent;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -160,13 +169,20 @@ button:focus-visible, input:focus-visible {
 /* ---------- Top bar ---------- */
 
 .topbar {
-  height: 68px;
-  padding: 0 28px;
+  height: 56px;
+  margin: 18px auto 0;
+  width: min(960px, calc(100vw - 32px));
+  padding: 0 10px 0 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border-soft);
-  background: linear-gradient(to bottom, rgba(255,250,243,0.02), transparent);
+  gap: 12px;
+  background: rgba(26, 24, 22, 0.72);
+  border: 1px solid rgba(255,235,205,0.08);
+  border-top: 1px solid rgba(255,250,243,0.08);
+  border-radius: 999px;
+  backdrop-filter: blur(24px) saturate(1.15);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.24), 0 1px 0 rgba(255,250,243,0.06) inset;
   flex-shrink: 0;
   z-index: 30;
 }
@@ -192,11 +208,12 @@ button:focus-visible, input:focus-visible {
 }
 
 .wordmark {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.05em;
   text-transform: uppercase;
   color: var(--text-strong);
+  font-variation-settings: 'wght' 800;
 }
 
 .pill-nav {
@@ -349,21 +366,38 @@ button:focus-visible, input:focus-visible {
 .workspace {
   flex: 1;
   display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
   min-height: 0;
-  background: #0f0e0d;
+  padding: 18px 16px 12px;
+  background: transparent;
 }
 
 .stage {
-  flex: 1;
+  flex: none;
+  width: min(1600px, 100%);
+  aspect-ratio: 21 / 9;
+  max-height: min(62vh, 560px);
   position: relative;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(800px 500px at 38% 42%, rgba(217,176,137,0.045), transparent 55%),
-              radial-gradient(600px 400px at 78% 78%, rgba(217,176,137,0.03), transparent 60%),
-              #0a0a09;
+  background: #050507;
+  border: 1px solid rgba(255,235,205,0.07);
+  border-top: 1px solid rgba(255,250,243,0.08);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,250,243,0.05) inset;
+}
+.stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6) inset, 0 12px 40px rgba(0,0,0,0.35) inset;
+  pointer-events: none;
+  z-index: 3;
 }
 
 #viz-canvas {
@@ -387,8 +421,8 @@ button:focus-visible, input:focus-visible {
 
 .stage-overlays {
   position: absolute;
-  top: 24px;
-  left: 24px;
+  top: 18px;
+  left: 18px;
   display: flex;
   flex-direction: row;
   gap: 10px;
@@ -471,26 +505,39 @@ button:focus-visible, input:focus-visible {
 /* ---------- Drawer ---------- */
 
 .drawer {
-  width: 300px;
-  flex-shrink: 0;
-  background: var(--panel);
-  border-left: 1px solid var(--border-soft);
+  position: absolute;
+  top: 74px;
+  right: 16px;
+  bottom: 88px;
+  width: 320px;
+  background: rgba(30, 28, 26, 0.88);
+  border: 1px solid rgba(255,235,205,0.08);
+  border-top: 1px solid rgba(255,250,243,0.08);
+  border-radius: 16px;
+  backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.36), 0 0 0 1px rgba(0,0,0,0.2);
   z-index: 40;
   display: flex;
   flex-direction: column;
-  transition: width 0.32s var(--ease-out), border-color 0.32s var(--ease);
+  overflow: hidden;
+  transition: transform 0.36s var(--ease-out), opacity 0.28s var(--ease);
+  transform-origin: top right;
 }
-.drawer.is-closed { width: 0; border-left-color: transparent; overflow: hidden; }
+.drawer.is-closed {
+  transform: translateX(12px) scale(0.98);
+  opacity: 0;
+  pointer-events: none;
+}
 
 .drawer-scroll {
-  padding: 22px 20px 24px;
+  padding: 20px 18px 18px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 22px;
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1;
-  width: 300px;
+  width: 320px;
 }
 
 .section-title {
@@ -684,13 +731,20 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 /* ---------- Transport ---------- */
 
 .transport {
-  height: 84px;
-  padding: 0 24px;
-  border-top: 1px solid var(--border-soft);
-  background: linear-gradient(to bottom, var(--surface-raised), var(--surface));
+  height: auto;
+  min-height: 64px;
+  margin: 0 auto 18px;
+  width: min(960px, calc(100vw - 32px));
+  padding: 10px 14px;
+  background: rgba(26, 24, 22, 0.78);
+  border: 1px solid rgba(255,235,205,0.08);
+  border-top: 1px solid rgba(255,250,243,0.07);
+  border-radius: 999px;
+  backdrop-filter: blur(24px) saturate(1.15);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.28), 0 1px 0 rgba(255,250,243,0.06) inset;
   display: flex;
   align-items: center;
-  gap: 28px;
+  gap: 18px;
   flex-shrink: 0;
   z-index: 30;
 }
