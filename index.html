@@ -142,6 +142,31 @@
             <div class="divider"></div>
 
             <section>
+              <h3 class="section-title">AI Remix Studio</h3>
+              <div class="fx-row" id="ai-stems"></div>
+              <div class="fx-row" id="ai-presets" style="margin-top:8px"></div>
+              <button class="fx-chip" id="ai-suggest" style="margin-top:10px"><span class="chip-dot"></span><span class="chip-txt">AI Suggest</span></button>
+            </section>
+
+            <div class="divider"></div>
+
+            <section>
+              <h3 class="section-title">Collab &amp; Share</h3>
+              <div class="fx-row" style="margin-bottom:10px">
+                <button class="fx-chip" id="share-btn"><span class="ic ic-sm" data-icon="link"></span><span class="chip-txt">Copy Link</span></button>
+                <button class="fx-chip" id="party-btn"><span class="ic ic-sm" data-icon="sparkles"></span><span class="chip-txt">Party QR</span></button>
+              </div>
+              <div id="collab-comments" style="display:flex; flex-direction:column; gap:6px; max-height:120px; overflow-y:auto"></div>
+              <div style="display:flex; gap:6px; margin-top:8px">
+                <input id="comment-input" class="connect-input" placeholder="Add comment…" style="flex:1; padding:6px 8px; font-size:11px"/>
+                <button class="mini-btn" id="comment-send">Send</button>
+              </div>
+              <div id="party-qr" class="is-hidden" style="margin-top:10px; padding:10px; background:var(--glass); border:1px solid var(--border); border-radius:8px; text-align:center; font-family:var(--font-mono); font-size:10px; color:var(--text-60); word-break:break-all">QR: <span id="qr-url"></span></div>
+            </section>
+
+            <div class="divider"></div>
+
+            <section>
               <h3 class="section-title">Autopilot</h3>
               <div class="fx-row">
                 <button class="fx-chip" id="autopilot-chip" data-fx="autopilot"><span class="chip-txt">Auto</span></button>
@@ -167,6 +192,7 @@
 
       <footer class="transport">
         <div class="track-info" id="track-info">
+          <button class="ghost-btn" id="save-library-btn" title="Save to library (with edits)" aria-label="Save to library" style="position:absolute; top:6px; right:6px; width:26px; height:26px; z-index:2;"><span class="ic ic-sm" data-icon="layers"></span></button>
           <div class="track-art"><span class="ic" data-icon="music2"></span></div>
           <div class="track-meta">
             <span class="mono track-label">Now Playing</span>
@@ -215,6 +241,9 @@
           </button>
           <button class="ghost-btn" id="snapshot-btn" title="Snapshot PNG" aria-label="Save snapshot">
             <span class="ic" data-icon="camera"></span>
+          </button>
+          <button class="ghost-btn" id="export-remix-btn" title="Export remix WAV" aria-label="Export remix">
+            <span class="ic" data-icon="music"></span>
           </button>
           <button class="ghost-btn rec-btn" id="record-btn" title="Record session (WebM)" aria-label="Record session">
             <span class="ic" data-icon="record"></span>

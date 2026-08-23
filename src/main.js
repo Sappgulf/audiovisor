@@ -1126,10 +1126,14 @@ function drawWaveform(buffer) {
 
 /* ---------- resize + adaptive quality ---------- */
 
-new ResizeObserver(() => {
-  renderer.resize();
-  if (engine.buffer && engine.mode === 'file') drawWaveform(engine.buffer);
-}).observe($('viz-canvas'));
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => {
+    renderer.resize();
+    if (engine.buffer && engine.mode === 'file') drawWaveform(engine.buffer);
+  }).observe($('viz-canvas'));
+} else {
+  window.addEventListener('resize', () => renderer.resize());
+}
 
 /* ---------- render loop ---------- */
 

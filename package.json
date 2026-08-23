@@ -1,7 +1,7 @@
 {
   "name": "audiovisor",
   "private": true,
-  "version": "6.3.0",
+  "version": "6.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,6 +15,7 @@
     "eslint": "^10.9.0",
     "fake-indexeddb": "^6.2.5",
     "globals": "^17.11.0",
+    "jsdom": "^30.0.1",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }

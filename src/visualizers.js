@@ -13,7 +13,8 @@ import { lerp, logFreqIndex, logSample, hexRgba, clamp } from './utils.js';
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
+    this.ctx = canvas.getContext && canvas.getContext('2d');
+    this._dead = !this.ctx;
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.w = 0;
     this.h = 0;
@@ -75,6 +76,7 @@ export class Renderer {
   }
 
   resize() {
+    if (this._dead) return;
     const rect = this.canvas.getBoundingClientRect();
     this.w = Math.max(1, Math.round(rect.width));
     this.h = Math.max(1, Math.round(rect.height));
@@ -155,7 +157,8 @@ export class Renderer {
       bg.addColorStop(1, hexRgba(c, 0.18));
       bc.fillStyle = bg;
       bc.beginPath();
-      bc.roundRect(0, 0, 8, 256, [4, 4, 0, 0]);
+      if (bc.roundRect) bc.roundRect(0, 0, 8, 256, [4, 4, 0, 0]);
+      else bc.rect(0, 0, 8, 256);
       bc.fill();
       // inner sheen line
       bc.fillStyle = 'rgba(255,255,255,0.18)';
@@ -194,6 +197,7 @@ export class Renderer {
   /* ---------------- main entry ---------------- */
 
   render(idle, freq, wave, levels, dtMs = 16.7) {
+    if (this._dead || !this.ctx) return;
     const { ctx, w, h } = this;
     const dt = clamp((dtMs || 16.7) / 1000, 0.001, 0.06);
     const dt60 = dt * 60;
