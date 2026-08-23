@@ -61,6 +61,7 @@ export class Renderer {
     this.stars = [];
     this._starSig = '';
     this.orbSat = [];
+    this._scopePts = null;
 
     /* caches */
     this._dotSprites = null;
@@ -98,6 +99,7 @@ export class Renderer {
     this.scopeCv = null;
     this.scopeCtx = null;
     this.orbSat = [];
+    this._scopePts = null;
   }
   setTheme(t) {
     this.theme = t;
@@ -208,6 +210,27 @@ export class Renderer {
     }
     this._scene(freq, wave, dt, dt60);
     if (punched) ctx.restore();
+
+    // ray-trace SSR floor (subtle reflection of the scene)
+    if (this.quality !== 'low' && this.mode !== 'bars') {
+      const fh = Math.round(h * 0.28);
+      const sy = h - fh;
+      ctx.save();
+      ctx.globalAlpha = 0.13;
+      ctx.globalCompositeOperation = 'source-over';
+      // flip vertically around sy
+      ctx.translate(0, sy * 2 + fh);
+      ctx.scale(1, -1);
+      // draw only the upper region that reflects
+      ctx.drawImage(this.canvas, 0, 0, w, fh, 0, 0, w, fh);
+      ctx.restore();
+      // fade the reflection
+      const fade = ctx.createLinearGradient(0, sy, 0, h);
+      fade.addColorStop(0, 'rgba(15,14,13,0)');
+      fade.addColorStop(1, 'rgba(15,14,13,0.92)');
+      ctx.fillStyle = fade;
+      ctx.fillRect(0, sy, w, fh);
+    }
 
     if (this.beat > 0.45) this._beatFlash();
     this._bloom(this.beat);
@@ -343,6 +366,13 @@ export class Renderer {
     }
     ctx.fillStyle = this._floorGrads[c0];
     ctx.fillRect(0, horizon, w, h - horizon);
+    // ray-trace AO: soft contact shadow at horizon
+    const ao = ctx.createLinearGradient(0, horizon - 1, 0, horizon + 22);
+    ao.addColorStop(0, 'rgba(0,0,0,0)');
+    ao.addColorStop(0.45, 'rgba(0,0,0,0.22)');
+    ao.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = ao;
+    ctx.fillRect(0, horizon - 1, w, 23);
 
     const colors = [];
     const amps = new Array(N);
@@ -523,7 +553,8 @@ export class Renderer {
     sctx.fillRect(0, 0, w, h);
     sctx.globalCompositeOperation = 'lighter';
 
-    const pts = new Float32Array(N * 2);
+    if (!this._scopePts || this._scopePts.length < N * 2) this._scopePts = new Float32Array(N * 2);
+    const pts = this._scopePts;
     for (let i = 0; i < N; i++) {
       const si = ((i / N) * wave.length) | 0;
       const sj = (si + delay) % wave.length;
@@ -557,6 +588,12 @@ export class Renderer {
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
+    // ray-trace chromatic micro-shift
+    ctx.globalAlpha = 0.55;
+    ctx.drawImage(this.scopeCv, 0.6, 0, w, h);
+    ctx.globalAlpha = 0.55;
+    ctx.drawImage(this.scopeCv, -0.6, 0, w, h);
+    ctx.globalAlpha = 1;
     ctx.drawImage(this.scopeCv, 0, 0, w, h);
     ctx.restore();
 
@@ -706,21 +743,42 @@ export class Renderer {
       if (lineAlpha > 0.12) {
         ctx.lineWidth = 0.7;
         const pts = this.particles;
+        // spatial grid: 85px cells to cull far pairs
+        const cell = 85;
+        const cols = Math.ceil(w / cell);
+        const grid = new Map();
+        for (let i = 0; i < pts.length; i++) {
+          const k = ((pts[i].x / cell) | 0) + ((pts[i].y / cell) | 0) * cols;
+          let bucket = grid.get(k);
+          if (!bucket) grid.set(k, (bucket = []));
+          bucket.push(i);
+        }
+        const neigh = [-1, 0, 1];
         for (let i = 0; i < pts.length; i++) {
           const a = pts[i];
-          for (let j = i + 1; j < pts.length; j++) {
-            const b = pts[j];
-            const dx = a.x - b.x;
-            if (dx > 85 || dx < -85) continue;
-            const dy = a.y - b.y;
-            if (dy > 85 || dy < -85) continue;
-            const d2 = dx * dx + dy * dy;
-            if (d2 < 7225) {
-              ctx.strokeStyle = hexRgba(this._color(a.c), lineAlpha * (1 - d2 / 7225) * a.life * b.life);
-              ctx.beginPath();
-              ctx.moveTo(a.x, a.y);
-              ctx.lineTo(b.x, b.y);
-              ctx.stroke();
+          const cx = (a.x / cell) | 0;
+          const cy = (a.y / cell) | 0;
+          for (const dy of neigh) {
+            for (const dx of neigh) {
+              const nk = (cx + dx) + (cy + dy) * cols;
+              const bucket = grid.get(nk);
+              if (!bucket) continue;
+              for (const j of bucket) {
+                if (j <= i) continue;
+                const b = pts[j];
+                const dx2 = a.x - b.x;
+                if (dx2 > 85 || dx2 < -85) continue;
+                const dy2 = a.y - b.y;
+                if (dy2 > 85 || dy2 < -85) continue;
+                const d2 = dx2 * dx2 + dy2 * dy2;
+                if (d2 < 7225) {
+                  ctx.strokeStyle = hexRgba(this._color(a.c), lineAlpha * (1 - d2 / 7225) * a.life * b.life);
+                  ctx.beginPath();
+                  ctx.moveTo(a.x, a.y);
+                  ctx.lineTo(b.x, b.y);
+                  ctx.stroke();
+                }
+              }
             }
           }
         }
@@ -828,6 +886,12 @@ export class Renderer {
       ctx.closePath();
       ctx.stroke();
     }
+    // ray-trace vignette for depth
+    const vig = ctx.createRadialGradient(cx, cy, maxR * 0.7, cx, cy, maxR * 1.25);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.32)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, w, h);
     ctx.globalCompositeOperation = 'source-over';
   }
 
@@ -1010,6 +1074,13 @@ export class Renderer {
       ctx.fillRect(x, baseline - bh, bw * 0.62, bh);
     }
 
+    /* ray-trace building contact shadows */
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    for (let i = 0; i < N; i++) {
+      const bodyW = w / N * 0.68;
+      const x = i * (w / N) + (w / N - bodyW) / 2;
+      ctx.fillRect(x + 3, baseline - 2, bodyW, 6);
+    }
     /* ground glow */
     const gGrad = ctx.createLinearGradient(0, baseline, 0, h);
     gGrad.addColorStop(0, hexRgba(this._color(0), 0.12));
