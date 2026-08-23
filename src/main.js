@@ -292,6 +292,10 @@ function setTheme(id) {
   state.themeId = id;
   renderer.setTheme(THEMES.find((t) => t.id === id));
   [...themeRow.children].forEach((c, i) => c.classList.toggle('is-active', THEMES[i].id === id));
+  if (engine.track && engine.mode !== 'spotify') {
+    trackArtEl._artName = null;
+    updateTrackUI();
+  }
   saveSettings();
 }
 
@@ -574,7 +578,7 @@ function updateTrackUI() {
     // procedural album art
     if (!trackArtEl._artName || trackArtEl._artName !== t.name) {
       trackArtEl._artName = t.name;
-      const art = generateAlbumArt(t.name, THEMES.find(th => th.id === state.themeId)?.colors || ['#d9b089','#c49a6e','#f5e6d3'], 160);
+      const art = generateAlbumArt(t.name, THEMES.find(th => th.id === state.themeId)?.colors || ['#d9b089','#c49a6e','#f5e6d3'], 96);
       trackArtEl.innerHTML = '';
       trackArtEl.appendChild(art);
       trackArtEl.querySelector('canvas')?.classList.add('track-art-img');

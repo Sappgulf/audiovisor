@@ -23,6 +23,8 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 - **Adaptive quality** — auto-scales rendering (DPR, particle caps, bloom) to hold 60fps
 
 ### Engine & AI
+- **Beat-grid visuals** — 4 phase dots + pulse ring bottom-center on every non-bars mode; vertical beat lines sliding across bars when BPM locks
+- **Theme-reactive art** — procedural cover regenerates on theme change, breathes while playing (3.2s)
 - **Waveform seek preview** — peak-rendered waveform under the seek bar (240 buckets), translucent played fill + bright playhead
 - **Decode resilience** — per-file decode with callback fallback, corrupt files skipped not fatal
 - **Fine controls** — Shift+←/→ seeks ±3s, mouse wheel on stage adjusts volume

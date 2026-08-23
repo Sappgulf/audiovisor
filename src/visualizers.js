@@ -203,6 +203,7 @@ export class Renderer {
     const dt60 = dt * 60;
 
     this.t += dt;
+    this.beatInfo = levels || this.beatInfo || { bpm: 0, beatPhase: 0 };
     const tracked = levels?.beatPulse;
     if (tracked != null) {
       this.beat = Math.max(tracked, this.beat * Math.pow(0.86, dt60));
@@ -275,7 +276,27 @@ export class Renderer {
     }
 
     if (this.beat > 0.45) this._beatFlash();
+    if (this.mode !== 'bars' && this.beatInfo?.bpm > 0) this._beatGrid();
     this._bloom(this.beat);
+  }
+
+  /* beat-grid: 4 phase dots + pulse ring, bottom-center */
+  _beatGrid() {
+    const { ctx, w, h } = this;
+    const by = h - 34;
+    const cx = w / 2;
+    const dot = this._dot(this._color(2));
+    const quarter = Math.floor(this.beatInfo.beatPhase * 4);
+    const gap = 16;
+    const base = cx - gap * 1.5;
+    for (let i = 0; i < 4; i++) {
+      const lit = (i + 1) % 4 === (quarter + (this.beat > 0.35 ? 1 : 0)) % 4;
+      const v = lit ? 0.9 + this.beat * 0.35 : 0.12;
+      const r = lit ? 3.4 + this.beat * 1.6 : 2.2;
+      ctx.globalAlpha = v;
+      ctx.drawImage(dot, base + i * gap - r, by - r, r * 2, r * 2);
+    }
+    ctx.globalAlpha = 1;
   }
 
   _scene(freq, wave, dt, dt60) {
@@ -467,6 +488,19 @@ export class Renderer {
     }
     ctx.restore();
     ctx.globalAlpha = 1;
+
+    /* beat grid lines from phase when locked */
+    if (this.beatInfo?.bpm > 0 && this.beatInfo.beatPhase != null) {
+      const sub = 4;
+      const ph = (this.beatInfo.beatPhase % 1) * sub;
+      const lineW = w / (sub);
+      ctx.fillStyle = hexRgba(this._color(0), 0.05 + (this.beat > 0.4 ? 0.05 : 0));
+      for (let s = 0; s < sub; s++) {
+        const x = (s - ph) * lineW;
+        if (x < -lineW || x > w + lineW) continue;
+        ctx.fillRect(x, 0, 1, horizon);
+      }
+    }
 
     /* peak caps with gravity fall + glow dot */
     for (let i = 0; i < N; i++) {
