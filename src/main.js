@@ -1135,7 +1135,16 @@ new ResizeObserver(() => {
 
 const frameTimes = [];
 let lastFrameTs = performance.now();
+let _frameErrors = 0;
 function frame(now) {
+  try {
+    frameStep(now);
+  } catch (err) {
+    if (_frameErrors++ < 3) console.error('frame error', err);
+  }
+  requestAnimationFrame(frame);
+}
+function frameStep(now) {
   const t0 = performance.now();
   const dtMs = Math.min(50, now - lastFrameTs);
   lastFrameTs = now;
@@ -1168,7 +1177,7 @@ function frame(now) {
     webgpuCanvas.width = Math.round(renderer.w * renderer.dpr);
     webgpuCanvas.height = Math.round(renderer.h * renderer.dpr);
   }
-  webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
+  if (webgpuCanvas) webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
   $('viz-canvas').style.display = gpuMode ? 'none' : 'block';
   if (gpuMode && !idle && levels) {
     if (webgpuState) renderWebGPU(webgpuState, renderer.t, levels.level);
@@ -1215,7 +1224,6 @@ function frame(now) {
     renderer.setQuality(target);
   }
 
-  requestAnimationFrame(frame);
 }
 
 loadSettings();
@@ -1287,9 +1295,11 @@ document.getElementById('settings-file')?.addEventListener('change', (e) => {
   e.target.value = '';
 });
 
-// PWA
+// PWA — register + force update so stale cache-first HTML self-heals
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+    .then((reg) => reg.update())
+    .catch(() => {});
 }
 // WebGPU init
 let webgpuState = null;

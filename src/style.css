@@ -913,12 +913,13 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 
 .seek-track {
   flex: 1;
-  height: 4px;
-  background: rgba(255,235,205,0.08);
+  height: 16px;
+  background: rgba(255,235,205,0.05);
   border-radius: 99px;
   overflow: hidden;
   cursor: pointer;
   position: relative;
+  border: 1px solid rgba(255,235,205,0.06);
 }
 .seek-track::after {
   content: '';
@@ -942,7 +943,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   top: 0;
   height: 100%;
   width: 0%;
-  background: rgba(217, 176, 137, 0.20);
+  background: rgba(217, 176, 137, 0.16);
   border-radius: 99px;
   pointer-events: none;
   transition: width 0.08s linear;
@@ -953,7 +954,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   right: -1px;
   top: 50%;
   width: 3px;
-  height: 14px;
+  height: 18px;
   transform: translateY(-50%);
   background: var(--accent);
   border-radius: 2px;
