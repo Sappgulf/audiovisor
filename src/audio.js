@@ -238,7 +238,17 @@ export class AudioEngine {
   async decodeFile(file) {
     this._ensureCtx();
     const arrayBuf = await file.arrayBuffer();
-    const audioBuf = await this.ctx.decodeAudioData(arrayBuf);
+    let audioBuf;
+    try {
+      audioBuf = await this.ctx.decodeAudioData(arrayBuf);
+    } catch (err) {
+      // some browsers only expose the callback form; the promise
+      // rejection detaches the buffer, so re-read the file
+      const arrayBuf2 = await file.arrayBuffer();
+      audioBuf = await new Promise((resolve, reject) => {
+        this.ctx.decodeAudioData(arrayBuf2, resolve, reject);
+      });
+    }
     return {
       buffer: audioBuf,
       meta: {
@@ -252,15 +262,21 @@ export class AudioEngine {
   }
 
   async addToQueue(files) {
+    const errors = [];
     for (const file of files) {
-      const decoded = await this.decodeFile(file);
-      this.queue.push(decoded);
+      try {
+        const decoded = await this.decodeFile(file);
+        this.queue.push(decoded);
+      } catch (err) {
+        errors.push(file.name || 'file');
+      }
     }
-    if (this.queueIndex === -1) {
+    if (this.queueIndex === -1 && this.queue.length) {
       this.queueIndex = 0;
       this._applyQueueItem(0);
     }
     if (this.onQueueChange) this.onQueueChange();
+    return errors;
   }
 
   _applyQueueItem(i) {
@@ -291,6 +307,7 @@ export class AudioEngine {
   }
 
   _connectSource() {
+    if (this.sourceGain) { try { this.sourceGain.disconnect(); } catch {} }
     const src = this.ctx.createBufferSource();
     src.buffer = this.buffer;
     src.playbackRate.value = this.speed;
@@ -610,7 +627,7 @@ export class AudioEngine {
         oldGain.gain.setValueAtTime(oldGain.gain.value, t);
         oldGain.gain.linearRampToValueAtTime(0.0001, t + fadeSec);
       } catch {}
-      setTimeout(() => { try { oldSrc?.stop(); } catch {} }, fadeSec * 1000 + 100);
+      setTimeout(() => { try { oldSrc?.stop(); } catch {} try { oldGain?.disconnect(); } catch {} }, fadeSec * 1000 + 100);
     }
     this.source.start(0, offset);
     this.startedAt = t - offset;
@@ -909,8 +926,12 @@ export class AudioEngine {
     const high = avg(iMid, iHigh);
     const level = avg(2, n);
 
-    /* beat clock runs on song position + full spectrum, not wall time */
-    this.beat.process(freq, this.getTime());
+    /* beat clock runs on song position + full spectrum, not wall time;
+       live inputs have no song clock so use the audio context clock */
+    const beatTime = (this.micActive || this.captureActive)
+      ? (this.ctx?.currentTime || 0)
+      : this.getTime();
+    this.beat.process(freq, beatTime);
     const bi = this.beat;
     return {
       bass, mid, high, level,

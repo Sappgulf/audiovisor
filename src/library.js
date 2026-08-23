@@ -83,11 +83,12 @@ export async function clearLibrary() {
 }
 
 export async function renderRemixToWav(buffer, edits = {}) {
-  const len = buffer.length;
+  const rate = edits.speed ? 1.5 : (edits.chop ? 0.66 : 1);
+  const len = Math.max(1, Math.ceil(buffer.length / rate));
   const offline = new OfflineAudioContext(buffer.numberOfChannels, len, buffer.sampleRate);
   const src = offline.createBufferSource();
   src.buffer = buffer;
-  src.playbackRate.value = edits.speed ? 1.5 : (edits.chop ? 0.66 : 1);
+  src.playbackRate.value = rate;
   let node = src;
 
   // lowpass

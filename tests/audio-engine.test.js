@@ -85,7 +85,15 @@ class FakeAudioContext {
     b.getChannelData = () => new Float32Array(len);
     return b;
   }
-  async decodeAudioData() { return new FakeBuffer(); }
+  async decodeAudioData(buf, cb, err) {
+    if ((this.failDecodeCount || 0) > 0) {
+      this.failDecodeCount--;
+      if (err) return err(new Error('corrupt'));
+      throw new Error('corrupt');
+    }
+    if (cb) return cb(new FakeBuffer());
+    return new FakeBuffer();
+  }
 }
 
 function makeFile(name = 'song.mp3') {
@@ -350,6 +358,15 @@ describe('AudioEngine', () => {
     engine.setFx('chop', false);
     expect(engine.fx.chop).toBe(false);
     expect(engine._chopTimer).toBeNull();
+  });
+
+  it('addToQueue skips corrupt files and returns their names', async () => {
+    await engine.addToQueue([makeFile('good.mp3')]);
+    engine.ctx.failDecodeCount = 2; // both promise + callback attempts fail for bad.mp3
+    const errors = await engine.addToQueue([makeFile('bad.mp3'), makeFile('fine.mp3')]);
+    expect(errors).toEqual(['bad.mp3']);
+    expect(engine.queue.length).toBe(2);
+    expect(engine.queue[1].meta.name).toBe('fine');
   });
 
   it('getLevels returns beat fields and handles null analyser', async () => {

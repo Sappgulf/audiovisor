@@ -570,6 +570,7 @@ function updateTrackUI() {
     $('track-name').textContent = t.name + idx;
     $('track-spec').textContent = `${(t.sampleRate / 1000).toFixed(1)}kHz / ${t.channels === 1 ? 'MONO' : 'STEREO'} · ${t.ext}`;
     $('time-total').textContent = fmtTime(t.duration);
+    drawWaveform(engine.buffer);
     // procedural album art
     if (!trackArtEl._artName || trackArtEl._artName !== t.name) {
       trackArtEl._artName = t.name;
@@ -688,13 +689,18 @@ async function loadFiles(files) {
   engine.stopStream();
   $('status-text').textContent = 'Engine: Decoding';
   try {
-    await engine.addToQueue(audioFiles);
+    const errors = await engine.addToQueue(audioFiles);
+    if (!engine.hasTrack) {
+      toast('<b>Decode failed</b> — no playable files', { duration: 3000 });
+      return;
+    }
     dropzone.classList.add('is-hidden');
     updateTrackUI();
     engine.play();
-    toast(audioFiles.length > 1
-      ? `Loaded <b>${audioFiles.length} tracks</b> — queue playing`
-      : `Loaded <b>${engine.track.name}</b>`);
+    const loaded = audioFiles.length - errors.length;
+    toast(errors.length
+      ? `Loaded <b>${loaded}</b> · skipped <b>${errors.length}</b> corrupt`
+      : (loaded > 1 ? `Loaded <b>${loaded} tracks</b> — queue playing` : `Loaded <b>${engine.track.name}</b>`));
   } catch (err) {
     console.error(err);
     $('status-text').textContent = 'Engine: Decode Failed';
@@ -826,6 +832,11 @@ let volDragging = false;
 volumeTrack.addEventListener('mousedown', (e) => { volDragging = true; volumeFromEvent(e); });
 window.addEventListener('mousemove', (e) => { if (volDragging) volumeFromEvent(e); });
 window.addEventListener('mouseup', () => { volDragging = false; saveSettings(); });
+$('stage').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  setVolumeUI(engine.volume - Math.sign(e.deltaY) * 0.05);
+  saveSettings();
+}, { passive: false });
 
 $('fullscreen-btn').addEventListener('click', () => {
   const shell = $('shell');
@@ -1019,10 +1030,10 @@ window.addEventListener('keydown', (e) => {
       transportToggle();
       break;
     case 'ArrowLeft':
-      engine.skip(-10);
+      engine.skip(e.shiftKey ? -3 : -10);
       break;
     case 'ArrowRight':
-      engine.skip(10);
+      engine.skip(e.shiftKey ? 3 : 10);
       break;
     case 'ArrowUp':
       e.preventDefault();
@@ -1073,9 +1084,52 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+/* ---------- waveform seek preview ---------- */
+
+function computePeaks(buffer, buckets = 240) {
+  const ch = buffer.getChannelData(0);
+  const step = Math.max(1, Math.floor(ch.length / buckets));
+  const peaks = new Float32Array(buckets);
+  const sub = Math.max(1, Math.floor(step / 64));
+  for (let b = 0; b < buckets; b++) {
+    let max = 0;
+    const end = Math.min(ch.length, (b + 1) * step);
+    for (let i = b * step; i < end; i += sub) {
+      const v = Math.abs(ch[i]);
+      if (v > max) max = v;
+    }
+    peaks[b] = max;
+  }
+  const m = Math.max(...peaks) || 1;
+  for (let i = 0; i < buckets; i++) peaks[i] /= m;
+  return peaks;
+}
+
+function drawWaveform(buffer) {
+  const c = document.getElementById('seek-wave');
+  if (!c || !buffer) return;
+  const W = c.clientWidth || 600;
+  const H = c.clientHeight || 24;
+  if (c.width !== W) c.width = W;
+  if (c.height !== H) c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  const peaks = computePeaks(buffer, Math.min(240, Math.floor(W / 2)));
+  const bw = W / peaks.length;
+  const mid = H / 2;
+  ctx.fillStyle = 'rgba(255,235,205,0.22)';
+  for (let i = 0; i < peaks.length; i++) {
+    const h = Math.max(1, peaks[i] * (H - 4));
+    ctx.fillRect(i * bw + bw * 0.15, mid - h / 2, bw * 0.7, h);
+  }
+}
+
 /* ---------- resize + adaptive quality ---------- */
 
-new ResizeObserver(() => renderer.resize()).observe($('viz-canvas'));
+new ResizeObserver(() => {
+  renderer.resize();
+  if (engine.buffer && engine.mode === 'file') drawWaveform(engine.buffer);
+}).observe($('viz-canvas'));
 
 /* ---------- render loop ---------- */
 
@@ -1251,17 +1305,20 @@ if (webgpuCanvas) {
 let voiceSynth = null;
 let voiceActive = false;
 let voiceRaf = null;
+let voiceStream = null;
 document.getElementById('voice-btn')?.addEventListener('click', async () => {
   if (voiceActive) {
     voiceActive = false;
     document.getElementById('voice-btn').classList.remove('is-on');
     if (voiceRaf) cancelAnimationFrame(voiceRaf);
     voiceSynth?.stop();
+    if (voiceStream) { voiceStream.getTracks().forEach(tr => tr.stop()); voiceStream = null; }
     toast('Voice AI <b>off</b>');
     return;
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = voiceStream;
     // warm context already ensured via engine
     if (!engine.ctx) engine._ensureCtx();
     voiceSynth = new VoiceSynth(engine.ctx);

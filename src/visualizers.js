@@ -961,6 +961,7 @@ export class Renderer {
       const baseR = minDim * (0.1 + r * 0.15);
       const spin = this.t * (0.14 + r * 0.08) * (1 + this.sm.level * 1.6) * (r % 2 ? -1 : 1);
       const sprite = this._dot(this._color(r));
+      const trail = [];
       for (let i = 0; i < P; i++) {
         const ang = (i / P) * Math.PI * 2 + spin;
         const idx = logFreqIndex((i * 7 + Math.floor(this.t * 3) * 3) % P, P, freq.length);
@@ -974,6 +975,16 @@ export class Renderer {
         const s = 7 + v * 6;
         ctx.globalAlpha = clamp(0.2 + v * 0.6, 0.05, 0.85);
         ctx.drawImage(sprite, x - s, y - s, s * 2, s * 2);
+        trail.push([x, y]);
+      }
+      // ring trail
+      if (trail.length > 4) {
+        ctx.beginPath();
+        ctx.moveTo(trail[0][0], trail[0][1]);
+        for (let i = 1; i < trail.length; i += 2) ctx.lineTo(trail[i][0], trail[i][1]);
+        ctx.strokeStyle = hexRgba(this._color(r), 0.10 + this.sm.level * 0.10);
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
       }
     }
     ctx.globalAlpha = 1;

@@ -37,4 +37,6 @@ export const THEMES = [
   { id: 'autotune', name: 'AutoTune Pop', colors: ['#ff006a', '#00f0ff', '#ffe600'], css: 'linear-gradient(135deg, #ff006a, #00f0ff)' },
   { id: 'laser', name: 'Laser Tag', colors: ['#ff1a1a', '#00ff9d', '#ffd600'], css: 'linear-gradient(135deg, #ff1a1a, #00ff9d)' },
   { id: 'screwed', name: 'Chop N Screwed', colors: ['#2a0a2a', '#7a2a5a', '#d9b089'], css: 'linear-gradient(135deg, #1a0a1e, #7a2a5a)' },
+  { id: 'jade', name: 'Jade', colors: ['#3df2c4', '#16a085', '#e8fff5'], css: 'linear-gradient(135deg, #3df2c4, #16a085)' },
+  { id: 'crimson', name: 'Crimson Silk', colors: ['#ff4d6d', '#8a0f2a', '#ffd6dd'], css: 'linear-gradient(135deg, #ff4d6d, #8a0f2a)' },
 ];

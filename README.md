@@ -15,7 +15,7 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 
 ### Stage
 - **19 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Pulse Orb, Fluid Metal, Tensor Grid, Prism Ray, Void Core, Bloom Field, GPU Core (WebGPU/WebGL2 ray-march)
-- **16 themes** — Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic, Monolith, Sunset, Matrix, Ultraviolet, Warm Brass, AutoTune Pop, Laser Tag, Chop N Screwed
+- **18 themes** — Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic, Monolith, Sunset, Matrix, Ultraviolet, Warm Brass, AutoTune Pop, Laser Tag, Chop N Screwed, Jade, Crimson Silk
 - **Interpolated log spectra** — smoother, more accurate frequency mapping across every mode (bars, terrain, city, kaleido, tunnel, orb) with gravity-fall peak caps
 - **Phosphor scope & wobble tunnel** — vectorscope with true persistence afterglow, radial tunnel with spectral wobble per ring, beat-synced stage punch + bloom
 - **Bloom compositing** — two-pass downscale glow replaces per-element shadow blur
@@ -23,6 +23,9 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 - **Adaptive quality** — auto-scales rendering (DPR, particle caps, bloom) to hold 60fps
 
 ### Engine & AI
+- **Waveform seek preview** — peak-rendered waveform under the seek bar (240 buckets), translucent played fill + bright playhead
+- **Decode resilience** — per-file decode with callback fallback, corrupt files skipped not fatal
+- **Fine controls** — Shift+←/→ seeks ±3s, mouse wheel on stage adjusts volume
 - **Auto DJ** — beat-matched crossfade (aligns BPM phase, 4s gain swoop) 6s before track end
 - **5-band Parametric EQ** — 60/250/1K/4K/12K ±10dB with live curve
 - **Genre/Mood detector** — tempo + spectral centroid → Ambient/Lo-Fi/House/EDM/Trap/Drill/DnB tag chip
