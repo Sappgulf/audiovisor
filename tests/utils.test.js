@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clamp, lerp, fmtTime, fmtStamp, logFreqIndex, median, hexRgba, pickRandom } from '../src/utils.js';
+import { clamp, lerp, fmtTime, fmtStamp, logFreqIndex, logSample, median, hexRgba, pickRandom } from '../src/utils.js';
 
 describe('clamp', () => {
   it('clamps into range', () => {
@@ -45,6 +45,42 @@ describe('logFreqIndex', () => {
   });
   it('concentrates low bins (log scale)', () => {
     expect(logFreqIndex(16, 64, 1024)).toBeLessThan(256);
+  });
+});
+
+describe('logSample', () => {
+  it('samples within 0..1 and matches endpoints', () => {
+    const freq = new Uint8Array(1024);
+    freq[0] = 255;
+    freq[1023] = 255;
+    expect(logSample(freq, 0)).toBeCloseTo(1, 5);
+    expect(logSample(freq, 1)).toBeCloseTo(1, 5);
+    const mid = logSample(new Uint8Array(1024).fill(128), 0.5);
+    expect(mid).toBeCloseTo(128 / 255, 5);
+  });
+  it('is monotonic for ramp spectrum and interpolates smoothly', () => {
+    const freq = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) freq[i] = i;
+    let prev = -1;
+    for (let t = 0; t <= 1; t += 0.05) {
+      const v = logSample(freq, t);
+      expect(v).toBeGreaterThanOrEqual(prev - 1e-9);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1);
+      prev = v;
+    }
+    // interpolation check: fractional t between bins should blend
+    const a = new Uint8Array([0, 255, 0, 0]);
+    // need longer array to see interpolation; craft 4 bins
+    const f = logSample(a, 0.5);
+    // not zero because interpolates between 255 and neighbors
+    expect(f).toBeGreaterThan(0);
+    expect(f).toBeLessThan(1);
+  });
+  it('handles t01 outside 0..1 via clamp', () => {
+    const freq = new Uint8Array([100, 200, 50]);
+    expect(logSample(freq, -0.5)).toBeCloseTo(freq[0] / 255, 5);
+    expect(logSample(freq, 1.5)).toBeCloseTo(freq[2] / 255, 5);
   });
 });
 

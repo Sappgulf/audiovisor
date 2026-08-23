@@ -40,7 +40,6 @@ export class Renderer {
     this.peakVels = [];
     this.idleDots = [];
     this.echo = null;
-    this.barIndices = [];
 
     /* per-mode state */
     this.terrainRows = [];
@@ -193,7 +192,7 @@ export class Renderer {
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    if (idle) {
+    if (idle || !freq || !wave) {
       this._idle(dt60);
       this._bloom(this.beat);
       return;

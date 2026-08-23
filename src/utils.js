@@ -24,7 +24,8 @@ export function logFreqIndex(i, count, bins) {
  */
 export function logSample(freq, t01) {
   const max = freq.length - 1;
-  const x = clamp(Math.pow(t01, 2) * max, 0, max);
+  const t = clamp(t01, 0, 1);
+  const x = Math.pow(t, 2) * max;
   const i = x | 0;
   const f = x - i;
   return (freq[i] + (freq[i + 1 > max ? max : i + 1] - freq[i]) * f) / 255;

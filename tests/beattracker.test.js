@@ -127,4 +127,46 @@ describe('BeatTracker', () => {
     expect(bt.phase).toBe(0);
     expect(bt.confidence).toBe(0);
   });
+
+  it('handles jittered intervals (±15ms) and still locks ~120', () => {
+    const bt = new BeatTracker();
+    const onset = makeOnsetSpectrum();
+    const rest = restSpectrum();
+    let t = 0;
+    bt.process(rest, t);
+    t += 1 / 60;
+    let next = 0.5;
+    // add ±12ms jitter per beat
+    const jitters = [0.012, -0.008, 0.005, -0.011, 0.009, -0.004, 0.010, -0.006];
+    for (let b = 0; b < 20; b++) {
+      const spacing = 0.5 + jitters[b % jitters.length];
+      next += spacing;
+      while (t < next - 1e-9) {
+        bt.process(rest, t);
+        t += 1 / 60;
+      }
+      bt.process(onset, t);
+      t += 1 / 60;
+      // immediate rest after onset to create flux
+      bt.process(rest, t);
+      t += 1 / 60;
+    }
+    expect(bt.bpm).toBeGreaterThan(115);
+    expect(bt.bpm).toBeLessThan(125);
+  });
+
+  it('folds half-time (1.0s spacing = 60 BPM raw) up to ~120', () => {
+    const bt = new BeatTracker();
+    runSpaced(bt, { spacing: 1.0, beats: 16 });
+    expect(bt.bpm).toBeGreaterThan(115);
+    expect(bt.bpm).toBeLessThan(125);
+  });
+
+  it('ignores invalid inputs gracefully', () => {
+    const bt = new BeatTracker();
+    expect(() => bt.process(null, 0)).not.toThrow();
+    expect(() => bt.process(new Uint8Array(64), NaN)).not.toThrow();
+    expect(() => bt.process(new Uint8Array(64), Infinity)).not.toThrow();
+    expect(bt.bpm).toBe(0);
+  });
 });

@@ -284,4 +284,60 @@ describe('AudioEngine', () => {
     // playback continues uninterrupted: same buffer object still loaded
     expect(engine.source.startCalls.length).toBe(1);
   });
+
+  it('getLevels with preFetched reuses cached frame (no double sampling)', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+    let calls = 0;
+    const orig = engine.getData.bind(engine);
+    engine.getData = () => { calls++; return orig(); };
+    const d = engine.getData();
+    calls = 0;
+    const lv = engine.getLevels(d);
+    expect(calls).toBe(0);
+    expect(lv).toHaveProperty('bass');
+    expect(lv).toHaveProperty('beatPulse');
+  });
+
+  it('seek resets beat tracker (bpm/phase go to 0)', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+    // fake a locked beat
+    engine.beat.bpm = 120;
+    engine.beat.phase = 0.5;
+    engine.beat.confidence = 0.9;
+    engine.beat.pulse = 1;
+    engine.seek(10);
+    expect(engine.beat.bpm).toBe(0);
+    expect(engine.beat.phase).toBe(0);
+    expect(engine.beat.confidence).toBe(0);
+  });
+
+  it('beatInfo exposes tempo prediction state', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+    const info = engine.beatInfo;
+    expect(info).toHaveProperty('bpm');
+    expect(info).toHaveProperty('phase');
+    expect(info).toHaveProperty('pulse');
+    expect(info).toHaveProperty('confidence');
+    expect(info.bpm).toBe(0);
+    // feed rest then loud to generate spectral flux onset
+    const rest = new Uint8Array(1024); rest.fill(40);
+    const loud = new Uint8Array(1024); loud.fill(40); for (let i=0;i<16;i++) loud[i]=220;
+    const t0 = engine.getTime();
+    engine.beat.process(rest, t0);
+    engine.beat.process(loud, t0 + 0.016);
+    expect(engine.beatInfo.pulse).toBeGreaterThan(0);
+  });
+
+  it('getLevels returns beat fields and handles null analyser', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+    const lv = engine.getLevels();
+    expect(lv).toHaveProperty('bpm');
+    expect(lv).toHaveProperty('beatPhase');
+    expect(lv).toHaveProperty('beatPulse');
+    expect(lv).toHaveProperty('beatConfidence');
+  });
 });
