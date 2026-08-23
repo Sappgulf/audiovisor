@@ -1,4 +1,4 @@
-# AUDIOVISOR
+# AUDIOVISOR — v4 Pro Pack
 
 A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across eighteen stage modes, sixteen themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
 
@@ -21,6 +21,12 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 - **Bloom compositing** — two-pass downscale glow replaces per-element shadow blur
 - **Delta-time animation** — identical motion at 60 Hz, 120 Hz, 144 Hz+
 - **Adaptive quality** — auto-scales rendering (DPR, particle caps, bloom) to hold 60fps
+
+### AI & Social
+- **Voice AI** — hum or sing into the mic, pitch-detected via autocorrelation → MIDI → saw synth
+- **WebGPU 3D** — ray-marched void core (torus + glow) when WebGPU available, fallback to canvas
+- **Social Feed** — local discover feed, post mixes, like, share via `#share` hash
+- **Live Party** — QR + BroadcastChannel sync as light grid
 
 ### Engine
 - Web Audio API: queue, seek, loop, volume, speed

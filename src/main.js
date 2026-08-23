@@ -6,6 +6,9 @@ import { ConnectPanel } from './connect.js';
 import { fmtTime, pickRandom, fmtStamp } from './utils.js';
 import * as Library from './library.js';
 import { AI_PRESETS, suggestPreset } from './ai.js';
+import { detectPitch, freqToMidi, VoiceSynth } from './voice.js';
+import { initWebGPU, renderWebGPU } from './webgpu.js';
+import * as Social from './social.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) =>
@@ -1049,6 +1052,7 @@ function frame(now) {
     }
   }
 
+  if (webgpuState && !idle && levels) renderWebGPU(webgpuState, renderer.t, levels.level);
   renderer.render(idle, freq, wave, levels, dtMs);
 
   if (!idle) {
@@ -1075,6 +1079,89 @@ function frame(now) {
 loadSettings();
 refreshStatus();
 requestAnimationFrame(frame);
+
+// PWA
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(()=>{});
+}
+// WebGPU init
+let webgpuState = null;
+const webgpuCanvas = document.getElementById('webgpu-canvas');
+if (webgpuCanvas) {
+  initWebGPU(webgpuCanvas).then(s => { webgpuState = s; if (s) webgpuCanvas.style.display = 'block'; });
+}
+// Voice AI
+let voiceSynth = null;
+let voiceActive = false;
+let voiceRaf = null;
+document.getElementById('voice-btn')?.addEventListener('click', async () => {
+  if (voiceActive) {
+    voiceActive = false;
+    document.getElementById('voice-btn').classList.remove('is-on');
+    if (voiceRaf) cancelAnimationFrame(voiceRaf);
+    voiceSynth?.stop();
+    toast('Voice AI <b>off</b>');
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // warm context already ensured via engine
+    if (!engine.ctx) engine._ensureCtx();
+    voiceSynth = new VoiceSynth(engine.ctx);
+    const src = engine.ctx.createMediaStreamSource(stream);
+    const analyser = engine.ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    src.connect(analyser);
+    const buf = new Float32Array(analyser.fftSize);
+    voiceActive = true;
+    document.getElementById('voice-btn').classList.add('is-on');
+    toast('Voice AI <b>listening</b> — hum to play');
+    const loop = () => {
+      if (!voiceActive) return;
+      analyser.getFloatTimeDomainData(buf);
+      const freq = detectPitch(buf, engine.ctx.sampleRate);
+      if (freq > 80 && freq < 1000) {
+        const midi = freqToMidi(freq);
+        const f = 440 * Math.pow(2, (midi-69)/12);
+        voiceSynth.play(f, 0.25);
+        renderer.beat = 0.7;
+      } else {
+        voiceSynth.stop();
+      }
+      voiceRaf = requestAnimationFrame(loop);
+    };
+    loop();
+  } catch { toast('<b>Mic denied</b>'); }
+});
+
+// Social feed wiring
+Social.seedFeed();
+function renderSocial() {
+  const el = document.getElementById('social-feed');
+  if (!el) return;
+  const feed = Social.getFeed();
+  el.innerHTML = feed.slice(0,8).map(e => `
+    <div style="padding:8px 10px; background:var(--glass); border:1px solid var(--border-soft); border-radius:8px; display:flex; justify-content:space-between; align-items:center">
+      <div style="min-width:0">
+        <div style="font-size:11px; font-weight:600; color:var(--text)">${esc(e.title)}</div>
+        <div style="font-size:10px; color:var(--text-40)">${esc(e.user)} · ${esc(e.mode)} · ${e.likes}♥</div>
+      </div>
+      <button class="ghost-btn" data-like="${e.id}" style="width:28px; height:28px; flex-shrink:0"><span class="ic ic-sm" data-icon="record"></span></button>
+    </div>`).join('');
+  el.querySelectorAll('[data-like]').forEach(b=>b.addEventListener('click', ()=>{ Social.likeFeed(b.dataset.like); renderSocial(); }));
+}
+document.getElementById('social-post')?.addEventListener('click', () => {
+  const inp = document.getElementById('social-input');
+  const title = inp?.value.trim();
+  if (!title) return;
+  Social.postToFeed({ title, mode: state.modeId, theme: state.themeId, fx: state.fx });
+  if (inp) inp.value = '';
+  renderSocial();
+  toast('Posted to <b>feed</b>');
+});
+renderSocial();
+// hook frame to also render WebGPU when available
+
 
 /* debug/testing hook */
 window.__av = { engine, renderer, connect };

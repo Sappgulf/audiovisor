@@ -1,0 +1,12 @@
+{
+  "name": "AUDIOVISOR",
+  "short_name": "AUDIOVISOR",
+  "description": "Premium music visualizer — 18 modes, 16 themes, Library, AI Studio, Party",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0e0d",
+  "theme_color": "#d9b089",
+  "icons": [
+    { "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='32' fill='%23d9b089'/%3E%3Crect x='66' y='66' width='60' height='60' fill='%231a1816' transform='rotate(45 96 96)'/%3E%3C/svg%3E", "sizes": "192x192", "type": "image/svg+xml" }
+  ]
+}
