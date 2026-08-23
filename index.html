@@ -69,6 +69,10 @@
               <span class="ic ic-lime" data-icon="zap"></span>
               <span class="mono chip-label">Bass Active</span>
             </div>
+            <div class="data-chip chip-accent is-hidden" id="mood-chip">
+              <span class="ic ic-lime" data-icon="sparkles"></span>
+              <span class="mono chip-label" id="mood-value">—</span>
+            </div>
           </div>
 
           <div class="dropzone-wrap" id="dropzone">
@@ -124,6 +128,13 @@
             <div class="divider"></div>
 
             <section>
+              <h3 class="section-title">EQ — 5 Band</h3>
+              <div class="eq-bands" id="eq-bands"></div>
+            </section>
+
+            <div class="divider"></div>
+
+            <section>
               <h3 class="section-title">FX Chain</h3>
               <div class="fx-row" id="fx-row"></div>
             </section>
@@ -132,9 +143,22 @@
 
             <section>
               <h3 class="section-title">Autopilot</h3>
-              <button class="fx-chip" id="autopilot-chip" data-fx="autopilot">
-                <span class="chip-txt">Auto</span>
-              </button>
+              <div class="fx-row">
+                <button class="fx-chip" id="autopilot-chip" data-fx="autopilot"><span class="chip-txt">Auto</span></button>
+                <button class="fx-chip" id="autodj-chip" data-fx="autodj"><span class="chip-txt">Auto DJ</span></button>
+              </div>
+            </section>
+
+            <div class="divider"></div>
+
+            <section>
+              <h3 class="section-title">System</h3>
+              <div class="fx-row" style="margin-bottom:10px">
+                <button class="mini-btn" id="settings-export">Export</button>
+                <button class="mini-btn" id="settings-import">Import</button>
+                <button class="mini-btn" id="tour-replay">Tour</button>
+              </div>
+              <input type="file" id="settings-file" accept=".json" hidden />
             </section>
           </div>
         </aside>

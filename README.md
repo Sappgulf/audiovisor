@@ -22,6 +22,16 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 - **Delta-time animation** — identical motion at 60 Hz, 120 Hz, 144 Hz+
 - **Adaptive quality** — auto-scales rendering (DPR, particle caps, bloom) to hold 60fps
 
+### Engine & AI
+- **Auto DJ** — beat-matched crossfade (aligns BPM phase, 4s gain swoop) 6s before track end
+- **5-band Parametric EQ** — 60/250/1K/4K/12K ±10dB with live curve
+- **Genre/Mood detector** — tempo + spectral centroid → Ambient/Lo-Fi/House/EDM/Trap/Drill/DnB tag chip
+- **Procedural album art** — deterministic cover per track (arcs + diamond + grain)
+- **Onboarding tour** — first-run hint chain, replayable
+- **Wake lock** — screen stays on during playback
+- **Settings export/import** — full JSON share (mode/theme/FX/EQ/vol/loop/DJ)
+- **WebGL2 fallback** — ray-marched void core when WebGPU unavailable
+
 ### AI & Social
 - **Voice AI** — hum or sing into the mic, pitch-detected via autocorrelation → MIDI → saw synth
 - **WebGPU 3D** — ray-marched void core (torus + glow) when WebGPU available, fallback to canvas

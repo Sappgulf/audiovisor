@@ -159,11 +159,23 @@ export class AudioEngine {
       this.chopGate.gain.value = 1;
       this._chopTimer = null;
 
+      // 5-band parametric EQ (60, 250, 1k, 4k, 12k) in series
+      this.eqFilters = [60, 250, 1000, 4000, 12000].map((f) => {
+        const b = this.ctx.createBiquadFilter();
+        b.type = 'peaking';
+        b.frequency.value = f;
+        b.Q.value = 1.1;
+        b.gain.value = 0;
+        return b;
+      });
+
       this.master = this.ctx.createGain();
       this.master.gain.value = this.volume;
 
       // main chain with fun inserts: filter -> tune -> crush -> compressor -> chopGate -> master
-      this.filter.connect(this.tuneFilter);
+      let eqPrev = this.filter;
+      for (const b of this.eqFilters) { eqPrev.connect(b); eqPrev = b; }
+      eqPrev.connect(this.tuneFilter);
       this.tuneFilter.connect(this.crushShaper);
       this.crushShaper.connect(this.compressor);
       this.compressor.connect(this.chopGate);
@@ -279,12 +291,16 @@ export class AudioEngine {
   }
 
   _connectSource() {
-    this.source = this.ctx.createBufferSource();
-    this.source.buffer = this.buffer;
-    this.source.playbackRate.value = this.speed;
-    this.source.loop = this.loop;
-    this.source.connect(this.filter);
-    this.source.onended = () => {
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.buffer;
+    src.playbackRate.value = this.speed;
+    src.loop = this.loop;
+    this.sourceGain = this.ctx.createGain();
+    this.sourceGain.gain.value = 1;
+    src.connect(this.sourceGain);
+    this.sourceGain.connect(this.filter);
+    src.onended = () => {
+      if (src._fade) return; // crossfade handled by crossfadeTo
       if (this.playing) {
         this.playing = false;
         if (!this.loop && this.queueIndex < this.queue.length - 1) {
@@ -297,6 +313,7 @@ export class AudioEngine {
         if (this.onEnded) this.onEnded();
       }
     };
+    this.source = src;
   }
 
   /* ---------- transport (routes by mode) ---------- */
@@ -563,6 +580,42 @@ export class AudioEngine {
         if (!this.fx.speed) this.setSpeed(1);
       }
     }
+  }
+
+  setEq(band, gainDb) {
+    if (this.eqFilters && this.eqFilters[band]) {
+      this.eqFilters[band].gain.setTargetAtTime(gainDb, this.ctx.currentTime, 0.03);
+    }
+  }
+
+  crossfadeTo(i, fadeSec = 4) {
+    if (!this.queue[i] || i === this.queueIndex) return;
+    const oldSrc = this.source;
+    const oldGain = this.sourceGain;
+    // beat-match: start next track at same beat phase
+    const bpm = this.beat.bpm;
+    let offset = 0;
+    if (bpm > 0) offset = this.getTime() % (60 / bpm);
+    this._applyQueueItem(i);
+    this._connectSource();
+    const t = this.ctx.currentTime;
+    if (this.sourceGain) {
+      this.sourceGain.gain.setValueAtTime(0.0001, t);
+      this.sourceGain.gain.linearRampToValueAtTime(1, t + fadeSec);
+    }
+    if (oldSrc) oldSrc._fade = true;
+    if (oldGain) {
+      try {
+        oldGain.gain.cancelScheduledValues(t);
+        oldGain.gain.setValueAtTime(oldGain.gain.value, t);
+        oldGain.gain.linearRampToValueAtTime(0.0001, t + fadeSec);
+      } catch {}
+      setTimeout(() => { try { oldSrc?.stop(); } catch {} }, fadeSec * 1000 + 100);
+    }
+    this.source.start(0, offset);
+    this.startedAt = t - offset;
+    this.playing = true;
+    this._emit();
   }
 
   /* ---------- mic (analysis-only) ---------- */

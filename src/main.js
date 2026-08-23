@@ -7,6 +7,9 @@ import { fmtTime, pickRandom, fmtStamp } from './utils.js';
 import * as Library from './library.js';
 import { AI_PRESETS, suggestPreset } from './ai.js';
 import { detectPitch, freqToMidi, VoiceSynth } from './voice.js';
+import { detectMood } from './mood.js';
+import { generateAlbumArt } from './albumart.js';
+import { initWebGL2, renderWebGL2 } from './webgl2.js';
 import { initWebGPU, renderWebGPU } from './webgpu.js';
 import * as Social from './social.js';
 
@@ -136,6 +139,34 @@ FX.forEach((fx) => {
   });
   fxRow.appendChild(btn);
   fxEls[fx] = btn;
+});
+
+// EQ bands
+const eqBands = document.getElementById('eq-bands');
+const EQ_FREQS = [60, 250, 1000, 4000, 12000];
+if (eqBands) {
+  EQ_FREQS.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'eq-row';
+    row.innerHTML = `<span class="mono eq-label">${f >= 1000 ? f/1000 + 'K' : f}</span><input type="range" class="ctrl-slider eq-slider" min="-10" max="10" step="0.5" value="0" /><span class="mono eq-val">0</span>`;
+    eqBands.appendChild(row);
+    row.querySelector('input').addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      row.querySelector('.eq-val').textContent = v > 0 ? '+' + v : v;
+      engine.setEq(i, v);
+      saveSettings();
+    });
+  });
+}
+
+// Auto DJ
+let autoDj = false;
+let djFiring = false;
+document.getElementById('autodj-chip')?.addEventListener('click', () => {
+  autoDj = !autoDj;
+  document.getElementById('autodj-chip').classList.toggle('is-active', autoDj);
+  toast(autoDj ? 'AUTO DJ <b>ON</b> — beat-matched crossfade' : 'AUTO DJ <b>OFF</b>', { duration: 1600 });
+  saveSettings();
 });
 
 // AI Remix Studio wiring
@@ -534,16 +565,35 @@ function updateTrackUI() {
     $('track-name').textContent = t.name + idx;
     $('track-spec').textContent = `${(t.sampleRate / 1000).toFixed(1)}kHz / ${t.channels === 1 ? 'MONO' : 'STEREO'} · ${t.ext}`;
     $('time-total').textContent = fmtTime(t.duration);
-    trackArtEl.innerHTML = '<span class="ic" data-icon="music2"></span>';
-    setIcon(trackArtEl.querySelector('.ic'), 'music2');
+    // procedural album art
+    if (!trackArtEl._artName || trackArtEl._artName !== t.name) {
+      trackArtEl._artName = t.name;
+      const art = generateAlbumArt(t.name, THEMES.find(th => th.id === state.themeId)?.colors || ['#d9b089','#c49a6e','#f5e6d3'], 160);
+      trackArtEl.innerHTML = '';
+      trackArtEl.appendChild(art);
+      trackArtEl.querySelector('canvas')?.classList.add('track-art-img');
+    }
   }
   updateMediaSession();
 }
 
 /* ---------- play state sync ---------- */
 
+let wakeLock = null;
+async function syncWakeLock(playing) {
+  try {
+    if (playing && navigator.wakeLock && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!playing && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch {}
+}
 function refreshStatus() {
   const playing = engine.playing;
+  syncWakeLock(playing);
   const icon = playing ? 'pause' : 'play';
   setIcon($('play-pause-icon'), icon);
   setIcon($('header-play-icon'), icon);
@@ -1052,7 +1102,10 @@ function frame(now) {
     }
   }
 
-  if (webgpuState && !idle && levels) renderWebGPU(webgpuState, renderer.t, levels.level);
+  if (!idle && levels) {
+    if (webgpuState) renderWebGPU(webgpuState, renderer.t, levels.level);
+    else if (webgl2State && webgpuCanvas) renderWebGL2(webgl2State, renderer.t, levels.level, webgpuCanvas.width, webgpuCanvas.height);
+  }
   renderer.render(idle, freq, wave, levels, dtMs);
 
   if (!idle) {
@@ -1063,6 +1116,22 @@ function frame(now) {
     const bi = engine.beatInfo;
     $('bpm-value').textContent = bi.bpm && bi.confidence > 0.25 ? bi.bpm.toFixed(2) : '--.--';
     $('bass-chip').classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));
+    if (levels) {
+      const mood = detectMood({ bpm: levels.bpm, bass: levels.bass, mid: levels.mid, high: levels.high });
+      const chip = $('mood-chip');
+      if (mood) { $('mood-value').textContent = mood.tag; chip.classList.remove('is-hidden'); }
+      else chip.classList.add('is-hidden');
+    }
+    // Auto DJ crossfade near track end
+    if (autoDj && !djFiring && engine.playing && engine.mode === 'file' && engine.queue.length > 1) {
+      const rem = engine.getDuration() - engine.getTime();
+      if (rem < 6) {
+        djFiring = true;
+        engine.crossfadeTo((engine.queueIndex + 1) % engine.queue.length, 4);
+        toast('AUTO DJ — <b>crossfading</b>');
+        setTimeout(() => { djFiring = false; }, 5200);
+      }
+    }
   }
 
   frameTimes.push(performance.now() - t0);
@@ -1080,15 +1149,83 @@ loadSettings();
 refreshStatus();
 requestAnimationFrame(frame);
 
+// Onboarding tour
+function runTour() {
+  const steps = [
+    ['Drop <b>audio</b> or press <b>Space</b> to begin', 800],
+    ['<b>M</b> cycles 18 modes · <b>T</b> cycles 16 themes', 3800],
+    ['<b>C</b> Chop N Screwed · <b>L</b> Library · <b>F</b> Cinema', 6800],
+    ['<b>R</b> random look · <b>P</b> snapshot · <b>Q</b> queue', 9800],
+  ];
+  steps.forEach(([msg, at]) => setTimeout(() => toast(msg, { duration: 3000 }), at));
+  localStorage.setItem('audiovisor.tour', '1');
+}
+if (!localStorage.getItem('audiovisor.tour')) runTour();
+document.getElementById('tour-replay')?.addEventListener('click', () => { toast('TOUR <b>restarted</b>'); runTour(); });
+
+// Settings export/import
+function currentSettings() {
+  return {
+    version: 6,
+    mode: state.modeId, theme: state.themeId, autopilot: state.autopilot, fx: state.fx,
+    sliders: Object.fromEntries(Object.entries(sliderEls).map(([k, el]) => [k, parseFloat(el.value)])),
+    eq: EQ_FREQS.map((_, i) => engine.eqFilters?.[i]?.gain.value || 0),
+    volume: engine.volume, loop: engine.loop, autoDj,
+  };
+}
+document.getElementById('settings-export')?.addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(currentSettings(), null, 2)], { type: 'application/json' });
+  downloadBlob(blob, 'audiovisor-settings.json');
+  toast('Settings <b>exported</b>');
+});
+document.getElementById('settings-import')?.addEventListener('click', () => document.getElementById('settings-file')?.click());
+document.getElementById('settings-file')?.addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  f.text().then(txt => {
+    try {
+      const s = JSON.parse(txt);
+      if (s.mode) setMode(s.mode);
+      if (s.theme) setTheme(s.theme);
+      for (const [k, v] of Object.entries(s.sliders || {})) {
+        const input = sliderEls[k];
+        if (input) { input.value = v; input.dispatchEvent(new Event('input')); }
+      }
+      for (const [k, v] of Object.entries(s.fx || {})) {
+        if (fxEls[k]) { fxEls[k].classList.toggle('is-active', !!v); engine.setFx(k, !!v); state.fx[k] = !!v; }
+      }
+      (s.eq || []).forEach((v, i) => {
+        const rows = document.querySelectorAll('.eq-row');
+        const input = rows[i]?.querySelector('input');
+        if (input) { input.value = v; input.dispatchEvent(new Event('input')); }
+      });
+      if (typeof s.volume === 'number') setVolumeUI(s.volume);
+      if (s.loop) { engine.loop = true; $('loop-btn').classList.add('is-on'); }
+      if (s.autopilot) setAutopilot(true, { silent: true });
+      if (s.autoDj) { autoDj = true; document.getElementById('autodj-chip')?.classList.add('is-active'); }
+      toast('Settings <b>imported</b>');
+    } catch { toast('<b>Import failed</b>'); }
+  });
+  e.target.value = '';
+});
+
 // PWA
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(()=>{});
 }
 // WebGPU init
 let webgpuState = null;
+let webgl2State = null;
 const webgpuCanvas = document.getElementById('webgpu-canvas');
 if (webgpuCanvas) {
-  initWebGPU(webgpuCanvas).then(s => { webgpuState = s; if (s) webgpuCanvas.style.display = 'block'; });
+  initWebGPU(webgpuCanvas).then(s => {
+    webgpuState = s;
+    if (s) { webgpuCanvas.style.display = 'block'; }
+    else {
+      webgl2State = initWebGL2(webgpuCanvas);
+      if (webgl2State) webgpuCanvas.style.display = 'block';
+    }
+  });
 }
 // Voice AI
 let voiceSynth = null;

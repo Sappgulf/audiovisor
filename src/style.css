@@ -1159,6 +1159,12 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   50% { box-shadow: 0 0 0 6px rgba(232, 93, 63, 0); }
 }
 
+.eq-bands { display: flex; flex-direction: column; gap: 10px; }
+.eq-row { display: flex; align-items: center; gap: 10px; }
+.eq-label { font-size: 10px; color: var(--text-40); width: 30px; flex-shrink: 0; letter-spacing: 0.06em; }
+.eq-row .eq-slider { flex: 1; }
+.eq-val { font-size: 10px; color: var(--accent); width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 1024px) {
