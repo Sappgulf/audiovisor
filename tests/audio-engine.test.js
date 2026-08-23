@@ -4,6 +4,8 @@ class FakeParam {
   constructor(value) { this.value = value; }
   setTargetAtTime(v) { this.value = v; }
   setValueAtTime(v) { this.value = v; }
+  cancelScheduledValues() {}
+  linearRampToValueAtTime(v) { this.value = v; }
 }
 
 class FakeNode {
@@ -335,6 +337,19 @@ describe('AudioEngine', () => {
     engine.beat.process(rest, t0);
     engine.beat.process(loud, t0 + 0.016);
     expect(engine.beatInfo.pulse).toBeGreaterThan(0);
+  });
+
+  it('chop FX toggles speed and filter and schedules gate', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+    engine.setFx('chop', true);
+    expect(engine.fx.chop).toBe(true);
+    expect(engine.chopGate.gain.value).toBe(1);
+    // should be slowed
+    expect(engine.speed).toBe(0.66);
+    engine.setFx('chop', false);
+    expect(engine.fx.chop).toBe(false);
+    expect(engine._chopTimer).toBeNull();
   });
 
   it('getLevels returns beat fields and handles null analyser', async () => {

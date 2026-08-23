@@ -30,4 +30,5 @@ export const THEMES = [
   { id: 'brass', name: 'Warm Brass', colors: ['#d9b089', '#c49a6e', '#f5e6d3'], css: 'linear-gradient(135deg, #d9b089, #8a6a4a)' },
   { id: 'autotune', name: 'AutoTune Pop', colors: ['#ff006a', '#00f0ff', '#ffe600'], css: 'linear-gradient(135deg, #ff006a, #00f0ff)' },
   { id: 'laser', name: 'Laser Tag', colors: ['#ff1a1a', '#00ff9d', '#ffd600'], css: 'linear-gradient(135deg, #ff1a1a, #00ff9d)' },
+  { id: 'screwed', name: 'Chop N Screwed', colors: ['#2a0a2a', '#7a2a5a', '#d9b089'], css: 'linear-gradient(135deg, #1a0a1e, #7a2a5a)' },
 ];

@@ -218,6 +218,16 @@ export class Renderer {
       return;
     }
 
+    const chop = !!levels?.chop;
+    const chopGlitch = chop && ((this.t * 1000) % 420) < 95;
+    if (chopGlitch) {
+      ctx.save();
+      // screwed low, slow feel: slight desat via overlay
+      ctx.globalAlpha = 0.06;
+      ctx.fillStyle = '#1a0a1e';
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
     const punched = this.beat > 0.02;
     if (punched) {
       ctx.save();
@@ -226,7 +236,17 @@ export class Renderer {
       ctx.scale(z, z);
       ctx.translate(-w / 2, -h / 2);
     }
+    // chop slice stutter (VHS)
+    if (chopGlitch) {
+      ctx.save();
+      const sliceY = (this.t * 380) % h;
+      ctx.translate((Math.sin(this.t * 62) * 7), 0);
+      ctx.beginPath();
+      ctx.rect(0, sliceY, w, 18 + Math.random()*22);
+      ctx.clip();
+    }
     this._scene(freq, wave, dt, dt60);
+    if (chopGlitch) ctx.restore();
     if (punched) ctx.restore();
 
     // ray-trace SSR floor (subtle reflection of the scene)

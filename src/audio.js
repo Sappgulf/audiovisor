@@ -59,7 +59,7 @@ export class AudioEngine {
     this.smoothing = 0.82;
     this.bassFocus = 0.5;
 
-    this.fx = { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false };
+    this.fx = { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false };
     this.speed = 1;
 
     this.offset = 0;
@@ -155,14 +155,19 @@ export class AudioEngine {
       this.crushShaper = this.ctx.createWaveShaper();
       this.crushShaper.curve = null;
 
+      this.chopGate = this.ctx.createGain();
+      this.chopGate.gain.value = 1;
+      this._chopTimer = null;
+
       this.master = this.ctx.createGain();
       this.master.gain.value = this.volume;
 
-      // main chain with fun inserts: filter -> tune -> crush -> compressor -> master
+      // main chain with fun inserts: filter -> tune -> crush -> compressor -> chopGate -> master
       this.filter.connect(this.tuneFilter);
       this.tuneFilter.connect(this.crushShaper);
       this.crushShaper.connect(this.compressor);
-      this.compressor.connect(this.master);
+      this.compressor.connect(this.chopGate);
+      this.chopGate.connect(this.master);
       // parallel verb
       this.filter.connect(this.convolver);
       this.convolver.connect(this.reverbGain);
@@ -520,6 +525,44 @@ export class AudioEngine {
         this.crushShaper.curve = null;
       }
     }
+    if (name === 'chop') {
+      if (on) {
+        // screwed: slow + lowpass
+        this._chopPrevSpeed = this.speed;
+        this.setSpeed(0.66);
+        this.filter.frequency.setTargetAtTime(900, t, 0.12);
+        this.chopGate.gain.cancelScheduledValues(t);
+        this.chopGate.gain.setValueAtTime(1, t);
+        if (this._chopTimer) clearInterval(this._chopTimer);
+        this._chopTimer = setInterval(() => {
+          if (!this.fx.chop || !this.ctx || !this.chopGate) return;
+          const now = this.ctx.currentTime;
+          try {
+            this.chopGate.gain.cancelScheduledValues(now);
+            this.chopGate.gain.setValueAtTime(1, now);
+            this.chopGate.gain.linearRampToValueAtTime(0.02, now + 0.045);
+            this.chopGate.gain.linearRampToValueAtTime(1, now + 0.14);
+            if (this.source && this.source.playbackRate) {
+              this.source.playbackRate.cancelScheduledValues(now);
+              this.source.playbackRate.setValueAtTime(this.speed * 0.88, now);
+              this.source.playbackRate.linearRampToValueAtTime(this.speed, now + 0.22);
+            }
+          } catch {}
+        }, 420);
+      } else {
+        if (this._chopTimer) { clearInterval(this._chopTimer); this._chopTimer = null; }
+        try {
+          this.chopGate.gain.cancelScheduledValues(t);
+          this.chopGate.gain.setValueAtTime(1, t);
+          if (this.source) this.source.playbackRate.setValueAtTime(this.fx.speed ? 1.5 : 1, t);
+        } catch {}
+        // restore filter if lowpass not active
+        if (!this.fx.lowpass) this.filter.frequency.setTargetAtTime(22050, t, 0.12);
+        else this.filter.frequency.setTargetAtTime(400, t, 0.08);
+        // restore speed if needed (already via playbackRate above, but ensure)
+        if (!this.fx.speed) this.setSpeed(1);
+      }
+    }
   }
 
   /* ---------- mic (analysis-only) ---------- */
@@ -822,6 +865,7 @@ export class AudioEngine {
       beatPhase: bi.phase,
       beatPulse: bi.pulse,
       beatConfidence: bi.confidence,
+      chop: !!this.fx.chop,
     };
   }
 

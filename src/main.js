@@ -21,7 +21,7 @@ const state = {
   autopilot: false,
   autopilotTimer: null,
   drawerOpen: true,
-  fx: { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false },
+  fx: { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false },
 };
 
 /* ---------- toasts ---------- */
@@ -114,7 +114,7 @@ function applySlider(id, v) {
   }
 }
 
-const FX = ['reverb', 'limiter', 'lowpass', 'speed', 'autotune', 'chorus', 'echo', 'crush'];
+const FX = ['reverb', 'limiter', 'lowpass', 'speed', 'autotune', 'chorus', 'echo', 'crush', 'chop'];
 const fxRow = $('fx-row');
 const fxEls = {};
 FX.forEach((fx) => {
@@ -750,6 +750,12 @@ window.addEventListener('keydown', (e) => {
     case 'KeyF':
       $('fullscreen-btn').click();
       break;
+    case 'KeyC': {
+      const btn = fxEls['chop'];
+      if (btn) btn.click();
+      else { const on = !engine.fx.chop; engine.setFx('chop', on); toast(`FX <b>CHOP</b> ${on ? 'engaged — screwed' : 'bypassed'}`, { duration: 1400 }); }
+      break;
+    }
     case 'Escape': {
       if (!queuePanel.classList.contains('is-hidden')) toggleQueue(false);
       if (aboutPanel.classList.contains('is-open')) aboutPanel.classList.remove('is-open');
