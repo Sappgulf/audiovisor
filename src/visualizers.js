@@ -29,6 +29,8 @@ export class Renderer {
     this.theme = THEMES[0];
     this.sensitivity = 1.4;
     this.bassFocus = 0.5;
+    this.colorPop = 1.0;
+    this.bloomAmount = 0.5;
 
     this.quality = 'high';
 
@@ -108,6 +110,8 @@ export class Renderer {
   }
   setSensitivity(v) { this.sensitivity = v; }
   setBassFocus(v) { this.bassFocus = v; }
+  setColorPop(v) { this.colorPop = v; this._cacheSig = ''; }
+  setBloom(v) { this.bloomAmount = v; }
 
   /* ---------------- caches ---------------- */
 
@@ -271,7 +275,7 @@ export class Renderer {
   /* ---------------- bloom ---------------- */
 
   _bloom(punch = 0) {
-    if (this.quality === 'low') return;
+    if (this.quality === 'low' || this.bloomAmount <= 0.01) return;
     const { ctx, w, h } = this;
     const gw = Math.max(2, Math.floor(w / 4));
     const gh = Math.max(2, Math.floor(h / 4));
@@ -291,9 +295,9 @@ export class Renderer {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.imageSmoothingEnabled = true;
-    ctx.globalAlpha = clamp(0.36 + punch * 0.12, 0, 0.62);
+    ctx.globalAlpha = clamp((0.36 + punch * 0.12) * (0.5 + this.bloomAmount), 0, 0.62);
     ctx.drawImage(this.glowB, -w * 0.02, -h * 0.02, w * 1.04, h * 1.04);
-    ctx.globalAlpha = clamp(0.28 + punch * 0.10, 0, 0.52);
+    ctx.globalAlpha = clamp((0.28 + punch * 0.10) * (0.5 + this.bloomAmount), 0, 0.52);
     ctx.drawImage(this.glowA, 0, 0, w, h);
     ctx.restore();
   }
@@ -753,7 +757,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     if (this.quality !== 'low') {
-      const lineAlpha = 0.1 + this.sm.level * 0.22;
+      const lineAlpha = (0.1 + this.sm.level * 0.22) * (0.7 + this.colorPop * 0.3);
       if (lineAlpha > 0.12) {
         ctx.lineWidth = 0.7;
         const pts = this.particles;

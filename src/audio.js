@@ -59,7 +59,7 @@ export class AudioEngine {
     this.smoothing = 0.82;
     this.bassFocus = 0.5;
 
-    this.fx = { reverb: false, limiter: false, lowpass: false, speed: false };
+    this.fx = { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false };
     this.speed = 1;
 
     this.offset = 0;
@@ -131,14 +131,54 @@ export class AudioEngine {
       this.reverbGain = this.ctx.createGain();
       this.reverbGain.gain.value = 0;
 
+      // fun FX: autotune (peaking), chorus (delay+feedback), echo (delay), crush (waveshaper)
+      this.tuneFilter = this.ctx.createBiquadFilter();
+      this.tuneFilter.type = 'peaking';
+      this.tuneFilter.frequency.value = 1100;
+      this.tuneFilter.Q.value = 1.2;
+      this.tuneFilter.gain.value = 0;
+
+      this.chorusDelay = this.ctx.createDelay(0.05);
+      this.chorusDelay.delayTime.value = 0.012;
+      this.chorusGain = this.ctx.createGain();
+      this.chorusGain.gain.value = 0;
+      this.chorusFeedback = this.ctx.createGain();
+      this.chorusFeedback.gain.value = 0.18;
+
+      this.echoDelay = this.ctx.createDelay(1.0);
+      this.echoDelay.delayTime.value = 0.0;
+      this.echoGain = this.ctx.createGain();
+      this.echoGain.gain.value = 0;
+      this.echoFeedback = this.ctx.createGain();
+      this.echoFeedback.gain.value = 0.28;
+
+      this.crushShaper = this.ctx.createWaveShaper();
+      this.crushShaper.curve = null;
+
       this.master = this.ctx.createGain();
       this.master.gain.value = this.volume;
 
-      this.filter.connect(this.compressor);
+      // main chain with fun inserts: filter -> tune -> crush -> compressor -> master
+      this.filter.connect(this.tuneFilter);
+      this.tuneFilter.connect(this.crushShaper);
+      this.crushShaper.connect(this.compressor);
       this.compressor.connect(this.master);
+      // parallel verb
       this.filter.connect(this.convolver);
       this.convolver.connect(this.reverbGain);
       this.reverbGain.connect(this.master);
+      // chorus send (parallel)
+      this.filter.connect(this.chorusDelay);
+      this.chorusDelay.connect(this.chorusGain);
+      this.chorusGain.connect(this.master);
+      this.chorusDelay.connect(this.chorusFeedback);
+      this.chorusFeedback.connect(this.chorusDelay);
+      // echo send (parallel)
+      this.filter.connect(this.echoDelay);
+      this.echoDelay.connect(this.echoGain);
+      this.echoGain.connect(this.master);
+      this.echoDelay.connect(this.echoFeedback);
+      this.echoFeedback.connect(this.echoDelay);
       this.master.connect(this.analyser);
       this.analyser.connect(this.ctx.destination);
 
@@ -456,6 +496,30 @@ export class AudioEngine {
     if (name === 'limiter') this.compressor.threshold.setTargetAtTime(on ? -18 : 0, t, 0.05);
     if (name === 'lowpass') this.filter.frequency.setTargetAtTime(on ? 400 : 22050, t, 0.08);
     if (name === 'speed') this.setSpeed(on ? 1.5 : 1);
+    if (name === 'autotune') this.tuneFilter.gain.setTargetAtTime(on ? 10 : 0, t, 0.08);
+    if (name === 'chorus') {
+      this.chorusDelay.delayTime.setTargetAtTime(on ? 0.028 : 0.012, t, 0.08);
+      this.chorusGain.gain.setTargetAtTime(on ? 0.42 : 0, t, 0.06);
+    }
+    if (name === 'echo') {
+      this.echoDelay.delayTime.setTargetAtTime(on ? 0.34 : 0.0, t, 0.08);
+      this.echoGain.gain.setTargetAtTime(on ? 0.32 : 0, t, 0.06);
+    }
+    if (name === 'crush') {
+      if (on) {
+        const k = 20;
+        const n = 44100;
+        const curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+          const x = (i * 2) / n - 1;
+          curve[i] = (3 + k) * x * 20 * (Math.PI / 180) / (Math.PI + k * Math.abs(x));
+        }
+        this.crushShaper.curve = curve;
+        this.crushShaper.oversample = '2x';
+      } else {
+        this.crushShaper.curve = null;
+      }
+    }
   }
 
   /* ---------- mic (analysis-only) ---------- */

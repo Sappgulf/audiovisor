@@ -1,6 +1,6 @@
 # AUDIOVISOR
 
-A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across thirteen stage modes, thirteen theme moods, a full FX chain, tempo-locked beat tracking, session recording, and autopilot.
+A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across thirteen stage modes, fifteen theme moods, a full FX chain, tempo-locked beat tracking, session recording, and autopilot.
 
 ## Features
 
@@ -15,7 +15,7 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 
 ### Stage
 - **13 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Pulse Orb
-- **13 themes** — Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic, Monolith, Sunset, Matrix, Ultraviolet, Warm Brass
+- **15 themes** — Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic, Monolith, Sunset, Matrix, Ultraviolet, Warm Brass, AutoTune Pop, Laser Tag
 - **Interpolated log spectra** — smoother, more accurate frequency mapping across every mode (bars, terrain, city, kaleido, tunnel, orb) with gravity-fall peak caps
 - **Phosphor scope & wobble tunnel** — vectorscope with true persistence afterglow, radial tunnel with spectral wobble per ring, beat-synced stage punch + bloom
 - **Bloom compositing** — two-pass downscale glow replaces per-element shadow blur
@@ -27,8 +27,8 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 - **Queue manager** — jump between tracks, remove, shuffle (`Q`)
 - **Snapshot** — save the current frame as PNG (`P` or camera button)
 - **Session recorder** — record visuals + master audio mix to WebM (record button)
-- FX chain — Reverb (generated impulse), Limiter, Lowpass, Speed ×1.5
-- Reactivity — sensitivity, bass focus, smoothing controls
+- FX chain — Reverb (generated impulse), Limiter, Lowpass, Speed ×1.5, AutoTune (peaking 1.1kHz), Chorus (28ms delay + feedback), Echo (340ms), Crush (wave-shaper)
+- Reactivity & Color — sensitivity, bass focus, smoothing, Color Pop (theme vividness), Bloom (glow intensity)
 - Beat tracking — tempo-locked spectral-flux detector with octave folding, beat-phase prediction & confidence gating; live BPM chip + bass-active indicator; stage punch + bloom react on every predicted beat
 - Autopilot — cycles modes and themes every 12s
 - MediaSession — OS media keys, lock-screen metadata & album art, seek-to

@@ -21,7 +21,7 @@ const state = {
   autopilot: false,
   autopilotTimer: null,
   drawerOpen: true,
-  fx: { reverb: false, limiter: false, lowpass: false, speed: false },
+  fx: { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false },
 };
 
 /* ---------- toasts ---------- */
@@ -73,6 +73,8 @@ const SLIDERS = [
   { id: 'sensitivity', label: 'Sensitivity', min: 0.4, max: 2.4, step: 0.05, value: 1.4, fmt: (v) => `x${v.toFixed(2)}` },
   { id: 'bass-focus', label: 'Bass Focus', min: 0, max: 1, step: 0.05, value: 0.5, fmt: (v) => `${Math.round(v * 100)}%` },
   { id: 'smoothing', label: 'Smoothing', min: 0, max: 0.95, step: 0.01, value: 0.82, fmt: (v) => v.toFixed(2) },
+  { id: 'color-pop', label: 'Color Pop', min: 0.6, max: 1.9, step: 0.05, value: 1.0, fmt: (v) => `${Math.round(v*100)}%` },
+  { id: 'bloom', label: 'Bloom', min: 0, max: 1, step: 0.05, value: 0.5, fmt: (v) => `${Math.round(v*100)}%` },
 ];
 const slidersWrap = $('sliders');
 const sliderEls = {};
@@ -105,10 +107,14 @@ function applySlider(id, v) {
     renderer.setBassFocus(v);
   } else if (id === 'smoothing') {
     engine.setSmoothing(v);
+  } else if (id === 'color-pop') {
+    renderer.setColorPop(v);
+  } else if (id === 'bloom') {
+    renderer.setBloom(v);
   }
 }
 
-const FX = ['reverb', 'limiter', 'lowpass', 'speed'];
+const FX = ['reverb', 'limiter', 'lowpass', 'speed', 'autotune', 'chorus', 'echo', 'crush'];
 const fxRow = $('fx-row');
 const fxEls = {};
 FX.forEach((fx) => {
@@ -181,6 +187,8 @@ function saveSettings() {
         sensitivity: parseFloat(sliderEls.sensitivity.value),
         'bass-focus': parseFloat(sliderEls['bass-focus'].value),
         smoothing: parseFloat(sliderEls.smoothing.value),
+        'color-pop': parseFloat(sliderEls['color-pop']?.value || 1),
+        bloom: parseFloat(sliderEls.bloom?.value || 0.5),
       },
       volume: engine.volume,
       loop: engine.loop,

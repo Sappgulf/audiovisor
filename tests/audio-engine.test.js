@@ -18,6 +18,10 @@ class FakeNode {
     this.attack = new FakeParam(0.003);
     this.release = new FakeParam(0.25);
     this.playbackRate = new FakeParam(1);
+    this.Q = new FakeParam(1);
+    this.delayTime = new FakeParam(0);
+    this.curve = null;
+    this.oversample = 'none';
   }
   connect(dest) { this.connections.push(dest); return dest; }
   disconnect() { this.connections.length = 0; }
@@ -67,6 +71,8 @@ class FakeAudioContext {
   createDynamicsCompressor() { return new FakeNode(this); }
   createConvolver() { return new FakeNode(this); }
   createGain() { return new FakeNode(this); }
+  createDelay() { return new FakeNode(this); }
+  createWaveShaper() { return new FakeNode(this); }
   createBufferSource() {
     const s = new FakeSource(this);
     this.sources.push(s);

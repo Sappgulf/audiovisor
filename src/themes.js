@@ -28,4 +28,6 @@ export const THEMES = [
   { id: 'matrix', name: 'Matrix', colors: ['#00ff41', '#00c22e', '#aaffcc'], css: 'linear-gradient(135deg, #00ff41, #008f11)' },
   { id: 'ultra', name: 'Ultraviolet', colors: ['#b366ff', '#66a3ff', '#ff66c4'], css: 'linear-gradient(135deg, #b366ff, #ff66c4)' },
   { id: 'brass', name: 'Warm Brass', colors: ['#d9b089', '#c49a6e', '#f5e6d3'], css: 'linear-gradient(135deg, #d9b089, #8a6a4a)' },
+  { id: 'autotune', name: 'AutoTune Pop', colors: ['#ff006a', '#00f0ff', '#ffe600'], css: 'linear-gradient(135deg, #ff006a, #00f0ff)' },
+  { id: 'laser', name: 'Laser Tag', colors: ['#ff1a1a', '#00ff9d', '#ffd600'], css: 'linear-gradient(135deg, #ff1a1a, #00ff9d)' },
 ];
