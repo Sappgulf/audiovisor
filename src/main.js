@@ -473,6 +473,7 @@ async function renderLibrary() {
   }
   // filter by search
   const q = (document.getElementById('lib-search')?.value || '').toLowerCase();
+  // eslint-disable-next-line no-useless-assignment
   if (q) meta = meta.filter(m => m.name.toLowerCase().includes(q) || (m.ext||'').toLowerCase().includes(q));
   libraryPanel.innerHTML = html;
   libraryPanel.querySelectorAll('[data-icon]').forEach(el => setIcon(el, el.dataset.icon));
@@ -1282,7 +1283,7 @@ function buildCmds() {
   const cmds = [];
   MODES.forEach(m => cmds.push({ label: `Mode: ${m.name}`, action: () => setMode(m.id), keys: m.id }));
   THEMES.forEach(th => cmds.push({ label: `Theme: ${th.name}`, action: () => setTheme(th.id), keys: th.id }));
-  FX.forEach(fx => cmds.push({ label: `FX: ${fx.toUpperCase()}`, action: () => { const on = !state.fx[fx]; const btn = fxEls[fx]; if (btn) btn.click(); }, keys: fx }));
+  FX.forEach(fx => cmds.push({ label: `FX: ${fx.toUpperCase()}`, action: () => { const btn = fxEls[fx]; if (btn) btn.click(); }, keys: fx }));
   cmds.push({ label: 'Random Look', action: randomizeLook, keys: 'random' });
   cmds.push({ label: 'Toggle Library', action: () => toggleLibrary(), keys: 'library' });
   cmds.push({ label: 'Toggle Queue', action: () => toggleQueue(), keys: 'queue' });

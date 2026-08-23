@@ -247,7 +247,7 @@ export class AudioEngine {
     let audioBuf;
     try {
       audioBuf = await this.ctx.decodeAudioData(arrayBuf);
-    } catch (err) {
+    } catch {
       // some browsers only expose the callback form; the promise
       // rejection detaches the buffer, so re-read the file
       const arrayBuf2 = await file.arrayBuffer();
@@ -273,7 +273,7 @@ export class AudioEngine {
       try {
         const decoded = await this.decodeFile(file);
         this.queue.push(decoded);
-      } catch (err) {
+      } catch {
         errors.push(file.name || 'file');
       }
     }

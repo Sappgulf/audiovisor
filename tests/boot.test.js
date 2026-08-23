@@ -32,6 +32,7 @@ describe('App boot smoke (jsdom)', () => {
     let html = readFileSync('dist/index.html', 'utf8');
     const asset = readdirSync('dist/assets').find((f) => f.startsWith('index-') && f.endsWith('.js'));
     const bundle = readFileSync('dist/assets/' + asset, 'utf8');
+    // eslint-disable-next-line no-useless-escape
     const inline = '<script>' + bundle.replace(/<\/script>/g, '<\\/script>') + '<\/script>';
     html = html.replace(/<script type="module"[^>]*>\s*<\/script>/s, '');
     html = html.replace('</body>', () => inline + '</body>');
@@ -92,7 +93,6 @@ describe('App boot smoke (jsdom)', () => {
         // capture uncaught errors
         window.addEventListener('error', (e) => errors.push('W ' + (e.error?.stack ? e.error.stack.split('\n').slice(0, 8).join(' >> ') : (e.error?.message || e.message))));
         // run rAF frames
-        let n = 0;
         const raf = window.requestAnimationFrame.bind(window);
         window.requestAnimationFrame = (cb) => raf((t) => { frames++; if (frames < 120) cb(t); });
       },
