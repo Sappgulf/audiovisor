@@ -508,6 +508,29 @@ button:focus-visible, input:focus-visible {
   border-color: rgba(217, 176, 137, calc(0.25 + var(--beat, 0) * 0.55));
 }
 
+/* look-change transition — quick zoom + saturate pulse */
+.stage.is-look-change #viz-canvas {
+  animation: stage-look-pulse 0.55s cubic-bezier(0.22, 0.9, 0.28, 1);
+}
+@keyframes stage-look-pulse {
+  0% { transform: scale(1); filter: none; }
+  30% { transform: scale(0.955); filter: saturate(1.7) brightness(1.22); }
+  100% { transform: scale(1); filter: none; }
+}
+.stage.is-look-change::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 46%, rgba(255,250,243,0.14), transparent 62%);
+  animation: stage-flash 0.45s ease-out forwards;
+}
+@keyframes stage-flash {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* Dropzone */
 
 .dropzone-wrap {

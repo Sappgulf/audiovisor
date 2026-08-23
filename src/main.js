@@ -368,10 +368,18 @@ try {
 
 /* ---------- mode / theme switching ---------- */
 
+function pulseStage() {
+  const st = $('stage');
+  st.classList.remove('is-look-change');
+  void st.offsetWidth;
+  st.classList.add('is-look-change');
+}
+
 function setMode(id) {
   state.modeId = id;
   renderer.setMode(id);
   [...modeList.children].forEach((c, i) => c.classList.toggle('is-active', MODES[i].id === id));
+  pulseStage();
   saveSettings();
 }
 
@@ -379,10 +387,12 @@ function setTheme(id) {
   state.themeId = id;
   renderer.setTheme(THEMES.find((t) => t.id === id));
   [...themeRow.children].forEach((c, i) => c.classList.toggle('is-active', THEMES[i].id === id));
+  updateFavicon();
   if (engine.track && engine.mode !== 'spotify') {
     trackArtEl._artName = null;
     updateTrackUI();
   }
+  pulseStage();
   saveSettings();
 }
 
@@ -1236,6 +1246,75 @@ function drawWaveform(buffer) {
   }
 }
 
+/* ---------- live VU meter (bass / mid / high) ---------- */
+
+let vuPeaks = [0, 0, 0];
+function drawVu() {
+  const c = document.getElementById('vu-meter');
+  if (!c) return;
+  const ctx = c.getContext('2d');
+  const W = c.width, H = c.height;
+  ctx.clearRect(0, 0, W, H);
+  const idle = engine.activeInput === 'none';
+  c.style.opacity = idle ? 0.3 : 1;
+  const bands = [renderer.sm.bass, renderer.sm.mid, renderer.sm.high];
+  const colors = (THEMES.find((t) => t.id === state.themeId)?.colors) || ['#d9b089', '#c49a6e', '#f5e6d3'];
+  const bw = 12, gap = (W - bw * 3) / 2;
+  for (let i = 0; i < 3; i++) {
+    const v = Math.min(1.2, bands[i] * renderer.sensitivity * 0.85);
+    vuPeaks[i] = Math.max(v, vuPeaks[i] - 0.012);
+    const x = i * (bw + gap);
+    const bh = Math.max(2, v * (H - 6));
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(x, 3, bw, H - 6);
+    const g = ctx.createLinearGradient(0, H - 3 - bh, 0, H - 3);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.25, colors[i % colors.length]);
+    g.addColorStop(1, hexRgbaLocal(colors[i % colors.length], 0.35));
+    ctx.fillStyle = g;
+    ctx.fillRect(x, H - 3 - bh, bw, bh);
+    /* peak cap */
+    const py = H - 3 - Math.max(2, vuPeaks[i] * (H - 6)) - 1;
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillRect(x, py, bw, 1.4);
+  }
+}
+function hexRgbaLocal(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+/* ---------- theme-reactive favicon ---------- */
+
+let favLinkEl = null;
+function updateFavicon() {
+  const colors = THEMES.find((t) => t.id === state.themeId)?.colors || ['#d9b089', '#8a6a4a'];
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const c2 = cv.getContext('2d');
+  const g = c2.createLinearGradient(0, 0, 64, 64);
+  g.addColorStop(0, colors[0]);
+  g.addColorStop(1, colors[colors.length - 1]);
+  c2.fillStyle = g;
+  c2.beginPath();
+  if (c2.roundRect) c2.roundRect(0, 0, 64, 64, 14);
+  else c2.rect(0, 0, 64, 64);
+  c2.fill();
+  c2.fillStyle = 'rgba(16,14,12,0.82)';
+  c2.save();
+  c2.translate(32, 32);
+  c2.rotate(Math.PI / 4);
+  c2.fillRect(-11, -11, 22, 22);
+  c2.restore();
+  if (!favLinkEl) {
+    favLinkEl = document.createElement('link');
+    favLinkEl.rel = 'icon';
+    favLinkEl.type = 'image/png';
+    document.head.appendChild(favLinkEl);
+  }
+  favLinkEl.href = cv.toDataURL('image/png');
+}
+
 /* ---------- resize + adaptive quality ---------- */
 
 if (typeof ResizeObserver !== 'undefined') {
@@ -1312,6 +1391,7 @@ function frameStep(now) {
     const dur = engine.getDuration();
     $('seek-fill').style.width = `${dur ? (t / dur) * 100 : 0}%`;
     $('time-current').textContent = fmtTime(t);
+    drawVu();
     const bi = engine.beatInfo;
     $('bpm-value').textContent = bi.bpm && bi.confidence > 0.25 ? bi.bpm.toFixed(2) : '--.--';
     $('bass-chip').classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));
@@ -1345,6 +1425,7 @@ function frameStep(now) {
 
 loadSettings();
 refreshStatus();
+updateFavicon();
 requestAnimationFrame(frame);
 
 // Onboarding tour
