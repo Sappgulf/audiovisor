@@ -45,6 +45,7 @@ describe('App boot smoke (jsdom)', () => {
         window.devicePixelRatio = 1;
         // canvas 2d ctx stub (jsdom returns null)
         window.HTMLCanvasElement.prototype.getContext = function () { return fakeCtx(); };
+        window.HTMLCanvasElement.prototype.toDataURL = function () { return 'data:image/png;base64,'; };
         window.HTMLCanvasElement.prototype.getBoundingClientRect = function () {
           return { width: 800, height: 450, top: 0, left: 0, right: 800, bottom: 450 };
         };

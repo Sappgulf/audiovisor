@@ -1,7 +1,7 @@
 {
   "name": "audiovisor",
   "private": true,
-  "version": "8.4.0",
+  "version": "8.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@napi-rs/canvas": "^1.0.7",
     "eslint": "^10.9.0",
     "fake-indexeddb": "^6.2.5",
     "globals": "^17.11.0",

@@ -72,12 +72,16 @@ export class Renderer {
     this.radarBlips = [];
     this._sweepAng = -Math.PI / 2;
     this.lavaBlobs = null;
+    this._particleSeeded = false;
 
     /* caches */
     this._dotSprites = null;
+    this._softSprites = null;
     this._barSprites = null;
     this._floorGrads = null;
     this._cacheSig = '';
+    this._bgGrad = null;
+    this._bgSig = '';
 
     this.trailCv = null;
     this.trailCtx = null;
@@ -126,6 +130,7 @@ export class Renderer {
   setTheme(t) {
     this.theme = t;
     this._cacheSig = '';
+    this._bgSig = '';
     this.specSig = '';
   }
   setSensitivity(v) { this.sensitivity = v; }
@@ -189,10 +194,26 @@ export class Renderer {
       bc.fillRect(1.2, 0, 1, 256);
       this._barSprites.set(c, b);
     }
+    /* rimless soft pool sprites — purely radial falloff, no rim ring or
+       hot core; safe to scale huge (backdrop glows, wash gradients) */
+    this._softSprites = new Map();
+    for (const c of this.theme.colors) {
+      const d = document.createElement('canvas');
+      d.width = d.height = 64;
+      const dc = d.getContext('2d');
+      const g = dc.createRadialGradient(32, 32, 0, 32, 32, 32);
+      g.addColorStop(0, hexRgba(c, 0.9));
+      g.addColorStop(0.4, hexRgba(c, 0.5));
+      g.addColorStop(1, hexRgba(c, 0));
+      dc.fillStyle = g;
+      dc.fillRect(0, 0, 64, 64);
+      this._softSprites.set(c, d);
+    }
     this._floorGrads = null;
   }
 
   _dot(c) { return this._dotSprites.get(c); }
+  _soft(c) { return this._softSprites.get(c); }
   _barS(c) { return this._barSprites.get(c); }
   _color(i) { return this.theme.colors[i % this.theme.colors.length]; }
 
@@ -241,6 +262,24 @@ export class Renderer {
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
+    /* ambient base — theme-tinted deep gradient, so scenes never float on
+       transparency or the page background */
+    const bgSig = `${w}x${h}|${this.theme.id}`;
+    if (!this._bgGrad || this._bgSig !== bgSig) {
+      this._bgSig = bgSig;
+      const bg = ctx.createLinearGradient(0, 0, 0, h);
+      bg.addColorStop(0, '#0b0a09');
+      bg.addColorStop(0.55, '#0e0c0a');
+      bg.addColorStop(1, hexRgba(this.theme.colors[this.theme.colors.length - 1], 0.14));
+      this._bgGrad = bg;
+      this._bgCtx = ctx;
+    }
+    if (this._bgGrad) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = this._bgGrad;
+      ctx.fillRect(0, 0, w, h);
+    }
+
     if (idle || !freq || !wave) {
       this._backdrop();
       this._idle(dt60);
@@ -250,7 +289,7 @@ export class Renderer {
         this._ensureNoise();
         const tile = this._noiseTiles[Math.floor(this.t * 12) % this._noiseTiles.length];
         ctx.save();
-        ctx.globalAlpha = 0.30;
+        ctx.globalAlpha = 0.07;
         ctx.drawImage(tile, 0, 0, w, h);
         ctx.restore();
       }
@@ -273,7 +312,7 @@ export class Renderer {
     const punched = this.beat > 0.02;
     if (punched) {
       ctx.save();
-      const z = 1 + this.beat * 0.018;
+      const z = 1 + this.beat * 0.012;
       ctx.translate(w / 2, h / 2);
       ctx.scale(z, z);
       ctx.translate(-w / 2, -h / 2);
@@ -296,7 +335,7 @@ export class Renderer {
       const fh = Math.round(h * 0.28);
       const sy = h - fh;
       ctx.save();
-      ctx.globalAlpha = 0.13;
+      ctx.globalAlpha = this.mode === 'terrain' ? 0.07 : 0.09;
       ctx.globalCompositeOperation = 'source-over';
       // flip vertically around sy
       ctx.translate(0, sy * 2 + fh);
@@ -307,7 +346,7 @@ export class Renderer {
       // fade the reflection
       const fade = ctx.createLinearGradient(0, sy, 0, h);
       fade.addColorStop(0, 'rgba(15,14,13,0)');
-      fade.addColorStop(1, 'rgba(15,14,13,0.92)');
+      fade.addColorStop(1, 'rgba(15,14,13,0.96)');
       ctx.fillStyle = fade;
       ctx.fillRect(0, sy, w, fh);
     }
@@ -315,8 +354,9 @@ export class Renderer {
     if (this.beat > 0.45) this._kickFlare();
 
     /* phosphor trail: accumulate this frame onto a faded accumulation
-       buffer, then blend it under the live scene */
-    if (this.quality !== 'low') {
+       buffer, then blend it under the live scene (spectro scrolls its own
+       history — a second trail pass would smear it) */
+    if (this.quality !== 'low' && this.mode !== 'spectro') {
       if (!this.trailCv || this.trailCv.width !== this.canvas.width || this.trailCv.height !== this.canvas.height) {
         this.trailCv = document.createElement('canvas');
         this.trailCv.width = this.canvas.width;
@@ -334,7 +374,7 @@ export class Renderer {
       // blend trail under live scene
       ctx.save();
       ctx.setTransform(s, 0, 0, s, 0, 0);
-      ctx.globalAlpha = 0.40;
+      ctx.globalAlpha = 0.30;
       ctx.globalCompositeOperation = 'lighter';
       ctx.drawImage(this.trailCv, 0, 0, w, h);
       ctx.restore();
@@ -349,7 +389,7 @@ export class Renderer {
       this._ensureNoise();
       const tile = this._noiseTiles[Math.floor(this.t * 12) % this._noiseTiles.length];
       ctx.save();
-      ctx.globalAlpha = clamp(0.30 + this.beat * 0.25, 0, 0.6);
+      ctx.globalAlpha = clamp(0.07 + this.beat * 0.05, 0, 0.16);
       ctx.drawImage(tile, 0, 0, w, h);
       ctx.restore();
     }
@@ -397,6 +437,7 @@ export class Renderer {
       case 'fractal': this._fractal(freq); break;
       case 'radar': this._radar(freq, dt); break;
       case 'lava': this._lava(freq, dt, dt60); break;
+      case 'gpu': this._gpu(freq); break;
     }
   }
 
@@ -424,14 +465,14 @@ export class Renderer {
     ctx.globalCompositeOperation = 'lighter';
     ctx.imageSmoothingEnabled = true;
     // chromatic bloom on strong beats
-    if (punch > 0.45) {
-      ctx.globalAlpha = clamp((0.22 + punch * 0.08) * (0.5 + this.bloomAmount), 0, 0.42);
+    if (punch > 0.6) {
+      ctx.globalAlpha = clamp((0.14 + punch * 0.06) * (0.5 + this.bloomAmount), 0, 0.26);
       ctx.drawImage(this.glowB, -w * 0.02 + 1.2, -h * 0.02, w * 1.04, h * 1.04);
       ctx.drawImage(this.glowB, -w * 0.02 - 1.2, -h * 0.02, w * 1.04, h * 1.04);
     }
-    ctx.globalAlpha = clamp((0.36 + punch * 0.12) * (0.5 + this.bloomAmount), 0, 0.62);
+    ctx.globalAlpha = clamp((0.22 + punch * 0.08) * (0.5 + this.bloomAmount), 0, 0.4);
     ctx.drawImage(this.glowB, -w * 0.02, -h * 0.02, w * 1.04, h * 1.04);
-    ctx.globalAlpha = clamp((0.28 + punch * 0.10) * (0.5 + this.bloomAmount), 0, 0.52);
+    ctx.globalAlpha = clamp((0.15 + punch * 0.06) * (0.5 + this.bloomAmount), 0, 0.32);
     ctx.drawImage(this.glowA, 0, 0, w, h);
     ctx.restore();
   }
@@ -441,14 +482,14 @@ export class Renderer {
     /* soft lens flare core + horizontal streak (no full-screen wash) */
     const cx = w / 2, cy = h * 0.45;
     const maxD = Math.max(w, h);
-    const flareR = maxD * (0.16 + this.beat * 0.22);
+    const flareR = maxD * (0.10 + this.beat * 0.14);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = clamp((this.beat - 0.4) * 0.35, 0, 0.24);
-    ctx.drawImage(this._dot(this._color(0)), cx - flareR, cy - flareR, flareR * 2, flareR * 2);
-    ctx.globalAlpha = clamp((this.beat - 0.4) * 0.22, 0, 0.13);
-    const sr = maxD * (0.28 + this.beat * 0.3);
-    ctx.drawImage(this._dot(this._color(1)), cx - sr, cy - sr * 0.22, sr * 2, sr * 0.44);
+    ctx.globalAlpha = clamp((this.beat - 0.4) * 0.16, 0, 0.10);
+    ctx.drawImage(this._soft(this._color(0)), cx - flareR, cy - flareR, flareR * 2, flareR * 2);
+    ctx.globalAlpha = clamp((this.beat - 0.4) * 0.10, 0, 0.05);
+    const sr = maxD * (0.20 + this.beat * 0.22);
+    ctx.drawImage(this._soft(this._color(1)), cx - sr, cy - sr * 0.22, sr * 2, sr * 0.44);
     ctx.restore();
     ctx.globalAlpha = 1;
   }
@@ -463,8 +504,8 @@ export class Renderer {
       const x = w * (0.5 + 0.33 * Math.sin(this.t * 0.043 + i * 2.1));
       const y = h * (0.45 + 0.30 * Math.cos(this.t * 0.037 + i * 1.7));
       const r = Math.min(w, h) * (0.55 + 0.10 * Math.sin(this.t * 0.05 + i));
-      ctx.globalAlpha = 0.05 + this.sm.level * 0.03 + this.beat * 0.02;
-      ctx.drawImage(this._dot(this._color(i)), x - r, y - r, r * 2, r * 2);
+      ctx.globalAlpha = 0.035 + this.sm.level * 0.025 + this.beat * 0.015;
+      ctx.drawImage(this._soft(this._color(i)), x - r, y - r, r * 2, r * 2);
     }
     ctx.restore();
     ctx.globalAlpha = 1;
@@ -507,9 +548,9 @@ export class Renderer {
       const d = img.data;
       for (let i = 0; i < d.length; i += 4) {
         const v = Math.random();
-        if (v > 0.86) {
+        if (v > 0.90) {
           d[i] = d[i + 1] = d[i + 2] = 255;
-          d[i + 3] = (v - 0.86) * 620;
+          d[i + 3] = (v - 0.90) * 420;
         }
       }
       nc.putImageData(img, 0, 0);
@@ -896,6 +937,25 @@ export class Renderer {
     const cx = w / 2, cy = h * 0.5;
     const cap = this.quality === 'low' ? 120 : 240;
 
+    /* seed a warm ember pool so the field is alive from the first frame
+       (re-seeds after every mode switch since setMode empties the pool) */
+    if (this.particles.length === 0) {
+      for (let i = 0; i < cap * 0.5 && this.particles.length < cap; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const sp = 0.3 + Math.random() * 0.9;
+        this.particles.push({
+          x: cx + (Math.random() - 0.5) * w * 0.5,
+          y: cy + (Math.random() - 0.5) * h * 0.6,
+          vx: Math.cos(ang) * sp,
+          vy: Math.sin(ang) * sp - 0.35,
+          r: 0.8 + Math.random() * 2.4,
+          c: Math.floor(Math.random() * this.theme.colors.length),
+          life: 0.5 + Math.random() * 0.5,
+          decay: 0.004 + Math.random() * 0.009,
+        });
+      }
+    }
+
     const rate = (12 + this.sm.level * 160 * this.sensitivity * 0.5) + (this.beat > 0.6 ? 260 : 0);
     this._spawnAcc += rate * dt;
     let spawn = Math.floor(this._spawnAcc);
@@ -995,8 +1055,8 @@ export class Renderer {
     const P = this.quality === 'low' ? 28 : 56;
     void dt;
     ctx.globalCompositeOperation = 'lighter';
-    const bloomR = minDim * 0.09 * (1 + this.sm.bass * 1.2 + this.beat * 0.6);
-    ctx.globalAlpha = 0.85;
+    const bloomR = minDim * Math.min(0.30, 0.07 + this.sm.bass * 0.07 + this.beat * 0.05);
+    ctx.globalAlpha = 0.55;
     ctx.drawImage(this._dot(this._color(0)), cx - bloomR, cy - bloomR, bloomR * 2, bloomR * 2);
     ctx.globalAlpha = 1;
     for (let s = 0; s < slices; s++) {
@@ -1045,18 +1105,32 @@ export class Renderer {
   /* ---------------- SPECTROGRAM WATERFALL ---------------- */
 
   _buildSpectroLut() {
-    const stops = [[5, 7, 13]];
+    /* contrast-ramped LUT: deep black floor, one bright ramp packet per
+       theme color, white-hot only at peaks. Steep gamma + step mapping
+       keep quiet audio black, so dynamics read as color silhouette. */
+    const stops = [[3, 3, 4]];
     for (const c of this.theme.colors) {
       const n = parseInt(c.slice(1), 16);
       stops.push([(n >> 16) & 255, (n >> 8) & 255, n & 255]);
     }
-    const last = stops[stops.length - 1];
-    stops.push([Math.min(255, last[0] + 150), Math.min(255, last[1] + 150), Math.min(255, last[2] + 150)]);
+    /* lighten each theme stop slightly as energy climbs */
+    const boosted = [];
+    for (let i = 1; i < stops.length; i++) {
+      const s = stops[i];
+      boosted.push([
+        Math.min(255, s[0] + 40 + i * 10),
+        Math.min(255, s[1] + 40 + i * 10),
+        Math.min(255, s[2] + 40 + i * 10),
+      ]);
+    }
+    stops.push(...boosted);
+    stops.push([255, 253, 248]);
     const lut = this.specLut = new Uint8Array(256 * 3);
-    const segs = stops.length - 1;
     for (let i = 0; i < 256; i++) {
-      const f = (i / 255) * segs;
-      const s = Math.min(segs - 1, Math.floor(f));
+      /* steep gamma: low+mid values stay near-black, only peaks climb */
+      const v = Math.pow(i / 255, 2.8);
+      const f = v * (stops.length - 1);
+      const s = Math.min(stops.length - 2, Math.floor(f));
       const u = f - s;
       const a = stops[s];
       const b = stops[s + 1];
@@ -1077,6 +1151,9 @@ export class Renderer {
       this.specCtx = this.specCv.getContext('2d');
       this._specAcc = 0;
       this._buildSpectroLut();
+      this.specCtx.imageSmoothingEnabled = false;
+      this.specCtx.fillStyle = '#0b0a09';
+      this.specCtx.fillRect(0, 0, this.specCv.width, this.specCv.height);
     }
     const colW = this.quality === 'low' ? 3 : 2;
     const W = this.specCv.width;
@@ -1097,7 +1174,7 @@ export class Renderer {
         const lut = this.specLut;
         for (let x = 0; x < colW; x++) {
           const p = (y * colW + x) * 4;
-          d[p] = lut[o]; d[p + 1] = lut[o + 1]; d[p + 2] = lut[o + 2]; d[p + 3] = 235;
+          d[p] = lut[o]; d[p + 1] = lut[o + 1]; d[p + 2] = lut[o + 2]; d[p + 3] = 255;
         }
       }
       this.specCtx.putImageData(img, W - colW, 0);
@@ -1125,8 +1202,8 @@ export class Renderer {
     const maxR = minDim * 0.46;
     while (this.history.length < rings) this.history.push(0);
     ctx.globalCompositeOperation = 'lighter';
-    const glowR = maxR * 0.16 * (1 + this.sm.bass * 1.3 + this.beat * 0.4);
-    ctx.globalAlpha = 0.95;
+    const glowR = maxR * Math.min(0.28, 0.11 + this.sm.bass * 0.11 + this.beat * 0.06);
+    ctx.globalAlpha = 0.55;
     ctx.drawImage(this._dot(this._color(0)), cx - glowR, cy - glowR, glowR * 2, glowR * 2);
     ctx.globalAlpha = 1;
     const SEG = this.quality === 'low' ? 28 : 44;
@@ -1283,9 +1360,9 @@ export class Renderer {
       ctx.lineTo(m.x, m.y);
       ctx.stroke();
     } else this._meteor = null;
-    const sunR = Math.min(w, h) * (0.11 + this.sm.bass * 0.03 + this.beat * 0.012);
+    const sunR = Math.min(w, h) * (0.075 + this.sm.bass * 0.02 + this.beat * 0.01);
     const sunY = horizon - Math.min(w, h) * 0.16;
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = 0.7;
     ctx.drawImage(this._dot(this._color(1)), w / 2 - sunR, sunY - sunR, sunR * 2, sunR * 2);
     ctx.globalAlpha = 1;
     const sky = ctx.createLinearGradient(0, horizon - depth * 0.4, 0, horizon);
@@ -1300,7 +1377,7 @@ export class Renderer {
     ctx.translate(w / 2, horizon);
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineWidth = 1.1;
-    const ampBase = depth * 0.34;
+    const ampBase = depth * 0.42;
     for (let r = ROWS - 1; r >= 0; r--) {
       const row = this.terrainRows[r];
       const u = (r + 1) / ROWS;
@@ -1317,7 +1394,7 @@ export class Renderer {
         else ctx.lineTo(x, yy);
       }
       const c = this._color(r % this.theme.colors.length);
-      ctx.strokeStyle = hexRgba(c, 0.7 * persp);
+      ctx.strokeStyle = hexRgba(c, 0.42 + persp * 0.5);
       ctx.stroke();
       if (r > 0) {
         const uPrev = r / ROWS;
@@ -1325,7 +1402,7 @@ export class Renderer {
         ctx.lineTo(((COLS - 1) / COLS - 0.5) * w * (0.22 + 1.9 * Math.pow(1 - uPrev, 2)), yPrev + 2);
         ctx.lineTo((-0.5) * w * (0.22 + 1.9 * Math.pow(1 - uPrev, 2)), yPrev + 2);
         ctx.closePath();
-        ctx.fillStyle = hexRgba(c, 0.06 * persp);
+        ctx.fillStyle = hexRgba(c, 0.03 + persp * 0.09);
         ctx.fill();
       }
     }
@@ -1464,8 +1541,8 @@ export class Renderer {
   _nebula() {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h / 2;
-    const N = this.quality === 'low' ? 5 : 9;
     const minDim = Math.min(w, h);
+    const N = this.quality === 'low' ? 5 : 10;
     if (!this.nebula || this.nebula.length !== N) {
       this.nebula = Array.from({ length: N }, (_, i) => ({
         ax: 0.16 + ((i * 37) % 11) / 34,
@@ -1481,28 +1558,54 @@ export class Renderer {
     ctx.globalCompositeOperation = 'lighter';
     const bands = [this.sm.bass, this.sm.mid, this.sm.high];
     const swirl = this.t * (0.05 + this.sm.level * 0.35);
+
+    /* galactic disc — a stretched, tilted swirl of soft pools */
+    const discTilt = -0.3 + Math.sin(this.t * 0.05) * 0.06;
+    const coreGlow = minDim * (0.30 + this.sm.bass * 0.5 + this.beat * 0.10);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(discTilt);
+    ctx.scale(1, 0.36);
+    ctx.globalAlpha = clamp(0.10 + this.sm.level * 0.16, 0.04, 0.30);
+    ctx.drawImage(this._soft(this._color(1)), -coreGlow, -coreGlow, coreGlow * 2, coreGlow * 2);
+    ctx.restore();
+
     for (let i = 0; i < N; i++) {
       const b = this.nebula[i];
       const x = cx + Math.sin(this.t * b.fx * 2 + b.p1) * w * b.ax;
       const y = cy + Math.cos(this.t * b.fy * 2 + b.p2) * h * b.ay;
       const bandV = bands[b.band];
-      const r = minDim * b.sz * (0.75 + bandV * 1.5 * this.sensitivity + this.beat * 0.18);
+      const r = Math.min(minDim * 0.20, minDim * b.sz * (0.75 + bandV * 1.4 * this.sensitivity + this.beat * 0.18));
       const ci = Math.floor(this.t * 0.05 + i * 0.8);
-      const sprite = this._dot(this._color(ci));
-      ctx.globalAlpha = clamp(0.1 + bandV * 0.5 * this.sensitivity, 0.05, 0.55);
+      const sprite = this._soft(this._color(ci));
+      /* soft gas */
+      ctx.globalAlpha = clamp(0.06 + bandV * 0.20 * this.sensitivity, 0.03, 0.22);
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(swirl * (i % 2 ? 1 : -1));
-      ctx.drawImage(sprite, -r, -r, r * 2, r * 2);
+      ctx.drawImage(sprite, -r * 1.6, -r * 1.6, r * 3.2, r * 3.2);
+      /* dense line-swept filament crossing the gas */
+      ctx.strokeStyle = hexRgba(this._color(ci), 0.22 + bandV * 0.35 * this.sensitivity);
+      ctx.lineWidth = 1 + bandV * 1.6;
+      ctx.beginPath();
+      const fr = r * 2.1;
+      ctx.moveTo(-fr, 0);
+      ctx.quadraticCurveTo(0, -r * 0.9 + Math.sin(this.t * 0.9 + i) * r * 0.3, fr, 0);
+      ctx.stroke();
+      /* hot star core at filament center */
+      const hr = Math.max(1.4, r * 0.16 * (0.55 + bandV * 1.2));
+      ctx.globalAlpha = clamp(0.35 + bandV * 0.6, 0, 0.9);
+      ctx.drawImage(this._dot(this._color(ci)), -hr, -hr, hr * 2, hr * 2);
       ctx.restore();
     }
-    for (let i = 0; i < 22; i++) {
+    /* starfield — twinkles over the gas */
+    for (let i = 0; i < 34; i++) {
       const fx = ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1;
       const fy = ((Math.sin(i * 78.233) * 12543.123) % 1 + 1) % 1;
       const px = fx * w + Math.sin(this.t * 0.18 + i * 1.7) * 18;
       const py = fy * h + Math.cos(this.t * 0.14 + i * 2.3) * 14;
-      const a = 0.16 + 0.26 * (0.5 + 0.5 * Math.sin(this.t * 1.1 + i * 1.1));
-      const rr = 1.2 + ((i * 7919) % 7) * 0.22;
+      const a = 0.14 + 0.30 * (0.5 + 0.5 * Math.sin(this.t * 1.1 + i * 1.1));
+      const rr = 0.9 + ((i * 7919) % 7) * 0.2;
       ctx.globalAlpha = a;
       ctx.drawImage(this._dot(this._color(i % this.theme.colors.length)), px - rr, py - rr, rr * 2, rr * 2);
     }
@@ -1844,63 +1947,87 @@ export class Renderer {
   _prism(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h * 0.58;
-    const sz = Math.min(w, h) * 0.22;
+    const sz = Math.min(w, h) * 0.25;
     const ax = cx, ay = cy - sz;
     const bx = cx - sz * 0.86, by = cy + sz * 0.5;
     const qx = cx + sz * 0.86, qy = cy + sz * 0.5;
 
-    /* interior glow */
+    /* glass slab fill */
     ctx.globalCompositeOperation = 'lighter';
     const ig = ctx.createLinearGradient(0, ay, 0, by);
-    ig.addColorStop(0, hexRgba(this._color(1), 0.10 + this.sm.bass * 0.14));
-    ig.addColorStop(1, hexRgba(this._color(0), 0.03));
+    ig.addColorStop(0, hexRgba(this._color(1), 0.16 + this.sm.bass * 0.22));
+    ig.addColorStop(1, hexRgba(this._color(0), 0.05));
     ctx.fillStyle = ig;
     ctx.beginPath();
     ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(qx, qy);
     ctx.closePath();
     ctx.fill();
 
+    /* second face offset — extra-triangular echo for volume */
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = hexRgba(this._color(2), 0.10 + this.sm.mid * 0.16);
+    ctx.beginPath();
+    ctx.moveTo(ax, ay + sz * 0.08); ctx.lineTo(bx - sz * 0.05, by); ctx.lineTo(qx + sz * 0.05, qy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
     /* incoming beam from top */
     const inLen = h * 0.34;
     const inGrad = ctx.createLinearGradient(ax, ay - inLen, ax, ay);
     inGrad.addColorStop(0, hexRgba(this._color(2), 0));
-    inGrad.addColorStop(1, hexRgba(this._color(2), 0.5 + this.sm.level * 0.3));
+    inGrad.addColorStop(1, hexRgba(this._color(2), 0.6 + this.sm.level * 0.3));
     ctx.strokeStyle = inGrad;
-    ctx.lineWidth = 1.6 + this.sm.level * 1.4;
+    ctx.lineWidth = 2.2 + this.sm.level * 2;
     ctx.beginPath();
     ctx.moveTo(ax, ay - inLen);
     ctx.lineTo(ax, ay);
     ctx.stroke();
+    /* beam glint where it enters the glass */
+    const br = 2.6 + this.sm.mid * 4;
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(this._dot(this._color(2)), ax - br, ay - br, br * 2, br * 2);
+    ctx.globalAlpha = 1;
 
-    /* frame */
-    ctx.strokeStyle = hexRgba(this._color(1), 0.9);
-    ctx.lineWidth = 1.6;
+    /* frame — bright edges, hazy on loud */
+    ctx.strokeStyle = hexRgba(this._color(1), 0.92);
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
     ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(qx, qy);
     ctx.closePath();
     ctx.stroke();
+    ctx.strokeStyle = hexRgba(this._color(0), 0.25 + this.sm.level * 0.2);
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(ax + 4, ay); ctx.lineTo(bx + 4, by); ctx.lineTo(qx + 4, qy);
+    ctx.closePath();
+    ctx.stroke();
 
-    /* dispersed fan — each beam fades with distance */
-    const beams = this.quality === 'low' ? 5 : 9;
+    /* dispersed fan — spectrum-ordered beams that arc (not straight lines) */
+    const beams = this.quality === 'low' ? 7 : 13;
+    const ox = (bx + qx) / 2, oy = (by + qy) / 2;
     for (let i = 0; i < beams; i++) {
-      const u = i / beams;
-      const v = freq ? logSample(freq, u) : 0.5;
-      const ang = -0.9 + u * 1.8 + this.beat * 0.15;
-      const len = w * 0.7 * (0.5 + v * 0.7);
-      const x1 = (bx + qx) / 2 + Math.cos(ang) * sz * 0.3;
-      const y1 = (by + qy) / 2 + Math.sin(ang) * sz * 0.3;
+      const u = i / (beams - 1);
+      const v = freq ? logSample(freq, u * 0.96) : 0.5;
+      const ang = -1.15 + u * 2.3 + this.beat * 0.12;
+      const len = w * 0.62 * (0.45 + v * 0.8);
+      const x1 = ox + Math.cos(ang) * sz * 0.34;
+      const y1 = oy + Math.sin(ang) * sz * 0.34;
+      /* arc each beam through the fan */
       const x2 = x1 + Math.cos(ang) * len;
-      const y2 = y1 + Math.sin(ang) * len * 0.18;
+      const y2 = y1 + Math.sin(ang) * len * 0.20;
+      const xm = (x1 + x2) / 2 + Math.sin(ang) * len * 0.16;
+      const ym = (y1 + y2) / 2 - len * 0.06;
       const col = this._color(i);
       const g = ctx.createLinearGradient(x1, y1, x2, y2);
-      g.addColorStop(0, hexRgba(col, 0.55 + v * 0.35));
-      g.addColorStop(0.7, hexRgba(col, 0.18 + v * 0.2));
+      g.addColorStop(0, hexRgba(col, 0.7 + v * 0.3));
+      g.addColorStop(0.6, hexRgba(col, 0.22 + v * 0.2));
       g.addColorStop(1, hexRgba(col, 0));
       ctx.strokeStyle = g;
-      ctx.lineWidth = 1.2 + v * 2.2;
+      ctx.lineWidth = 1.1 + v * 2.4;
       ctx.beginPath();
       ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
+      ctx.quadraticCurveTo(xm, ym, x2, y2);
       ctx.stroke();
     }
 
@@ -1967,7 +2094,7 @@ export class Renderer {
     const rh = h / rows;
     if (this.quality !== 'low') {
       ctx.globalCompositeOperation = 'lighter';
-      const meshA = 0.04 + this.sm.level * 0.06;
+      const meshA = 0.03 + this.sm.level * 0.05;
       const dotAt = (x, y) => {
         const idx = (y * cols + x) % 64;
         return freq ? logSample(freq, idx / 64) : 0.5;
@@ -2003,12 +2130,25 @@ export class Renderer {
       for (let x = 0; x < cols; x++) {
         const idx = (y * cols + x) % 64;
         const amp = freq ? logSample(freq, (idx / 64)) : 0.5;
-        const cx = x * cw + cw / 2 + Math.sin(this.t * 0.6 + idx) * 4;
-        const cy = y * rh + rh / 2 + Math.cos(this.t * 0.5 + idx * 1.3) * 4;
+        const px = x * cw + cw / 2 + Math.sin(this.t * 0.6 + idx) * 4;
+        const py = y * rh + rh / 2 + Math.cos(this.t * 0.5 + idx * 1.3) * 4;
         const s = 10 + amp * 22 * this.sensitivity + this.beat * 6;
         const c = this._color((x + y) % this.theme.colors.length);
-        ctx.globalAlpha = 0.22 + amp * 0.55;
-        ctx.drawImage(this._dot(c), cx - s, cy - s, s * 2, s * 2);
+        /* soft bokeh pool under every bloom */
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.10 + amp * 0.16;
+        ctx.drawImage(this._soft(c), px - s * 1.9, py - s * 1.9, s * 3.8, s * 3.8);
+        ctx.globalCompositeOperation = 'source-over';
+        /* crisp core with alpha falloff */
+        ctx.globalAlpha = 0.20 + amp * 0.5;
+        ctx.drawImage(this._dot(c), px - s, py - s, s * 2, s * 2);
+        /* bright center popper on loud cells */
+        if (amp > 0.6) {
+          const hr = s * 0.3;
+          ctx.globalAlpha = (amp - 0.6) * 1.2;
+          ctx.drawImage(this._soft(this._color((x + y + 1) % this.theme.colors.length)), px - hr, py - hr, hr * 2, hr * 2);
+          ctx.globalAlpha = 1;
+        }
       }
     }
     ctx.globalAlpha = 1;
@@ -2191,6 +2331,105 @@ export class Renderer {
       ctx.drawImage(sprite, px - pr * 0.3 - hr, py - pr * 0.3 - hr, hr * 2, hr * 2);
     }
     void dt;
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ---------------- GPU CORE — rotating voxel lattice ---------------- */
+
+  _gpu(freq) {
+    const { ctx, w, h } = this;
+    const cx = w / 2, cy = h / 2;
+    const minDim = Math.min(w, h);
+    const S = minDim * 0.10;
+    const N = 4;
+    if (!this.gpuVox || this._gpuSig !== N) {
+      this._gpuSig = N;
+      this.gpuVox = [];
+      for (let ix = 0; ix < N; ix++)
+        for (let iy = 0; iy < N; iy++)
+          for (let iz = 0; iz < N; iz++)
+            this.gpuVox.push([ix, iy, iz]);
+    }
+    const rot = this.t * 0.5 + this.sm.mid * 0.6;
+    const cosA = Math.cos(rot), sinA = Math.sin(rot);
+    const tilt = Math.sin(this.t * 0.21) * 0.2;
+    const cosB = Math.cos(tilt), sinB = Math.sin(tilt);
+    const beatP = 1 + this.beat * 0.10 + this.sm.bass * 0.08;
+    const scale = S * beatP;
+
+    /* render back-to-front for painter's order */
+    const cells = [];
+    for (const [ix, iy, iz] of this.gpuVox) {
+      const x = (ix - (N - 1) / 2);
+      const y = (iy - (N - 1) / 2);
+      const z = (iz - (N - 1) / 2);
+      /* rotate Y then X */
+      const x1 = x * cosA + z * sinA;
+      const z1 = -x * sinA + z * cosA;
+      const y1 = y * cosB - z1 * sinB;
+      const z2 = y * sinB + z1 * cosB;
+      /* perspective */
+      const persp = 2.6 / (2.6 + z2 * 0.34);
+      cells.push({
+        px: cx + x1 * scale * persp,
+        py: cy + y1 * scale * persp,
+        d: z2,
+        s: Math.max(2.5, S * 0.72 * persp),
+      });
+    }
+    cells.sort((a, b) => a.d - b.d);
+
+    ctx.globalCompositeOperation = 'lighter';
+    /* energy color per depth slice so the core reads as a compute stack */
+    const sliceColors = this.theme.colors;
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      const u = clamp((c.d + 2) / 4, 0, 1);
+      const amp = freq ? logSample(freq, u * 0.8 + 0.1) : 0.5;
+      const bright = 0.5 + amp * 0.6 * this.sensitivity;
+      const ci = Math.floor(u * sliceColors.length) % sliceColors.length;
+      const col = sliceColors[ci];
+      /* core cell */
+      ctx.globalAlpha = 0.85 * bright;
+      ctx.fillStyle = col;
+      ctx.fillRect(c.px - c.s / 2, c.py - c.s / 2, c.s, c.s);
+      /* hot top face (fake isometric) */
+      ctx.globalAlpha = 0.9 * bright;
+      ctx.fillStyle = 'rgba(255,252,243,0.9)';
+      ctx.fillRect(c.px - c.s / 2, c.py - c.s / 2, c.s, c.s * 0.30);
+      /* soft halo on loud cells */
+      if (amp > 0.45) {
+        const hr = c.s * (1.6 + amp);
+        ctx.globalAlpha = (amp - 0.45) * 1.1;
+        ctx.drawImage(this._soft(this._color(ci)), c.px - hr, c.py - hr, hr * 2, hr * 2);
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    /* orbiting data nodes — circle the core like bus lines */
+    const orbit = minDim * 0.66;
+    const nodes = 7;
+    for (let i = 0; i < nodes; i++) {
+      const ang = this.t * 0.35 + (i * Math.PI * 2) / nodes;
+      const r = orbit * (0.55 + 0.28 * Math.sin(this.t * 0.13 + i * 1.4));
+      const nx = cx + Math.cos(ang) * r;
+      const ny = cy + Math.sin(ang) * r * 0.62;
+      const v = freq ? logSample(freq, (i + 1) / (nodes + 1)) : 0.5;
+      const rr = 2.2 + v * 4.5 * this.sensitivity + this.beat * 2.2;
+      ctx.globalAlpha = 0.3 + v * 0.55;
+      ctx.drawImage(this._dot(this._color((i + 1) % this.theme.colors.length)), nx - rr, ny - rr, rr * 2, rr * 2);
+      /* link line to core center */
+      const gl = ctx.createLinearGradient(nx, ny, cx, cy);
+      gl.addColorStop(0, hexRgba(this._color((i + 1) % this.theme.colors.length), 0.05 + v * 0.12));
+      gl.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.strokeStyle = gl;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(nx, ny);
+      ctx.lineTo(cx, cy);
+      ctx.stroke();
+    }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }

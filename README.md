@@ -1,6 +1,6 @@
-# AUDIOVISOR — v8.4
+# AUDIOVISOR — v8.5
 
-A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across eighteen stage modes, sixteen themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
+A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across twenty-two stage modes, twenty-five themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
 
 ## Features
 
@@ -14,7 +14,7 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 > **Note on streaming services:** DRM-protected streams (Spotify/Apple Music in-app playback) can't be tapped by the Web Audio API directly. When Spotify plays through the built-in player without capture, AUDIOVISOR drives the visuals with a procedural synth feed seeded from the track — hit **Capture** and share the current tab for true spectrum-reactive visuals of the actual audio.
 
 ### Stage
-- **22 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Pulse Orb, Fluid Metal, Tensor Grid, Prism Ray, Void Core, Bloom Field, Fractal Bloom, Beat Radar (beat-dropped contacts + spectrum blips), Lava Lamp (bass-heated metaball drift), GPU Core (WebGPU/WebGL2 ray-march)
+- **22 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Pulse Orb, Fluid Metal, Tensor Grid, Prism Ray, Void Core, Bloom Field, Fractal Bloom, Beat Radar (beat-dropped contacts + spectrum blips), Lava Lamp (bass-heated metaball drift), GPU Core (rotating voxel compute stack)
 - **25 themes** — Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic, Monolith, Sunset, Matrix, Ultraviolet, Warm Brass, AutoTune Pop, Laser Tag, Chop N Screwed, Jade, Crimson Silk, Desert Mirage, Ocean Depth, Fractal Dawn, Solar Flare, Toxic Sludge, Cotton Candy, Midnight Ink
 - **Look presets** — right-click P1–P3 to save mode+theme+FX, click to recall (also in Cmd+K palette)
 - **Sleep timer** — 15/30/60 min countdown with volume fade-out and pause
@@ -27,6 +27,7 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 - **Look-change transitions** — zoom + saturate pulse and light flash whenever mode or theme switches
 - **Live VU meter** — bass/mid/high bars with peak-hold caps in the transport, colored by theme
 - **Theme-reactive favicon** — browser tab icon regenerates from the active theme palette
+- **v8.5 upgrades** — GPU Core fully live (missing dispatch fixed): rotating 4×4×4 voxel compute stack, depth-slice energy colors + hot top faces, orbiting data nodes with bus lines; Nebula rebuilt (tilted galactic disc, line-swept filaments, hot star cores, 34-drifter starfield); Bloom Field rebuilt (soft bokeh pools + crisp cores, poppers on loud cells); Prism rebuilt (glass-slab volume, echo face, glint on entry, arced spectrum fan); spectro contrast pass (steep 2.8γ LUT — quiet audio stays black, peaks burn white)
 - **Delta-time animation** — identical motion at 60 Hz, 120 Hz, 144 Hz+
 - **Adaptive quality** — auto-scales rendering (DPR, particle caps, bloom) to hold 60fps
 

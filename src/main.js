@@ -1312,7 +1312,9 @@ function updateFavicon() {
     favLinkEl.type = 'image/png';
     document.head.appendChild(favLinkEl);
   }
-  favLinkEl.href = cv.toDataURL('image/png');
+  try {
+    favLinkEl.href = cv.toDataURL('image/png');
+  } catch { /* non-browser env (tests) without toDataURL */ }
 }
 
 /* ---------- resize + adaptive quality ---------- */

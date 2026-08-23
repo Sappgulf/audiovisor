@@ -16,4 +16,15 @@ export default [
       'no-empty': ['warn', { allowEmptyCatch: true }],
     },
   },
+  {
+    files: ['scripts/**/*.{js,mjs}'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: globals.node,
+    },
+    rules: {
+      'no-empty': ['warn', { allowEmptyCatch: true }],
+    },
+  },
 ];
