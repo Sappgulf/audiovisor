@@ -72,6 +72,9 @@ export class Renderer {
     this._floorGrads = null;
     this._cacheSig = '';
 
+    this.trailCv = null;
+    this.trailCtx = null;
+
     this.resize();
   }
 
@@ -275,7 +278,34 @@ export class Renderer {
       ctx.fillRect(0, sy, w, fh);
     }
 
-    if (this.beat > 0.45) this._beatFlash();
+    if (this.beat > 0.45) this._kickFlare();
+
+    /* phosphor trail: accumulate this frame onto a faded accumulation
+       buffer, then blend it under the live scene */
+    if (this.quality !== 'low') {
+      if (!this.trailCv || this.trailCv.width !== this.canvas.width || this.trailCv.height !== this.canvas.height) {
+        this.trailCv = document.createElement('canvas');
+        this.trailCv.width = this.canvas.width;
+        this.trailCv.height = this.canvas.height;
+        this.trailCtx = this.trailCv.getContext('2d');
+      }
+      const tc = this.trailCtx;
+      const s = this.quality === 'low' ? 1 : this.dpr;
+      tc.setTransform(1, 0, 0, 1, 0, 0);
+      tc.globalCompositeOperation = 'destination-out';
+      tc.fillStyle = 'rgba(0,0,0,0.28)';
+      tc.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      tc.globalCompositeOperation = 'source-over';
+      tc.drawImage(this.canvas, 0, 0);
+      // blend trail under live scene
+      ctx.save();
+      ctx.setTransform(s, 0, 0, s, 0, 0);
+      ctx.globalAlpha = 0.36;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.drawImage(this.trailCv, 0, 0, w, h);
+      ctx.restore();
+    }
+
     if (this.mode !== 'bars' && this.beatInfo?.bpm > 0) this._beatGrid();
     this._bloom(this.beat);
   }
@@ -352,15 +382,21 @@ export class Renderer {
     ctx.restore();
   }
 
-  _beatFlash() {
+  _kickFlare() {
     const { ctx, w, h } = this;
-    const a = clamp((this.beat - 0.45) * 0.14, 0, 0.07);
-    const g = ctx.createRadialGradient(w / 2, h * 0.45, 0, w / 2, h * 0.45, Math.max(w, h) * 0.75);
-    g.addColorStop(0, 'rgba(255,255,255,0)');
-    g.addColorStop(0.75, hexRgba(this._color(0), a));
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
+    /* soft lens flare core + horizontal streak (no full-screen wash) */
+    const cx = w / 2, cy = h * 0.45;
+    const maxD = Math.max(w, h);
+    const flareR = maxD * (0.16 + this.beat * 0.22);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = clamp((this.beat - 0.4) * 0.35, 0, 0.24);
+    ctx.drawImage(this._dot(this._color(0)), cx - flareR, cy - flareR, flareR * 2, flareR * 2);
+    ctx.globalAlpha = clamp((this.beat - 0.4) * 0.22, 0, 0.13);
+    const sr = maxD * (0.28 + this.beat * 0.3);
+    ctx.drawImage(this._dot(this._color(1)), cx - sr, cy - sr * 0.22, sr * 2, sr * 0.44);
+    ctx.restore();
+    ctx.globalAlpha = 1;
   }
 
   /* ---------------- IDLE AURORA ---------------- */
@@ -458,7 +494,8 @@ export class Renderer {
     for (let i = 0; i < N; i++) {
       const v = logSample(freq, i / N) * this.sensitivity;
       const weight = 1 + this.bassFocus * 2.2 * (1 - i / N);
-      amps[i] = clamp(v * weight, 0.008, 1);
+      const bounce = 1 + this.beat * 0.34 * (1 - i / N);
+      amps[i] = clamp(v * weight * bounce, 0.008, 1.25);
       if (amps[i] >= this.peaks[i]) {
         this.peaks[i] = amps[i];
         this.peakVels[i] = 0;

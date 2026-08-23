@@ -20,12 +20,13 @@ const esc = (s) =>
 
 const engine = new AudioEngine();
 const renderer = new Renderer($('viz-canvas'));
+renderer.setTheme(THEMES.find((t) => t.id === 'brass'));
 
 const SETTINGS_KEY = 'audiovisor.settings.v2';
 
 const state = {
   modeId: 'bars',
-  themeId: 'lime',
+  themeId: 'brass',
   autopilot: false,
   autopilotTimer: null,
   drawerOpen: true,
