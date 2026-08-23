@@ -1,6 +1,6 @@
 # AUDIOVISOR
 
-A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across thirteen stage modes, sixteen theme moods, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, session recording, and autopilot.
+A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across thirteen stage modes, sixteen themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
 
 ## Features
 
@@ -24,6 +24,7 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 
 ### Engine
 - Web Audio API: queue, seek, loop, volume, speed
+- **Library** — save any track *with* its edits as a remix (IndexedDB), re-load, or export as WAV via OfflineAudioContext (`L`)
 - **Queue manager** — jump between tracks, remove, shuffle (`Q`)
 - **Snapshot** — save the current frame as PNG (`P` or camera button)
 - **Session recorder** — record visuals + master audio mix to WebM (record button)
@@ -58,8 +59,9 @@ VITE_SPOTIFY_CLIENT_ID=your_client_id npm run build
 | `R` | Random look (mode + theme) |
 | `Q` | Queue manager |
 | `P` | Snapshot PNG |
+| `L` | Library |
+| `F` | True fullscreen (cinema — chrome auto-hides) |
 | `C` | Chop N Screwed |
-| `F` | Fullscreen |
 
 ## Dev
 

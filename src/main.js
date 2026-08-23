@@ -4,6 +4,7 @@ import { AudioEngine } from './audio.js';
 import { Renderer } from './visualizers.js';
 import { ConnectPanel } from './connect.js';
 import { fmtTime, pickRandom, fmtStamp } from './utils.js';
+import * as Library from './library.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) =>
@@ -237,6 +238,12 @@ const queuePanel = document.createElement('div');
 queuePanel.className = 'queue-panel is-hidden';
 $('shell').appendChild(queuePanel);
 
+const libraryPanel = document.createElement('div');
+libraryPanel.className = 'library-panel is-hidden';
+libraryPanel.setAttribute('role', 'dialog');
+libraryPanel.setAttribute('aria-label', 'Library');
+$('shell').appendChild(libraryPanel);
+
 function renderQueue() {
   const q = engine.queue;
   let html = `
@@ -292,6 +299,99 @@ function toggleQueue(force) {
 }
 
 $('queue-btn').addEventListener('click', () => toggleQueue());
+$('save-library-btn')?.addEventListener('click', saveToLibrary);
+
+async function renderLibrary() {
+  const meta = await Library.listLibraryMeta();
+  let html = `<div class="library-head"><span class="ic ic-lime" data-icon="layers"></span><span class="mono library-title">LIBRARY · ${meta.length}</span><button class="icon-x" id="lib-close" title="Close"><span class="ic ic-sm" data-icon="close"></span></button></div>`;
+  if (!meta.length) {
+    html += `<div class="library-empty mono">NO SAVED TRACKS — PLAY A TRACK THEN HIT SAVE</div>`;
+  } else {
+    html += `<div class="library-list">` + meta.map(m => `
+      <div class="library-row ${m.edits ? 'is-remix' : ''}" data-id="${m.id}">
+        <div style="flex:1; min-width:0">
+          <div class="library-name">${esc(m.name)} ${m.edits ? '<span style="font-size:9px; color:var(--accent); margin-left:6px">REMIX</span>' : ''}</div>
+          <div class="mono library-meta">${esc(m.ext)} · ${(m.duration||0).toFixed(1)}s${m.edits ? ' · ' + Object.keys(m.edits).filter(k=>m.edits[k]).join(', ') : ''}</div>
+        </div>
+        <div class="library-actions">
+          <button class="ghost-btn lib-play" data-id="${m.id}" title="Play"><span class="ic ic-sm" data-icon="play"></span></button>
+          <button class="ghost-btn lib-export" data-id="${m.id}" title="Export WAV"><span class="ic ic-sm" data-icon="link"></span></button>
+          <button class="icon-x lib-del" data-id="${m.id}" title="Delete"><span class="ic ic-sm" data-icon="close"></span></button>
+        </div>
+      </div>`).join('') + `</div>`;
+  }
+  libraryPanel.innerHTML = html;
+  libraryPanel.querySelectorAll('[data-icon]').forEach(el => setIcon(el, el.dataset.icon));
+  libraryPanel.querySelector('#lib-close')?.addEventListener('click', () => toggleLibrary(false));
+  libraryPanel.querySelectorAll('.lib-play').forEach(b => b.addEventListener('click', async () => {
+    const rec = await Library.getLibraryEntry(b.dataset.id);
+    if (!rec) return;
+    // reconstruct file-like for engine
+    const blob = new Blob([rec.arrayBuffer]);
+    const file = new File([blob], rec.name + '.' + rec.ext.toLowerCase());
+    // add to queue and play, then apply edits if any
+    await engine.addToQueue([file]);
+    if (rec.edits) {
+      for (const [k,v] of Object.entries(rec.edits)) if (v) engine.setFx(k, true);
+    }
+    toggleLibrary(false);
+    toast(`Loaded <b>${esc(rec.name)}</b> from library`);
+  }));
+  libraryPanel.querySelectorAll('.lib-export').forEach(b => b.addEventListener('click', async () => {
+    const rec = await Library.getLibraryEntry(b.dataset.id);
+    if (!rec || !rec.arrayBuffer) return;
+    toast('Rendering <b>remix</b>…', { duration: 1600 });
+    try {
+      const buf = await engine.ctx.decodeAudioData(rec.arrayBuffer.slice(0));
+      const blob = await Library.renderRemixToWav(buf, rec.edits || engine.fx);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${rec.name}-remix.wav`; a.click();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      toast('Remix <b>exported</b> as WAV', { duration: 2200 });
+    } catch { toast('<b>Export failed</b>', { duration: 2000 }); }
+  }));
+  libraryPanel.querySelectorAll('.lib-del').forEach(b => b.addEventListener('click', async () => {
+    await Library.removeFromLibrary(b.dataset.id);
+    renderLibrary();
+  }));
+}
+function toggleLibrary(force) {
+  const show = force ?? libraryPanel.classList.contains('is-hidden');
+  libraryPanel.classList.toggle('is-hidden', !show);
+  $('library-btn').classList.toggle('is-on', show);
+  if (show) renderLibrary();
+  if (show) { queuePanel.classList.add('is-hidden'); $('queue-btn').classList.remove('is-on'); }
+}
+$('library-btn').addEventListener('click', () => toggleLibrary());
+// add to library from current track
+async function saveToLibrary() {
+  if (!engine.buffer || !engine.track) { toast('<b>No track</b> to save', { duration: 1600 }); return; }
+  // need raw ArrayBuffer: encode current buffer to wav then back? For now, try to get from queue item's original? We stored buffer, but need ArrayBuffer
+  // Fallback: render current buffer to wav and store that
+  try {
+    const ch = engine.buffer.numberOfChannels;
+    const len = engine.buffer.length;
+    const tmp = new OfflineAudioContext(ch, len, engine.buffer.sampleRate);
+    const src = tmp.createBufferSource(); src.buffer = engine.buffer; src.connect(tmp.destination); src.start(0);
+    const rendered = await tmp.startRendering();
+    // encode rendered to ArrayBuffer via wav blob then arrayBuffer
+    const blob = await Library.renderRemixToWav(rendered, {});
+    const ab = await blob.arrayBuffer();
+    const edits = { ...engine.fx };
+    const rec = await Library.addToLibrary({
+      name: engine.track.name + (Object.values(edits).some(Boolean) ? ' (remix)' : ''),
+      ext: 'WAV',
+      sampleRate: engine.buffer.sampleRate,
+      channels: ch,
+      duration: engine.buffer.duration,
+      arrayBuffer: ab,
+      edits,
+      sourceName: engine.track.name,
+    });
+    toast(`Saved <b>${esc(rec.name)}</b> to library`, { duration: 2000 });
+  } catch (e) { console.error(e); toast('<b>Save failed</b>', { duration: 2000 }); }
+}
 
 /* ---------- track display ---------- */
 
@@ -564,6 +664,30 @@ $('fullscreen-btn').addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else shell.requestFullscreen?.();
 });
+document.addEventListener('fullscreenchange', () => {
+  const shell = $('shell');
+  const isFs = !!document.fullscreenElement;
+  shell.classList.toggle('is-cinema', isFs);
+  if (isFs) {
+    // auto-hide chrome after 2.2s
+    let hid = setTimeout(() => shell.classList.add('is-chrome-hidden'), 2200);
+    const show = () => {
+      shell.classList.remove('is-chrome-hidden');
+      clearTimeout(hid);
+      hid = setTimeout(() => shell.classList.add('is-chrome-hidden'), 2200);
+    };
+    const onMove = () => show();
+    shell.addEventListener('mousemove', onMove);
+    const clr = () => { shell.removeEventListener('mousemove', onMove); document.removeEventListener('fullscreenchange', clr); clearTimeout(hid); };
+    // cleanup when exiting handled by next fullscreenchange
+    shell._cinemaCleanup = clr;
+  } else {
+    shell.classList.remove('is-cinema', 'is-chrome-hidden');
+    if (shell._cinemaCleanup) { try { shell._cinemaCleanup(); } catch {} shell._cinemaCleanup = null; }
+  }
+});
+// also toggle cinema on stage double-click
+$('stage').addEventListener('dblclick', () => $('fullscreen-btn').click());
 
 /* ---------- snapshot & session recorder ---------- */
 
@@ -590,6 +714,17 @@ function snapshot() {
 }
 
 $('snapshot-btn').addEventListener('click', snapshot);
+$('export-remix-btn')?.addEventListener('click', async () => {
+  if (!engine.buffer) { toast('<b>No track</b> to export', { duration: 1600 }); return; }
+  toast('Rendering <b>remix</b>…', { duration: 1600 });
+  try {
+    const blob = await Library.renderRemixToWav(engine.buffer, engine.fx);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${engine.track?.name || 'remix'}-remix.wav`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    toast('Remix <b>exported</b>', { duration: 2000 });
+  } catch { toast('<b>Export failed</b>', { duration: 2000 }); }
+});
 
 let recorder = null;
 let recChunks = [];
@@ -679,6 +814,8 @@ aboutPanel.innerHTML = `
       <div class="about-key"><kbd>R</kbd><span>Random Look</span></div>
       <div class="about-key"><kbd>Q</kbd><span>Queue Manager</span></div>
       <div class="about-key"><kbd>P</kbd><span>Snapshot PNG</span></div>
+      <div class="about-key"><kbd>C</kbd><span>Chop N Screw</span></div>
+      <div class="about-key"><kbd>L</kbd><span>Library</span></div>
       <div class="about-key"><kbd>F</kbd><span>Fullscreen</span></div>
     </div>
   </div>`;
@@ -750,6 +887,9 @@ window.addEventListener('keydown', (e) => {
     case 'KeyF':
       $('fullscreen-btn').click();
       break;
+    case 'KeyL':
+      toggleLibrary();
+      break;
     case 'KeyC': {
       const btn = fxEls['chop'];
       if (btn) btn.click();
@@ -758,6 +898,7 @@ window.addEventListener('keydown', (e) => {
     }
     case 'Escape': {
       if (!queuePanel.classList.contains('is-hidden')) toggleQueue(false);
+      if (!libraryPanel.classList.contains('is-hidden')) toggleLibrary(false);
       if (aboutPanel.classList.contains('is-open')) aboutPanel.classList.remove('is-open');
       break;
     }
