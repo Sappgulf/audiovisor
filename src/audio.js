@@ -576,8 +576,8 @@ export class AudioEngine {
         // restore filter if lowpass not active
         if (!this.fx.lowpass) this.filter.frequency.setTargetAtTime(22050, t, 0.12);
         else this.filter.frequency.setTargetAtTime(400, t, 0.08);
-        // restore speed if needed (already via playbackRate above, but ensure)
-        if (!this.fx.speed) this.setSpeed(1);
+        // restore speed if needed
+        if (!this.fx.speed) this.setSpeed(this._chopPrevSpeed ?? 1);
       }
     }
   }

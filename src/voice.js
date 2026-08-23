@@ -1,21 +1,21 @@
 // Voice AI — hum → MIDI via autocorrelation + simple synth
 export function detectPitch(buf, sampleRate) {
-  const SIZE = buf.length;
-  let bestOffset = -1, bestCorr = 0;
+  const N = Math.min(1024, buf.length);
   let rms = 0;
-  for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
-  rms = Math.sqrt(rms / SIZE);
+  for (let i = 0; i < N; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / N);
   if (rms < 0.01) return -1;
-  let lastCorr = 1;
-  for (let offset = 0; offset < SIZE / 2; offset++) {
-    let corr = 0;
-    for (let i = 0; i < SIZE / 2; i++) corr += Math.abs(buf[i] - buf[i + offset]);
-    corr = 1 - corr / (SIZE / 2);
-    if (corr > 0.9 && corr > lastCorr) {
-      // peak
+  let bestOffset = -1, bestCorr = 0;
+  const MAX = Math.floor(N / 2);
+  const W = N / 2;
+  for (let offset = 16; offset < MAX; offset += 2) {
+    let sum = 0;
+    for (let i = 0; i < W; i += 2) {
+      const d = buf[i] - buf[i + offset];
+      sum += d < 0 ? -d : d;
     }
+    const corr = 1 - sum / (W / 2);
     if (corr > bestCorr) { bestCorr = corr; bestOffset = offset; }
-    lastCorr = corr;
   }
   if (bestCorr > 0.35 && bestOffset > 0) return sampleRate / bestOffset;
   return -1;

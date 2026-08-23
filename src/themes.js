@@ -17,6 +17,7 @@ export const MODES = [
   { id: 'prism', name: 'Prism Ray', icon: 'prism' },
   { id: 'void', name: 'Void Core', icon: 'void' },
   { id: 'bloomfield', name: 'Bloom Field', icon: 'flower' },
+  { id: 'gpu', name: 'GPU Core', icon: 'void' },
 ];
 
 export const THEMES = [

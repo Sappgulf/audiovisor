@@ -179,12 +179,13 @@ if (aiStems) {
     b.addEventListener('click', () => {
       b.classList.toggle('is-active');
       const on = b.classList.contains('is-active');
+      if (!engine.filter) { toast('<b>Play something first</b>', { duration: 1600 }); b.classList.remove('is-active'); return; }
       // stem isolation via filter
       if (s === 'vocals') engine.filter.frequency.setTargetAtTime(on ? 3200 : 22050, engine.ctx?.currentTime || 0, 0.08);
       if (s === 'bass') engine.filter.frequency.setTargetAtTime(on ? 180 : 22050, engine.ctx?.currentTime || 0, 0.08);
       if (s === 'drums') engine.filter.frequency.setTargetAtTime(on ? 8000 : 22050, engine.ctx?.currentTime || 0, 0.08);
-      engine.filter.type = on ? 'bandpass' : 'lowpass';
-      if (!on) engine.filter.type = 'lowpass';
+      engine.filter.type = 'bandpass';
+      if (!on) { engine.filter.type = 'lowpass'; engine.filter.frequency.setTargetAtTime(engine.fx.lowpass ? 400 : 22050, engine.ctx?.currentTime || 0, 0.08); }
       toast(`Stem <b>${s}</b> ${on ? 'solo' : 'all'}`);
     });
     aiStems.appendChild(b);
@@ -470,6 +471,10 @@ async function renderLibrary() {
   libraryPanel.querySelectorAll('.lib-play').forEach(b => b.addEventListener('click', async () => {
     const rec = await Library.getLibraryEntry(b.dataset.id);
     if (!rec) return;
+    if (engine.captureActive) await engine.toggleCapture();
+    if (engine.micActive) await engine.toggleMic();
+    if (engine.mode === 'spotify') engine.pause();
+    engine.stopStream();
     // reconstruct file-like for engine
     const blob = new Blob([rec.arrayBuffer]);
     const file = new File([blob], rec.name + '.' + rec.ext.toLowerCase());
@@ -1102,11 +1107,25 @@ function frame(now) {
     }
   }
 
-  if (!idle && levels) {
-    if (webgpuState) renderWebGPU(webgpuState, renderer.t, levels.level);
-    else if (webgl2State && webgpuCanvas) renderWebGL2(webgl2State, renderer.t, levels.level, webgpuCanvas.width, webgpuCanvas.height);
+  const gpuReady = !!(webgpuState || webgl2State);
+  const gpuMode = state.modeId === 'gpu' && gpuReady;
+  // fit GPU canvas to stage
+  if (webgpuCanvas && gpuReady && (webgpuCanvas.width !== Math.round(renderer.w * renderer.dpr) || webgpuCanvas.height !== Math.round(renderer.h * renderer.dpr))) {
+    webgpuCanvas.width = Math.round(renderer.w * renderer.dpr);
+    webgpuCanvas.height = Math.round(renderer.h * renderer.dpr);
   }
-  renderer.render(idle, freq, wave, levels, dtMs);
+  webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
+  $('viz-canvas').style.display = gpuMode ? 'none' : 'block';
+  if (gpuMode && !idle && levels) {
+    if (webgpuState) renderWebGPU(webgpuState, renderer.t, levels.level);
+    else renderWebGL2(webgl2State, renderer.t, levels.level, webgpuCanvas.width, webgpuCanvas.height);
+  } else {
+    // gpu mode without gpu support falls back to void core 2D
+    const effMode = state.modeId === 'gpu' ? 'void' : null;
+    if (effMode) renderer.setMode(effMode);
+    renderer.render(idle, freq, wave, levels, dtMs);
+    if (effMode) renderer.setMode('gpu');
+  }
 
   if (!idle) {
     const t = engine.getTime();
@@ -1162,6 +1181,11 @@ function runTour() {
 }
 if (!localStorage.getItem('audiovisor.tour')) runTour();
 document.getElementById('tour-replay')?.addEventListener('click', () => { toast('TOUR <b>restarted</b>'); runTour(); });
+document.getElementById('settings-reset')?.addEventListener('click', () => {
+  localStorage.removeItem(SETTINGS_KEY);
+  localStorage.removeItem('audiovisor.tour');
+  location.reload();
+});
 
 // Settings export/import
 function currentSettings() {
@@ -1220,11 +1244,7 @@ const webgpuCanvas = document.getElementById('webgpu-canvas');
 if (webgpuCanvas) {
   initWebGPU(webgpuCanvas).then(s => {
     webgpuState = s;
-    if (s) { webgpuCanvas.style.display = 'block'; }
-    else {
-      webgl2State = initWebGL2(webgpuCanvas);
-      if (webgl2State) webgpuCanvas.style.display = 'block';
-    }
+    if (!s) webgl2State = initWebGL2(webgpuCanvas);
   });
 }
 // Voice AI

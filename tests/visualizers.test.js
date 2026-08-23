@@ -71,8 +71,8 @@ function ensureGlobals() {
 }
 
 describe('themes', () => {
-  it('has 18 stage modes including Pulse Orb', () => {
-    expect(MODES.length).toBe(18);
+  it('has 19 stage modes including Pulse Orb', () => {
+    expect(MODES.length).toBe(19);
     expect(MODES.map(m => m.id)).toContain('orb');
     expect(MODES.find(m => m.id === 'orb').name).toBe('Pulse Orb');
     expect(MODES.find(m => m.id === 'orb').icon).toBe('orb');

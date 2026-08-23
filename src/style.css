@@ -378,6 +378,7 @@ button:focus-visible, input:focus-visible {
   align-items: center;
   gap: 9px;
   padding: 9px 14px 9px 12px;
+  max-width: min(420px, calc(100vw - 56px));
   background: rgba(28, 26, 24, 0.94);
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
@@ -425,6 +426,20 @@ button:focus-visible, input:focus-visible {
   border-top: 1px solid rgba(255,250,243,0.08);
   border-radius: 16px;
   box-shadow: 0 24px 64px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,250,243,0.05) inset;
+}
+.stage::before {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  background: radial-gradient(60% 52% at 50% 46%, rgba(217,176,137,0.075), transparent 68%);
+  opacity: 0.6;
+  animation: stage-breathe 7s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+@keyframes stage-breathe {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.04); }
 }
 .stage::after {
   content: '';
@@ -545,7 +560,7 @@ button:focus-visible, input:focus-visible {
   top: 74px;
   right: 16px;
   bottom: 88px;
-  width: 320px;
+  width: 344px;
   background: rgba(30, 28, 26, 0.88);
   border: 1px solid rgba(255,235,205,0.08);
   border-top: 1px solid rgba(255,250,243,0.08);
@@ -569,11 +584,11 @@ button:focus-visible, input:focus-visible {
   padding: 20px 18px 18px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 20px;
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1;
-  width: 320px;
+  width: 344px;
 }
 
 .section-title {
@@ -594,13 +609,15 @@ button:focus-visible, input:focus-visible {
 
 /* Mode cards */
 
-.mode-list { display: flex; flex-direction: column; gap: 8px; }
+.mode-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 
 .mode-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
-  padding: 9px 11px;
+  gap: 6px;
+  padding: 8px 6px;
+  text-align: center;
   border-radius: 12px;
   background: rgba(255,250,243,0.015);
   border: 1px solid transparent;
@@ -615,8 +632,8 @@ button:focus-visible, input:focus-visible {
 }
 
 .mode-preview {
-  width: 52px;
-  height: 36px;
+  width: 100%;
+  height: 34px;
   border-radius: 8px;
   background: #0f0e0d;
   border: 1px solid var(--border-soft);
@@ -634,12 +651,16 @@ button:focus-visible, input:focus-visible {
 
 .mode-name {
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-40);
-  font-weight: 500;
+  font-weight: 600;
   transition: color 0.2s var(--ease);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .mode-card:hover .mode-name { color: var(--text-60); }
 .mode-card.is-active .mode-name { color: var(--text); }

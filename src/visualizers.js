@@ -541,6 +541,13 @@ export class Renderer {
     ctx.fillStyle = g;
     ctx.fill();
 
+    // center glow spine
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.35;
+    ctx.drawImage(this._dot(this._color(0)), 0, midY - h*0.028, w, h*0.056);
+    ctx.restore();
+
     strokeSmooth(pts, this._color(0), 2.2);
 
     ctx.save();
