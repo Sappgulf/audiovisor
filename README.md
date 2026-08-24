@@ -185,6 +185,7 @@ npm test        # vitest — engine, beat tracker, synth feed, PKCE, utils,
 npm run lint    # eslint
 npm run size    # bundle budget (needs a build first)
 npm run shots   # render every stage mode to /tmp/audiovisor-shots for eyeballing
+npm run analyze # exposure report per mode: mean luminance, clipping, saturation
 npm run icons   # regenerate the PWA / home-screen icons
 ```
 
@@ -194,6 +195,17 @@ nor washed white, and stability under digital silence. These are invariants,
 not golden images: an intentional visual tweak stays green, but the class of
 bug that shipped as v8.8.3 (`atan(0,0)` → NaN whiting out flat surfaces)
 turns it red.
+
+`npm run analyze` answers "does this look blown out?" with numbers rather
+than by squinting at 22 screenshots. Clipped pixels throw away colour and
+detail exactly where the signal is loudest, so it is worth watching: the
+suite currently averages ~4.3% clipped on the Canvas2D renderer and ~0% on
+the raytraced stage, which tonemaps properly.
+
+Analysis frames are sanitised at a single boundary (`src/levels.js`) before
+any mode sees them. A non-finite value used to be fatal *and permanent* —
+smoothed bands are exponential, so one NaN frame latched forever and took
+the stage down until reload.
 
 CI runs lint, tests, build, and the bundle budget on every push and PR.
 
