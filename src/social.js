@@ -49,8 +49,27 @@ export function toggleFollow(user) {
   return list.includes(user);
 }
 
+/**
+ * Backfill anything the older seeder wrote without an id.
+ *
+ * Fixing the seeder only helped people with an empty feed: seedFeed()
+ * returns early when one already exists, so every returning visitor kept
+ * the id-less rows and their like buttons stayed dead. Verified against a
+ * real browser that had the old data.
+ */
+function healFeed(feed) {
+  let changed = false;
+  for (const e of feed) {
+    if (typeof e.id !== 'string' || !e.id) { e.id = newId(); changed = true; }
+    if (!Number.isFinite(e.at)) { e.at = Date.now(); changed = true; }
+  }
+  if (changed) writeJSON(KEY, feed);
+  return changed;
+}
+
 export function seedFeed() {
-  if (getFeed().length) return;
+  const existing = getFeed();
+  if (existing.length) { healFeed(existing); return; }
   /* The seeds used to be written without an id or a timestamp, unlike every
      entry postToFeed creates. The feed renders a like button keyed on the
      id, so all three seeded rows rendered data-like="undefined" and their

@@ -118,3 +118,55 @@ describe('when storage rejects writes', () => {
     expect(Social.toggleFollow('bob')).toBe(true);
   });
 });
+
+describe('legacy feeds written before entries had ids', () => {
+  /* Fixing the seeder only helped an empty feed — seedFeed() returns early
+     when one exists, so returning visitors kept id-less rows and their
+     like buttons stayed dead. Caught by checking the live site in a
+     browser that still had the old data. */
+  const legacy = [
+    { title: 'Brass Tape Slow', mode: 'bars', theme: 'brass', fx: {}, user: 'soulchef', likes: 12 },
+    { title: 'Laser Drift', mode: 'void', theme: 'laser', fx: {}, user: 'neon___', likes: 34 },
+  ];
+
+  it('backfills ids on an existing feed so likes start working', () => {
+    working({ [KEY]: JSON.stringify(legacy) });
+    Social.seedFeed();
+    const feed = Social.getFeed();
+    expect(feed).toHaveLength(2);
+    for (const e of feed) expect(typeof e.id).toBe('string');
+    expect(new Set(feed.map((e) => e.id)).size).toBe(2);
+    expect(Social.likeFeed(feed[0].id)).toBe(true);
+  });
+
+  it('backfills a missing timestamp too', () => {
+    working({ [KEY]: JSON.stringify(legacy) });
+    Social.seedFeed();
+    for (const e of Social.getFeed()) expect(Number.isFinite(e.at)).toBe(true);
+  });
+
+  it('keeps the existing content — it heals, it does not reseed', () => {
+    working({ [KEY]: JSON.stringify(legacy) });
+    Social.seedFeed();
+    const feed = Social.getFeed();
+    expect(feed.map((e) => e.title)).toEqual(['Brass Tape Slow', 'Laser Drift']);
+    expect(feed[0].likes).toBe(12);
+  });
+
+  it('leaves a healthy feed untouched', () => {
+    working();
+    Social.seedFeed();
+    const before = Social.getFeed();
+    Social.seedFeed();
+    expect(Social.getFeed()).toEqual(before);
+  });
+
+  it('does not throw when storage rejects the repair write', () => {
+    globalThis.localStorage = {
+      getItem: () => JSON.stringify(legacy),
+      setItem: () => { throw new Error('QuotaExceededError'); },
+      removeItem: () => {},
+    };
+    expect(() => Social.seedFeed()).not.toThrow();
+  });
+});
