@@ -5,6 +5,7 @@ import { Renderer } from './visualizers.js';
 import { fmtTime, pickRandom, fmtStamp, computePeaks } from './utils.js';
 import { filterCommands, clampActive } from './palette.js';
 import { bindDragTrack, keyStep } from './drag.js';
+import { bindSheetDrag } from './sheet.js';
 import {
   SETTINGS_KEY, serializeSettings, validateSettings, readSettings,
 } from './settings.js';
@@ -1366,19 +1367,46 @@ function syncDrawerA11y() {
   const transport = document.querySelector('.transport');
   if (transport) transport.inert = state.drawerOpen && window.innerWidth <= 640;
 }
-function toggleDrawer() {
-  state.drawerOpen = !state.drawerOpen;
+const sheetScrim = $('sheet-scrim');
+/** True while the drawer is presented as a bottom sheet rather than a panel. */
+const isSheet = () => window.matchMedia('(max-width: 640px)').matches;
+
+function syncDrawer() {
   drawer.classList.toggle('is-closed', !state.drawerOpen);
   $('nav-settings').classList.toggle('is-active', state.drawerOpen);
   $('drawer-toggle')?.classList.toggle('is-on', state.drawerOpen);
+  if (sheetScrim) {
+    const show = state.drawerOpen && isSheet();
+    sheetScrim.hidden = !show;
+    // let the element exist for a frame before fading in, or the transition
+    // has nothing to animate from
+    if (show) requestAnimationFrame(() => sheetScrim.classList.add('is-visible'));
+    else sheetScrim.classList.remove('is-visible');
+  }
   syncDrawerA11y();
 }
+
+function setDrawerOpen(open) {
+  if (state.drawerOpen === open) return;
+  state.drawerOpen = open;
+  syncDrawer();
+}
+function toggleDrawer() { setDrawerOpen(!state.drawerOpen); }
+
 $('nav-settings').addEventListener('click', toggleDrawer);
 $('drawer-toggle')?.addEventListener('click', toggleDrawer);
-drawer.classList.toggle('is-closed', !state.drawerOpen);
-$('nav-settings').classList.toggle('is-active', state.drawerOpen);
-$('drawer-toggle')?.classList.toggle('is-on', state.drawerOpen);
-syncDrawerA11y();
+// tapping the dimmed area behind a sheet closes it, as every sheet does
+sheetScrim?.addEventListener('click', () => setDrawerOpen(false));
+// drag the grabber down to dismiss
+bindSheetDrag(drawer, {
+  handle: $('sheet-handle') || undefined,
+  isOpen: () => state.drawerOpen && isSheet(),
+  onDismiss: () => setDrawerOpen(false),
+});
+// a sheet dragged part-way and then rotated to a wide layout would keep a
+// stale inline transform
+window.addEventListener('resize', () => { if (!isSheet()) drawer.style.transform = ''; });
+syncDrawer();
 
 /* ---------- keyboard ---------- */
 

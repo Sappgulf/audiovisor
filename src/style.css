@@ -2169,3 +2169,49 @@ html, body {
      comfortably tappable cards beats three cramped ones */
   .mode-card { min-height: 64px; }
 }
+
+/* ---------- bottom-sheet affordances (phone only) ---------- */
+
+/* The grabber and the scrim exist in the markup at every width but only
+   mean anything once the drawer becomes a bottom sheet. */
+.sheet-handle { display: none; }
+.sheet-scrim { display: none; }
+
+@media (max-width: 640px) {
+  .sheet-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* a 28px band is what the thumb actually grabs; the bar itself is 4px */
+    height: 28px;
+    flex: none;
+    touch-action: none;
+    cursor: grab;
+  }
+  .sheet-handle span {
+    width: 40px;
+    height: 4px;
+    border-radius: 99px;
+    background: rgba(255,235,205,0.26);
+  }
+  .sheet-handle:active { cursor: grabbing; }
+
+  .sheet-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 45;          /* under the sheet (50), over everything else */
+    background: rgba(0,0,0,0.42);
+    opacity: 0;
+    transition: opacity 0.28s var(--ease);
+  }
+  .sheet-scrim.is-visible { opacity: 1; }
+  .sheet-scrim[hidden] { display: none; }
+
+  /* the sheet follows the finger, so it must not animate mid-drag */
+  .drawer { will-change: transform; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-scrim { transition: none; }
+}

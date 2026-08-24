@@ -102,7 +102,11 @@
           <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
         </main>
 
+        <div class="sheet-scrim" id="sheet-scrim" hidden></div>
         <aside class="drawer" id="drawer" aria-label="Settings panel">
+          <!-- bottom-sheet grabber; visible only at phone widths, where the
+               drawer becomes a sheet and can be dragged down to dismiss -->
+          <div class="sheet-handle" id="sheet-handle" aria-hidden="true"><span></span></div>
           <div class="drawer-tabbar" role="tablist" aria-label="Settings sections">
             <button class="drawer-tab" id="tab-source" data-tab="source" role="tab" aria-controls="panel-source" aria-selected="false">Source</button>
             <button class="drawer-tab" id="tab-look" data-tab="look" role="tab" aria-controls="panel-look" aria-selected="false">Look</button>
