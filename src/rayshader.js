@@ -338,25 +338,32 @@ float scTensor(vec3 p) {
   return d;
 }
 
-/* 15 prism — dispersive glass slab */
+/* 15 prism — beam in from the left, dispersion fan out to the right, so the
+   whole path reads face-on from the camera */
 float scPrism(vec3 p) {
   vec3 q = p;
   q.xz *= rot(uTime * 0.22 + uBeat * 0.1);
-  q.yz *= rot(0.35);
-  float d = sdRBox(q, vec3(0.42, 1.5, 0.42), 0.02);
+  q.yz *= rot(0.3);
+  float d = sdRBox(q, vec3(0.38, 1.15, 0.38), 0.02);
   g_id = 11.0; g_aux = 0.5;
-  // emissive slit behind the slab: the beam the prism splits
-  // incoming beam: a narrow emissive slit behind the slab
-  vec3 lp = p - vec3(0.0, 0.0, -3.6);
-  float slit = sdRBox(lp, vec3(0.9, 0.06 + uLevel * 0.1, 0.04), 0.03);
-  if (slit < d) { d = slit; g_id = 17.0; g_aux = 0.5; }
-  // exit fan: a thin wedge whose colour walks the palette across its spread,
-  // standing in for the caustic a single-bounce tracer can't produce
-  vec3 fp = p - vec3(0.0, 0.0, 2.4);
-  float fan = sdRBox(fp, vec3(2.6, 0.02, 1.9), 0.02);
-  fan = max(fan, -fp.z - 1.6);
-  fan = max(fan, abs(fp.x) - (0.25 + (fp.z + 1.9) * 0.75));
-  if (fan < d) { d = fan; g_id = 17.0; g_aux = clamp((fp.x + 2.6) / 5.2, 0.0, 1.0); }
+
+  // incoming beam: a thin bar travelling in along -x
+  vec3 bp = p - vec3(-2.3, 0.0, 0.0);
+  float beam = sdRBox(bp, vec3(1.5, 0.045 + uLevel * 0.05, 0.045), 0.02);
+  if (beam < d) { d = beam; g_id = 17.0; g_aux = 0.5; }
+
+  // exit fan: a thin sheet spreading vertically as it travels out along +x,
+  // colour walking the palette across the spread — the caustic a
+  // single-bounce tracer cannot produce for real
+  vec3 fp = p - vec3(2.3, 0.0, 0.0);
+  float spread = 0.05 + (fp.x + 1.8) * 0.34;
+  float fan = sdRBox(fp, vec3(1.8, 1.0, 0.03), 0.02);
+  fan = max(fan, abs(fp.y) - spread);
+  if (fan < d) {
+    d = fan;
+    g_id = 17.0;
+    g_aux = clamp(0.5 + fp.y / max(spread * 2.0, 0.001), 0.0, 1.0);
+  }
   return d;
 }
 

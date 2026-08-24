@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { RayStage } from '../src/raystage.js';
 import { SCENE_FRAG, ACCUM_FRAG, BLUR_FRAG, POST_FRAG, VERT } from '../src/rayshader.js';
 import { MODES } from '../src/themes.js';
+import { parser } from '@shaderfrog/glsl-parser';
 
 function fakeCanvas(ctx = null) {
   return {
@@ -32,6 +33,14 @@ describe('RayStage', () => {
 
 describe('ray shaders', () => {
   const sources = { VERT, SCENE_FRAG, ACCUM_FRAG, BLUR_FRAG, POST_FRAG };
+
+  it('all parse as valid GLSL', () => {
+    // a syntax slip here compiles to nothing at runtime and silently drops
+    // the whole stage to the Canvas2D fallback, so catch it in CI instead
+    for (const [name, src] of Object.entries(sources)) {
+      expect(() => parser.parse(src.replace('#version 300 es\n', '')), name).not.toThrow();
+    }
+  });
 
   it('all declare GLSL ES 3.0', () => {
     for (const [name, src] of Object.entries(sources)) {

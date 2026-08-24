@@ -1396,7 +1396,9 @@ function frameStep(now) {
   // surface a GPU context loss instead of silently swapping renderers
   if (state.raytraceWanted && !ray.ok && !rayDropped) {
     rayDropped = true;
-    toast('GPU context lost — <b>Canvas2D stage</b> until it recovers', { duration: 3200 });
+    toast(ray.lost
+      ? 'GPU context lost — <b>Canvas2D stage</b> until it recovers'
+      : '<b>WebGL2 unavailable</b> — Canvas2D stage', { duration: 3200 });
   } else if (rtOn && rayDropped) {
     rayDropped = false;
     toast('RAYTRACE <b>recovered</b>', { duration: 1800 });
