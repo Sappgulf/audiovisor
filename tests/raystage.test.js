@@ -95,3 +95,30 @@ describe('RayStage runtime behaviour', () => {
     expect(src.includes('this._histAcc >= 1 / 45')).toBe(true);
   });
 });
+
+describe('shader source integrity', () => {
+  /* Every shader lives in a JS template literal. One stray backtick is
+     caught loudly — the file stops parsing and lint and the build both
+     fail, which is how I found it after quoting a tier name in a shader
+     comment. A balanced pair is the dangerous case: it parses fine and
+     quietly cuts a hole in the shader source, and the stage then drops to
+     Canvas2D at runtime with nothing to point at. Same for ${...}, which
+     would be interpolated as JS. */
+  const raw = readFileSync('src/rayshader.js', 'utf8');
+
+  for (const [name, src] of Object.entries({ VERT, SCENE_FRAG, ACCUM_FRAG, BLUR_FRAG, POST_FRAG })) {
+    it(`${name} contains no template-literal delimiters`, () => {
+      expect(src.includes('`'), 'backtick would close the template literal').toBe(false);
+      expect(src.includes('${'), 'interpolation would be evaluated as JS').toBe(false);
+    });
+
+    it(`${name} declares a GLSL ES 3.00 version on its first line`, () => {
+      expect(src.trimStart().startsWith('#version 300 es')).toBe(true);
+    });
+  }
+
+  it('has balanced template delimiters in the source file', () => {
+    expect(raw).toContain('export const SCENE_FRAG');
+    expect(raw.split('`').length % 2, 'unbalanced backticks in rayshader.js').toBe(1);
+  });
+});
