@@ -89,6 +89,32 @@ float fbm(vec3 p) {
   return s;
 }
 
+/* 2D value noise, for heightfields.
+   vnoise() interpolates eight corners because it is 3D. A heightfield does
+   not vary in Y, so every one of those evaluations spent half its work on
+   an axis that never changes. This does four corners instead. */
+float hash12(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise2(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x),
+             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+/* Two fixed octave counts rather than one parameterised function: the base
+   shape needs more detail than the fine layer, and every octave is paid on
+   each of the ~128 march steps. Written as plain constant-bound loops, the
+   same shape as fbm() above. */
+float fbm2a(vec2 p) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 4; i++) { s += a * vnoise2(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+float fbm2b(vec2 p) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 2; i++) { s += a * vnoise2(p); p *= 2.03; a *= 0.5; }
+  return s;
+}
+
 /* ---------------- SDF primitives ---------------- */
 
 float sdSphere(vec3 p, float r) { return length(p) - r; }
@@ -273,8 +299,15 @@ float scTerrain(vec3 p) {
   float e = hist(u, age);
   float e2 = pow(e, 1.4) * uSens;
   float ridge = 3.0 * e2 / (1.0 + 0.7 * e2);       // knee: peaks flatten, never wall off
-  ridge += fbm(vec3(p.x * 0.55, 0.0, p.z * 0.55 + uTime * 0.05)) * 0.9;
-  ridge += fbm(vec3(p.x * 1.7, 3.1, p.z * 1.7)) * 0.28;      // crest detail
+  /* Both layers were 5-octave 3D fbm, i.e. 80 hash+sin evaluations per SDF
+     call, paid on every one of the ~128 march steps plus normals, shadows,
+     AO and the reflection bounce. On an M1 that put this mode at 233ms a
+     frame at the default quality — 4fps — and it never reached 60fps even
+     at the lowest tier. The field is a heightfield, so 2D noise gives the
+     same shape, and the fine layer at 0.28 amplitude does not need five
+     octaves to read. */
+  ridge += fbm2a(vec2(p.x * 0.55, p.z * 0.55 + uTime * 0.05)) * 0.9;
+  ridge += fbm2b(vec2(p.x * 1.7, p.z * 1.7)) * 0.28;      // crest detail
   float d = (p.y + 1.2 - ridge) * 0.34;            // conservative slope for the heightfield march
   g_id = 7.0; g_aux = clamp(ridge * 0.4, 0.0, 1.0);
   return d;
