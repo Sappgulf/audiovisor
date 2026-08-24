@@ -2,6 +2,7 @@ import { VERT, SCENE_FRAG, BLUR_FRAG, ACCUM_FRAG, POST_FRAG } from './rayshader.
 import { MODES } from './themes.js';
 import { beatEnergy } from './beatenergy.js';
 import { sanitizeLevels, usableSpectrum } from './levels.js';
+import { motionScale } from './motion.js';
 
 /**
  * RayStage — WebGL2 raytraced stage renderer (v8.7).
@@ -454,7 +455,11 @@ export class RayStage {
     gl.uniform1f(this.uPost.uBloomAmt, this.bloomAmount);
     gl.uniform1f(this.uPost.uExposure, this.exposure);
     gl.uniform1f(this.uPost.uTime, this.t);
-    gl.uniform1f(this.uPost.uBeat, this.beat);
+    /* The post pass drives chromatic aberration and an exposure pulse from
+       the beat — both whole-frame effects. Zeroing this term under
+       prefers-reduced-motion leaves the scene animating while the camera
+       stops throbbing. See src/motion.js. */
+    gl.uniform1f(this.uPost.uBeat, this.beat * motionScale());
     gl.uniform1f(this.uPost.uPop, this.colorPop);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lit.tex); gl.uniform1i(this.uPost.uScene, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blurB.tex); gl.uniform1i(this.uPost.uBloom, 1);

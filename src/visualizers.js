@@ -2,6 +2,7 @@ import { THEMES } from './themes.js';
 import { lerp, logFreqIndex, logSample, hexRgba, clamp } from './utils.js';
 import { beatEnergy } from './beatenergy.js';
 import { sanitizeLevels, usableSpectrum } from './levels.js';
+import { motionScale } from './motion.js';
 
 /**
  * Canvas2D renderer — delta-time driven, sprite-cached, bloom-composited.
@@ -364,25 +365,29 @@ export class Renderer {
       ctx.fillRect(0, 0, w, h);
       ctx.restore();
     }
-    const punched = this.beat > 0.02;
+    /* Whole-frame motion is what causes vestibular discomfort, so it scales
+       to zero under prefers-reduced-motion while the visualisation itself —
+       the reason the app exists — carries on. See src/motion.js. */
+    const motion = motionScale();
+    const punched = this.beat > 0.02 && motion > 0;
     if (punched) {
       ctx.save();
-      const z = 1 + this.beat * 0.012;
+      const z = 1 + this.beat * 0.012 * motion;
       ctx.translate(w / 2, h / 2);
       ctx.scale(z, z);
       ctx.translate(-w / 2, -h / 2);
     }
     // chop slice stutter (VHS)
-    if (chopGlitch) {
+    if (chopGlitch && motion > 0) {
       ctx.save();
       const sliceY = (this.t * 380) % h;
-      ctx.translate((Math.sin(this.t * 62) * 7), 0);
+      ctx.translate((Math.sin(this.t * 62) * 7) * motion, 0);
       ctx.beginPath();
       ctx.rect(0, sliceY, w, 18 + Math.random()*22);
       ctx.clip();
     }
     this._scene(freq, wave, dt, dt60);
-    if (chopGlitch) ctx.restore();
+    if (chopGlitch && motion > 0) ctx.restore();
     if (punched) ctx.restore();
 
     // ray-trace SSR floor (subtle reflection of the scene)

@@ -239,6 +239,65 @@ describe('hostile analysis frames', () => {
   });
 });
 
+describe('reduced motion', () => {
+  /* style.css collapses CSS animation under prefers-reduced-motion, but the
+     stage is the largest moving thing in the app and nothing consulted the
+     preference on the way to the canvas. Whole-frame effects — the beat
+     zoom and the glitch slice — are what matter for vestibular comfort;
+     the visualisation itself is the point of the app and stays.
+
+     Toggling the preference is covered in tests/motion.test.js, which can
+     reset the module between cases. motion.js caches the MediaQueryList
+     rather than re-querying every frame, so a swap of window.matchMedia
+     part-way through this file would not be observed — these cases assert
+     what is true for a single fixed preference. */
+  const wave = new Uint8Array(2048).fill(128);
+  const spectrum = new Uint8Array(1024).fill(180);
+  const hitting = { bass: 1, mid: 0.8, high: 0.6, level: 1, beatPulse: 1, beatPhase: 0, bpm: 128, beatConfidence: 1 };
+
+  const renderReduced = (modeId) => {
+    const prev = globalThis.window.matchMedia;
+    const realRandom = Math.random;
+    globalThis.window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
+    Math.random = mulberry32(0x5EED);
+    try {
+      const r = new Renderer(makeCanvas());
+      r.dpr = 1;
+      r.setTheme(THEMES.find((t) => t.id === 'brass'));
+      r.setMode(modeId);
+      for (let i = 0; i < 10; i++) r.render(false, spectrum, wave, hitting, 16.7);
+      const out = createCanvas(W, H);
+      const cx = out.getContext('2d');
+      cx.fillStyle = '#0b0a09';
+      cx.fillRect(0, 0, W, H);
+      cx.drawImage(r.canvas, 0, 0, W, H);
+      return cx.getImageData(0, 0, W, H).data;
+    } finally {
+      globalThis.window.matchMedia = prev;
+      Math.random = realRandom;
+    }
+  };
+
+  it('still draws the visualisation — it is calmed, not disabled', () => {
+    const stat = stats(renderReduced('bars'));
+    expect(stat.max - stat.min).toBeGreaterThan(4);
+  });
+
+  it('renders every mode on a hard beat without throwing', () => {
+    const broke = [];
+    for (const m of MODES) {
+      try { renderReduced(m.id); } catch (e) { broke.push(`${m.id}: ${e.message}`); }
+    }
+    expect(broke).toEqual([]);
+  });
+
+  it('keeps highlights in range with motion suppressed', () => {
+    for (const id of ['bars', 'tunnel', 'orb']) {
+      expect(stats(renderReduced(id)).white, id).toBeLessThan(0.25);
+    }
+  });
+});
+
 describe('theme coverage', () => {
   it.each(THEMES.map((t) => [t.id]))('renders bars under theme %s', (themeId) => {
     const { min, max, white } = stats(renderMode('bars', { themeId, frames: 30 }));
