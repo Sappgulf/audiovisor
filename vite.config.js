@@ -9,4 +9,14 @@ export default defineConfig({
        code actually asks for them. */
     modulePreload: false,
   },
+  test: {
+    /* Several suites do real work rather than mocking it — parsing every
+       GLSL shader, rasterizing all 22 stage modes, simulating 26s of audio
+       per tempo. The slowest sit around 3s idle, which clears the 5s default
+       on a quiet machine and misses it when the CPU is busy; that showed up
+       as a single test failing under load and passing on every rerun. These
+       are slow computations, not hangs, so give them room. */
+    testTimeout: 30000,
+    hookTimeout: 30000,
+  },
 });

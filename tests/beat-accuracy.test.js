@@ -137,7 +137,7 @@ describe('the smoothing the beat analyser is fixed at', () => {
     const score = (sm) =>
       SUBSET.filter((b) => at(b, { smoothing: sm, seconds: 22 }).err <= 2).length;
     expect(score(BEAT_SMOOTHING)).toBeGreaterThan(score(0.82));
-  }, 20000);
+  });
 
   it('is the value the engine actually configures', () => {
     expect(BEAT_SMOOTHING).toBe(0.9);
