@@ -242,7 +242,8 @@
 
         <div class="seek-console" id="seek-console">
           <span class="mono time-label" id="time-current">0:00</span>
-          <div class="seek-track" id="seek-track">
+          <div class="seek-track" id="seek-track" role="slider" tabindex="0"
+               aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
             <canvas id="seek-wave"></canvas>
             <div class="seek-fill" id="seek-fill"></div>
           </div>
@@ -253,7 +254,8 @@
           <canvas id="vu-meter" width="58" height="24" title="Bass / Mid / High levels" aria-label="Live level meter"></canvas>
           <div class="volume-group" id="volume-group">
             <span class="ic" data-icon="volume"></span>
-            <div class="volume-track" id="volume-track">
+            <div class="volume-track" id="volume-track" role="slider" tabindex="0"
+                 aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
               <div class="volume-fill" id="volume-fill"></div>
             </div>
           </div>

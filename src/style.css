@@ -959,6 +959,9 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 .seek-track {
   flex: 1;
   height: 16px;
+  /* the browser must not claim this gesture as a page scroll, or a scrub
+     turns into a scroll the moment the finger moves more than a few px */
+  touch-action: none;
   background: rgba(255,235,205,0.05);
   border-radius: 99px;
   overflow: hidden;
@@ -1026,6 +1029,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   font-size: 14px;
 }
 .volume-track {
+  touch-action: none;
   width: 84px;
   height: 4px;
   background: rgba(255,235,205,0.08);

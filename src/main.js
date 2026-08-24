@@ -4,6 +4,7 @@ import { AudioEngine } from './audio.js';
 import { Renderer } from './visualizers.js';
 import { fmtTime, pickRandom, fmtStamp, computePeaks } from './utils.js';
 import { filterCommands, clampActive } from './palette.js';
+import { bindDragTrack, keyStep } from './drag.js';
 import {
   SETTINGS_KEY, serializeSettings, validateSettings, readSettings,
 } from './settings.js';
@@ -1094,31 +1095,38 @@ $('loop-btn').addEventListener('click', () => {
 });
 
 const seekTrack = $('seek-track');
-function seekFromEvent(e) {
-  if (engine.getDuration() <= 0) return;
-  const rect = seekTrack.getBoundingClientRect();
-  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-  engine.seek(ratio * engine.getDuration());
-}
-let seeking = false;
-seekTrack.addEventListener('mousedown', (e) => { seeking = true; seekFromEvent(e); });
-window.addEventListener('mousemove', (e) => { if (seeking) seekFromEvent(e); });
-window.addEventListener('mouseup', () => { seeking = false; });
+bindDragTrack(seekTrack, (ratio) => {
+  const d = engine.getDuration();
+  if (d > 0) engine.seek(ratio * d);
+});
+// arrow keys on a focused seek bar, for keyboard and switch-control users
+seekTrack.addEventListener('keydown', (e) => {
+  const d = engine.getDuration();
+  if (d <= 0) return;
+  const next = keyStep(e.key, engine.getTime() / d, 0.02);
+  if (next === null) return;
+  e.preventDefault();
+  engine.seek(next * d);
+});
 
 const volumeTrack = $('volume-track');
 function setVolumeUI(v) {
   v = Math.max(0, Math.min(1, v));
   engine.setVolume(v);
   $('volume-fill').style.width = `${v * 100}%`;
+  volumeTrack?.setAttribute('aria-valuenow', String(Math.round(v * 100)));
 }
-function volumeFromEvent(e) {
-  const rect = volumeTrack.getBoundingClientRect();
-  setVolumeUI((e.clientX - rect.left) / rect.width);
-}
-let volDragging = false;
-volumeTrack.addEventListener('mousedown', (e) => { volDragging = true; volumeFromEvent(e); });
-window.addEventListener('mousemove', (e) => { if (volDragging) volumeFromEvent(e); });
-window.addEventListener('mouseup', () => { volDragging = false; saveSettings(); });
+bindDragTrack(volumeTrack, (ratio, phase) => {
+  setVolumeUI(ratio);
+  if (phase === 'end') saveSettings();
+});
+volumeTrack?.addEventListener('keydown', (e) => {
+  const next = keyStep(e.key, engine.volume);
+  if (next === null) return;
+  e.preventDefault();
+  setVolumeUI(next);
+  saveSettings();
+});
 $('stage').addEventListener('wheel', (e) => {
   e.preventDefault();
   setVolumeUI(engine.volume - Math.sign(e.deltaY) * 0.05);
@@ -1656,7 +1664,14 @@ function frameStep(now) {
     _vuAcc += dtMs;
     // the clock only ticks once a second — skip 59 of 60 text writes
     const secs = Math.floor(t);
-    if (secs !== _lastSecs) { _lastSecs = secs; timeCurrentEl.textContent = fmtTime(t); }
+    if (secs !== _lastSecs) {
+      _lastSecs = secs;
+      timeCurrentEl.textContent = fmtTime(t);
+      // the seek bar is a slider now; keep assistive tech in step with it,
+      // at the same once-a-second cadence as the visible clock
+      seekTrack.setAttribute('aria-valuenow', String(dur ? Math.round((t / dur) * 100) : 0));
+      seekTrack.setAttribute('aria-valuetext', `${fmtTime(t)} of ${fmtTime(dur)}`);
+    }
     if (_vuAcc >= 33) { _vuAcc = 0; drawVu(); }
     _uiAcc += dtMs;
     if (_uiAcc >= 100) {
