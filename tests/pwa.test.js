@@ -135,6 +135,37 @@ describe('responsive layout rules', () => {
     expect(narrow).toContain('.wordmark');
   });
 
+  it('sizes floating panels against the viewport, not a fixed width', () => {
+    /* The library panel was a fixed 380px pinned to `right: 20px`, so on a
+       390px phone it began at left: -26px and its search field and the left
+       of every track name sat permanently off-screen. The queue panel had
+       been given a responsive width in a media query and this one was
+       missed, which is exactly the drift a rule here catches.
+
+       Every rule for the panel is checked, not just the first: an earlier
+       media-query override would otherwise satisfy this while the base rule
+       stayed fixed — which is exactly what happened when I first wrote it. */
+    const rules = (selector) => {
+      const out = [];
+      const re = new RegExp(`(^|[,{}])\\s*([^{}]*\\${selector}[^{}]*)\\{([^{}]*)\\}`, 'g');
+      let m;
+      while ((m = re.exec(css))) out.push({ sel: m[2].trim(), body: m[3] });
+      return out;
+    };
+
+    for (const panel of ['.queue-panel', '.library-panel']) {
+      const found = rules(panel);
+      expect(found.length, `no rules found for ${panel}`).toBeGreaterThan(0);
+      let sawResponsiveWidth = false;
+      for (const { sel, body } of found) {
+        const fixed = body.match(/width:\s*(\d+)px\s*;/);
+        expect(fixed, `${panel} has a fixed width in "${sel}"`).toBeNull();
+        if (/width:\s*min\(/.test(body)) sawResponsiveWidth = true;
+      }
+      expect(sawResponsiveWidth, `${panel} never sets a viewport-relative width`).toBe(true);
+    }
+  });
+
   it('leaves no gap between the phone and mid-width transport rules', () => {
     // 640 is the phone ceiling and 641 the mid-width floor; a gap here is
     // how 768 ended up with the wide desktop transport in the first place

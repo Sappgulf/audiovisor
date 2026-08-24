@@ -1159,7 +1159,9 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   left: 20px;
   bottom: 100px;
   z-index: 34;
-  width: 360px;
+  /* clamped to the viewport rather than fixed: at a fixed width these
+     floating panels hang off the edge of a phone screen */
+  width: min(360px, calc(100vw - 40px));
   max-height: min(420px, 52vh);
   display: flex;
   flex-direction: column;
@@ -1244,13 +1246,18 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 
 @media (max-width: 1024px) {
   .queue-panel { left: 12px; right: auto; width: min(340px, calc(100vw - 24px)); bottom: 120px; }
+  .library-panel { right: 12px; left: auto; width: min(340px, calc(100vw - 24px)); bottom: 120px; }
 }
 .library-panel {
   position: absolute;
   right: 20px;
   bottom: 100px;
   z-index: 34;
-  width: 380px;
+  /* This was a fixed 380px against `right: 20px`, so on a 390px phone it
+     started at left: -26px and the first 26px — the search field and the
+     left of every track name — sat permanently off-screen. The queue panel
+     got a responsive width in a media query; this one was missed. */
+  width: min(380px, calc(100vw - 40px));
   max-height: min(460px, 56vh);
   display: flex;
   flex-direction: column;
