@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr,
+  shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, initialTier, isLowPowerDevice,
   TIERS, WINDOW, FAST_WINDOW, DEFAULT_BASELINE_MS, SEVERE,
 } from '../src/adaptive.js';
 
@@ -168,5 +168,69 @@ describe('next2dQuality', () => {
 
   it('returns the current quality for nonsense input', () => {
     expect(next2dQuality('high', NaN, B)).toBe('high');
+  });
+});
+
+describe('starting tier', () => {
+  /* Everything used to open at whatever the user had chosen, so the
+     raytraced stage started at `high` on a phone. At a phone's stage size
+     that is ~70.7M march steps a frame against 6.9M at `low`, on hardware
+     three to eight times slower than the desktop it was tuned on. The
+     adaptive stepping rescued it only after the viewer watched it stutter,
+     and a saturated GPU makes the whole interface feel unresponsive
+     meanwhile. Starting low costs nothing now that climbing works. */
+  const desktop = { navigator: { hardwareConcurrency: 8, deviceMemory: 16 }, matchMedia: () => ({ matches: false }), screenWidth: 1920 };
+  const phone = { navigator: { hardwareConcurrency: 6 }, matchMedia: () => ({ matches: true }), screenWidth: 390 };
+  const tablet = { navigator: { hardwareConcurrency: 8 }, matchMedia: () => ({ matches: true }), screenWidth: 1024 };
+
+  it('keeps the chosen tier on a desktop', () => {
+    expect(initialTier('high', desktop)).toBe('high');
+    expect(initialTier('ultra', desktop)).toBe('ultra');
+  });
+
+  it('starts a phone low regardless of the ceiling', () => {
+    expect(initialTier('ultra', phone)).toBe('low');
+    expect(initialTier('high', phone)).toBe('low');
+  });
+
+  it('never starts above the ceiling the user asked for', () => {
+    expect(initialTier('low', desktop)).toBe('low');
+    expect(initialTier('low', phone)).toBe('low');
+    expect(initialTier('medium', phone)).toBe('low');
+  });
+
+  it('does not treat a large touch screen as a phone', () => {
+    // an iPad reports a coarse pointer but has the GPU to back it
+    expect(initialTier('high', tablet)).toBe('high');
+  });
+
+  it('treats low memory or few cores as low power, touch or not', () => {
+    expect(isLowPowerDevice({ navigator: { deviceMemory: 2, hardwareConcurrency: 8 }, matchMedia: () => ({ matches: false }), screenWidth: 1920 })).toBe(true);
+    expect(isLowPowerDevice({ navigator: { hardwareConcurrency: 2 }, matchMedia: () => ({ matches: false }), screenWidth: 1920 })).toBe(true);
+  });
+
+  it('treats a missing deviceMemory as no information, not as low', () => {
+    // iOS omits it entirely; a phone is caught by pointer and width instead
+    expect(isLowPowerDevice({ navigator: { hardwareConcurrency: 8 }, matchMedia: () => ({ matches: false }), screenWidth: 1920 })).toBe(false);
+  });
+
+  it('survives a matchMedia that throws, and an absent navigator', () => {
+    expect(() => isLowPowerDevice({ navigator: {}, matchMedia: () => { throw new Error('x'); }, screenWidth: 800 })).not.toThrow();
+    expect(() => isLowPowerDevice({ navigator: undefined, matchMedia: undefined, screenWidth: 1920 })).not.toThrow();
+  });
+
+  it('falls back sanely for an unknown ceiling', () => {
+    expect(TIERS).toContain(initialTier('nonsense', desktop));
+  });
+
+  it('lets the climb reach the ceiling from the starting tier', () => {
+    // a capable device earns its way back up rather than being capped
+    let tier = initialTier('high', phone);
+    let streak = 0;
+    for (let i = 0; i < 12; i++) {
+      const r = nextTier(tier, 16.7, 'high', DEFAULT_BASELINE_MS, streak);
+      tier = r.tier; streak = r.streak;
+    }
+    expect(tier).toBe('high');
   });
 });

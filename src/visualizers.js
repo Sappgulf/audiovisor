@@ -3,6 +3,7 @@ import { lerp, logFreqIndex, logSample, hexRgba, clamp } from './utils.js';
 import { beatEnergy } from './beatenergy.js';
 import { sanitizeLevels, usableSpectrum, safeDimension } from './levels.js';
 import { motionScale } from './motion.js';
+import { isLowPowerDevice } from './adaptive.js';
 
 /**
  * Canvas2D renderer — delta-time driven, sprite-cached, bloom-composited.
@@ -18,8 +19,12 @@ export class Renderer {
     this.canvas = canvas;
     this.ctx = canvas.getContext && canvas.getContext('2d');
     this._dead = !this.ctx;
+    /* navigator.deviceMemory does not exist on iOS at all, so this fell back
+       to 8 and handed every iPhone the desktop cap — on a 3x screen that is
+       four times the pixels of a 1.5x cap, all of it composited every frame.
+       isLowPowerDevice() looks at more than one signal for that reason. */
     const mem = navigator.deviceMemory || 8;
-    const dprCap = mem < 4 ? 1.5 : 2;
+    const dprCap = (mem < 4 || isLowPowerDevice()) ? 1.5 : 2;
     this.dpr = Math.min(window.devicePixelRatio || 1, dprCap);
     this.w = 0;
     this.h = 0;

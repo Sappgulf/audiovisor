@@ -13,7 +13,7 @@ import {
    quota is full. Nothing here is worth failing over. See src/storage.js. */
 import { readJSON, writeJSON, writeText, remove as removeStored } from './storage.js';
 import {
-  shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr,
+  shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, initialTier,
 } from './adaptive.js';
 import * as Library from './library.js';
 import { AI_PRESETS, suggestPreset } from './ai.js';
@@ -51,7 +51,7 @@ import('./raystage.js')
     // replay everything the stub swallowed while the chunk was in flight
     stage.setTheme(THEMES.find((t) => t.id === state.themeId));
     stage.setMode(state.modeId);
-    stage.setQuality(state.rayQuality);
+    stage.setQuality(initialTier(state.rayQuality));
     for (const [id, el] of Object.entries(sliderEls)) applySlider(id, parseFloat(el.value));
     if (renderer.w) stage.resize(renderer.w, renderer.h);
   })
@@ -464,7 +464,11 @@ function setMode(id) {
      cost alone before recovering. */
   settleFrames = SETTLE_AFTER_MODE_CHANGE;
   frameTimes.length = 0;
-  if (ray.ok && ray.quality !== state.rayQuality) ray.setQuality(state.rayQuality);
+  /* Restart from the tier this device should begin at rather than the
+     ceiling. On a phone the ceiling is a guaranteed stutter that adaptive
+     stepping then has to undo; the climb takes it back up if there is room. */
+  const start = initialTier(state.rayQuality);
+  if (ray.ok && ray.quality !== start) ray.setQuality(start);
   state.modeId = id;
   renderer.setMode(id);
   ray.setMode(id);
@@ -2090,8 +2094,11 @@ function setRaytrace(on, { quiet = false } = {}) {
 }
 function setRayQuality(q, { quiet = false } = {}) {
   if (!RAY_QUALITIES.includes(q)) return;
+  /* What the user picks is a ceiling. On a device that cannot hold it, the
+     stage starts lower and the adaptive climb walks up to whatever this
+     hardware can actually sustain. */
   state.rayQuality = q;
-  ray.setQuality(q);
+  ray.setQuality(initialTier(q));
   const label = $('rt-quality-label');
   if (label) label.textContent = `Quality: ${q[0].toUpperCase()}${q.slice(1)}`;
   if (!quiet) {

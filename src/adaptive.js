@@ -123,3 +123,62 @@ export function next2dQuality(current, avgMs, baseline = DEFAULT_BASELINE_MS) {
   if (avgMs < baseline * 0.85) return 'high';
   return current;
 }
+
+/**
+ * The tier to begin at, before anything has been measured.
+ *
+ * Everything used to start at whatever the user had chosen, which on a
+ * phone means the raytraced stage opens at `high`. Measured at a phone's
+ * stage size (356x539) that is roughly ten times the march work of `low` —
+ * 70.7M steps a frame against 6.9M — and on hardware three to eight times
+ * slower than the desktop it was tuned on, that lands somewhere between 26
+ * and 140ms a frame. The adaptive stepping does rescue it, but only after
+ * the viewer has watched it stutter, and a saturated GPU makes the whole
+ * interface feel unresponsive while it does.
+ *
+ * Starting low is not a quality sacrifice now that climbing back works: a
+ * device with headroom earns a tier roughly every three clean windows, so a
+ * capable tablet reaches its ceiling in a few seconds without ever dropping
+ * a frame. A weak phone simply stays where it belongs.
+ */
+export const MOBILE_START_TIER = 'low';
+
+/**
+ * @param {string} ceiling the tier the user asked for
+ * @param {object} env injectable for tests
+ * @returns {string} the tier to start at, never above the ceiling
+ */
+export function initialTier(ceiling, env = {}) {
+  const idx = TIERS.indexOf(ceiling);
+  if (idx < 0) return TIERS[TIERS.length - 2] || 'high';
+  if (!isLowPowerDevice(env)) return ceiling;
+  const start = TIERS.indexOf(MOBILE_START_TIER);
+  return TIERS[Math.min(start, idx)];
+}
+
+/**
+ * Whether this looks like a device that will struggle at the desktop
+ * default. Deliberately errs toward yes: guessing low costs a few seconds
+ * of lower quality that the climb undoes, while guessing high costs a
+ * visibly janky first impression.
+ */
+export function isLowPowerDevice(env = {}) {
+  const nav = env.navigator ?? (typeof navigator !== 'undefined' ? navigator : undefined);
+  const mm = env.matchMedia ?? (typeof window !== 'undefined' ? window.matchMedia : undefined);
+
+  // deviceMemory is absent on iOS entirely, so a low value is a signal but a
+  // missing one says nothing
+  const mem = nav && typeof nav.deviceMemory === 'number' ? nav.deviceMemory : null;
+  if (mem !== null && mem <= 4) return true;
+
+  const cores = nav && typeof nav.hardwareConcurrency === 'number' ? nav.hardwareConcurrency : null;
+  if (cores !== null && cores <= 4) return true;
+
+  // a touch-first device with a phone-sized screen
+  let coarse;
+  try { coarse = !!mm && mm('(pointer: coarse)').matches; } catch { coarse = false; }
+  const w = env.screenWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1920);
+  if (coarse && w <= 900) return true;
+
+  return false;
+}
