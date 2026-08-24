@@ -86,6 +86,7 @@
               <div class="drop-icon-circle"><span class="ic" data-icon="music"></span></div>
               <p class="mono drop-title">Drag &amp; Drop Audio to Begin</p>
               <p class="drop-sub">MP3, WAV, FLAC, OGG — or connect Spotify / capture any app / stream a URL</p>
+              <label class="browse-btn" for="file-input" id="browse-label">Browse files</label>
             </div>
           </div>
 
@@ -218,10 +219,10 @@
           </div>
         </div>
 
-        <button class="add-btn" id="add-btn" title="Add audio files" aria-label="Add audio files">
+        <label class="add-btn" id="add-btn" for="file-input" role="button" tabindex="0" title="Add audio files" aria-label="Add audio files">
           <span class="ic ic-sm" data-icon="plus"></span>
           <span class="add-label">Add</span>
-        </button>
+        </label>
 
         <div class="transport-controls">
           <button class="ghost-btn" id="prev-btn" title="Back 10s" aria-label="Back 10 seconds">
@@ -298,7 +299,7 @@
         <div id="cmd-list" class="cmd-list"></div>
       </div>
     </div>
-    <input type="file" id="file-input" accept="audio/*" hidden />
+    <input type="file" id="file-input" accept="audio/*" multiple class="sr-file" tabindex="-1" aria-hidden="true" />
   </div>
 
   <script type="module" src="/src/main.js"></script>

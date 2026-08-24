@@ -884,19 +884,35 @@ fileInput.addEventListener('change', () => {
   fileInput.value = '';
 });
 
-/* One entry point for the picker. The dropzone wrapper and the stage used to
-   register separate click handlers, so a click on the empty stage opened the
-   file chooser twice. */
+/* One entry point for the picker.
+ *
+ * The Add control and the Browse button in the drop card are <label for>
+ * elements, so the browser opens the picker natively with no JS involved —
+ * that path can't be defeated by user-activation rules. This function is the
+ * programmatic fallback for the stage shortcut, the command palette and the
+ * transport play button. showPicker() is preferred where available because
+ * .click() on a file input is unreliable in some browsers. */
 function openFilePicker() {
-  fileInput.click();
+  try {
+    if (typeof fileInput.showPicker === 'function') { fileInput.showPicker(); return; }
+  } catch { /* NotAllowedError outside a user gesture — fall through */ }
+  try {
+    fileInput.click();
+  } catch {
+    toast('Could not open the file picker — use <b>Browse files</b> on the stage', { duration: 4000 });
+  }
 }
-$('add-btn')?.addEventListener('click', openFilePicker);
+// labels open the picker themselves; these keep keyboard users working
+$('add-btn')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFilePicker(); }
+});
 $('add-more-btn')?.addEventListener('click', () => { closeMore(); openFilePicker(); });
 $('stage').addEventListener('click', (e) => {
   // clicking the empty stage is a shortcut for "add files"; once a track is
   // loaded the stage belongs to the visuals
   if (dropzone.classList.contains('is-hidden')) return;
-  if (e.target.closest('button')) return;
+  // the drop card carries its own <label for>, so don't double-fire on it
+  if (e.target.closest('button, label')) return;
   openFilePicker();
 });
 

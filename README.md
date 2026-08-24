@@ -5,7 +5,7 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 ## Features
 
 ### Sources
-- **Local files** — drag & drop or browse (MP3, WAV, FLAC, OGG, M4A…) with a playlist queue
+- **Local files** — drag & drop, the **Add** control in the transport, or **Browse files** on the stage (MP3, WAV, FLAC, OGG, M4A…); multi-select builds a playlist queue
 - **Spotify Connect** — log in with PKCE OAuth, search your library, play tracks/playlists through the built-in Web Playback SDK player *(Premium required for playback)*
 - **Tab / system capture** — visualize audio from *any* app: Spotify desktop, Apple Music, YouTube, anything playing on your machine (Chrome/Edge; share a tab with "share tab audio" enabled)
 - **Direct URLs** — stream any `http(s)` audio link (radio, podcasts, direct MP3s)
