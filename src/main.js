@@ -1682,6 +1682,15 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
     .then((reg) => reg.update())
     .catch(() => {});
+  // A new worker taking control means the build changed under us; reload once
+  // so the running page isn't a mix of old JS and new assets. Without this a
+  // returning visitor could sit on a stale build indefinitely.
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloading) return;
+    reloading = true;
+    location.reload();
+  });
 }
 // WebGPU init
 let webgpuState = null;

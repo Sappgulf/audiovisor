@@ -1,7 +1,10 @@
 /* eslint-disable */
 /* global self, caches, fetch, location, Response */
 
-const CACHE = 'audiovisor-v6.3';
+/* Bump on every release. The old name was pinned at v6.3 across many
+   deploys, so returning visitors kept being served whatever assets their
+   cache already held. */
+const CACHE = 'audiovisor-v8.9.1';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
@@ -36,18 +39,36 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // assets: cache-first, immutable hashed filenames
+  // Hashed build assets are immutable, so cache-first is safe for them.
+  // Everything else (sw.js, manifest, og image, unhashed files) goes
+  // network-first so a deploy is never masked by a stale copy.
+  const immutable = /\/assets\/.+\.[a-f0-9]{8,}\.(js|css)$/i.test(url.pathname);
+  if (immutable) {
+    e.respondWith(
+      caches.match(request).then(
+        (hit) =>
+          hit ||
+          fetch(request).then((res) => {
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(request, copy));
+            }
+            return res;
+          })
+      )
+    );
+    return;
+  }
+
   e.respondWith(
-    caches.match(request).then(
-      (hit) =>
-        hit ||
-        fetch(request).then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(request, copy));
-          }
-          return res;
-        })
-    )
+    fetch(request)
+      .then((res) => {
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(request, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(request))
   );
 });

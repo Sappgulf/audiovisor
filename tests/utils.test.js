@@ -119,3 +119,15 @@ describe('fmtStamp', () => {
     expect(s).toMatch(/^\d{8}-\d{6}$/);
   });
 });
+
+
+describe('service worker cache versioning', () => {
+  it('cache name matches the app version', async () => {
+    const { readFileSync } = await import('node:fs');
+    const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const name = sw.match(/const CACHE = '([^']+)'/)[1];
+    // a stale cache name silently serves returning visitors an old build
+    expect(name).toBe(`audiovisor-v${pkg.version}`);
+  });
+});
