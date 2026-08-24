@@ -38,6 +38,9 @@ export class BeatTracker {
     this._intervalCount = 0;
     this._intervalScratch = new Float32Array(24);
     this._anchor = 0;        /* grid point phase-locked to onsets  */
+    this._pendingOnset = null; /* onset detected, not yet audible    */
+
+    this._pendingOnset = null;
   }
 
   reset() {
@@ -52,14 +55,23 @@ export class BeatTracker {
     this._fluxHistPos = 0;
     this._lastOnset = -1e9;
     this._intervalCount = 0;
+    this._onsetCount = 0;
+    this._onsetPos = 0;
   }
 
   /**
    * Feed one analysis frame.
+   *
    * @param {Uint8Array} spectrum frequency data (0..255 per bin)
-   * @param {number} tSec audio position in seconds (song time)
+   * @param {number} tSec audio position the graph has reached, in seconds
+   * @param {number} latency seconds the speaker trails the graph by
+   *   (AudioContext outputLatency + baseLatency). Onsets are stamped in
+   *   graph time, because that is when the spectrum carrying them arrived,
+   *   but phase and pulse are reported against what the listener is hearing
+   *   right now — otherwise every flash lands `latency` early, which on
+   *   Bluetooth output is 150-300ms and plainly visible.
    */
-  process(spectrum, tSec) {
+  process(spectrum, tSec, latency = 0) {
     if (!spectrum?.length || !Number.isFinite(tSec)) return;
     /* A backwards jump is a seek or a new external track. Do not let the
        old phase grid leak into the new song; duplicate timestamps are common
@@ -71,8 +83,17 @@ export class BeatTracker {
     const dt = firstCall ? 0 : Math.max(0, tSec - this._t);
     this._t = tSec;
 
+    const lat = Number.isFinite(latency) ? clamp(latency, 0, 0.5) : 0;
+    const heard = tSec - lat;   // song position leaving the speaker right now
+
     /* decay the onset envelope across audio time */
     if (dt > 0) this.pulse *= Math.pow(0.5, dt / 0.11);
+
+    /* release a detected onset only once the listener reaches it */
+    if (this._pendingOnset !== null && heard >= this._pendingOnset) {
+      this.pulse = 1;
+      this._pendingOnset = null;
+    }
 
     /* spectral flux — weight the kick region more heavily than cymbal/high
        frequency shimmer, then normalize by the total applied weight. */
@@ -109,7 +130,9 @@ export class BeatTracker {
     const gap = this.bpm > 0 ? Math.max(0.12, (60 / this.bpm) * 0.33) : 0.14;
     const rising = firstCall || flux > this._prevFlux * 1.06 + 0.0015;
     if (this._prev && flux > thresh && rising && tSec - this._lastOnset >= gap) {
-      this.pulse = 1;
+      // with no latency to wait out, flash immediately
+      if (lat <= 0) this.pulse = 1;
+      else this._pendingOnset = tSec;
       this._onOnset(tSec);
       this._lastOnset = tSec;
     }
@@ -123,10 +146,11 @@ export class BeatTracker {
       this._intervalCount = 0;
     }
 
-    /* advance predicted phase along the locked grid */
+    /* advance predicted phase along the locked grid, read at the position
+       the listener is actually hearing */
     if (this.bpm > 0) {
       const period = 60 / this.bpm;
-      let ph = ((tSec - this._anchor) / period) % 1;
+      let ph = ((heard - this._anchor) / period) % 1;
       if (ph < 0) ph += 1;
       this.phase = ph;
     }
@@ -199,6 +223,7 @@ export class BeatTracker {
     } else {
       this._anchor = t;
     }
+
   }
 
   _estimateTempo() {
