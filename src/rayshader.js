@@ -723,9 +723,17 @@ float march(vec3 ro, vec3 rd, float tmax, out float id, out float aux) {
   return -1.0;
 }
 
+/* Shadow steps scale with the tier, like the primary march already does.
+   This was a flat 32 map() calls for every lit pixel whatever the quality:
+   at the low tier, where the primary march is only 64 steps, the shadow ray
+   was a third of the whole scene evaluation. Heavy modes settle on the low
+   tier after the adaptive stepping, which is exactly where it is wanted.
+   (No backticks in here — this file is one big JS template literal.) */
 float softShadow(vec3 ro, vec3 rd, float tmax) {
+  int maxSteps = clamp(uSteps / 4, 10, 32);
   float res = 1.0, t = 0.05;
   for (int i = 0; i < 32; i++) {
+    if (i >= maxSteps) break;
     vec3 p = ro + rd * t;
     float h = map(p);
     res = min(res, 10.0 * h / t);
