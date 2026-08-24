@@ -10,7 +10,8 @@
     "test": "vitest run",
     "lint": "eslint .",
     "size": "node scripts/check-size.mjs",
-    "shots": "node scripts/render-screens.mjs"
+    "shots": "node scripts/render-screens.mjs",
+    "icons": "node scripts/make-icons.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

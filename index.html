@@ -13,7 +13,17 @@
   <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
   <link href="https://api.fontshare.com/v2/css?f[]=space-grotesk@300,400,500,600,700&f[]=jet-brains-mono@400,500&display=swap" rel="stylesheet" />
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#d9b089" />
+  <!-- the app is near-black; a tan theme-color left the phone's status bar
+       and browser chrome a mismatched light tan around a dark stage -->
+  <meta name="theme-color" content="#0f0e0d" />
+  <!-- iOS ignores manifest icons and the standalone display mode, so its
+       home-screen behaviour has to be declared separately. It also ignores
+       SVG icons entirely, hence the PNG. -->
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="AUDIOVISOR" />
   <meta property="og:title" content="AUDIOVISOR — Real-time Audio Visualizer" />
   <meta property="og:description" content="22 stage modes, 25 themes, AI Studio, Library, Chop N Screwed, Auto DJ — drop a track and watch it dance." />
   <meta property="og:image" content="/og.png" />
