@@ -1,6 +1,7 @@
 import { THEMES } from './themes.js';
 import { lerp, logFreqIndex, logSample, hexRgba, clamp } from './utils.js';
 import { beatEnergy } from './beatenergy.js';
+import { sanitizeLevels, usableSpectrum } from './levels.js';
 
 /**
  * Canvas2D renderer — delta-time driven, sprite-cached, bloom-composited.
@@ -244,9 +245,12 @@ export class Renderer {
        a flicker. Both are dt-shaped, so the feel holds at 60 and 144Hz. */
     const attack = 1 - Math.pow(1 - 0.55, dt * 60);
     const release = 1 - Math.pow(1 - 0.16, dt * 60);
-    const t = levels
-      ? { bass: Math.min(1.2, levels.bass * (1 + this.bassFocus * 0.6)), mid: levels.mid, high: levels.high, level: levels.level }
-      : { bass: 0, mid: 0, high: 0, level: 0 };
+    const t = {
+      bass: Math.min(1.2, levels.bass * (1 + this.bassFocus * 0.6)),
+      mid: levels.mid,
+      high: levels.high,
+      level: levels.level,
+    };
     const env = (cur, target) => lerp(cur, target, target > cur ? attack : release);
     this.sm.bass = env(this.sm.bass, t.bass);
     this.sm.mid = env(this.sm.mid, t.mid);
@@ -270,10 +274,13 @@ export class Renderer {
    * drawing. The raytraced stage owns the pixels in that mode, but the VU
    * meter, chips and favicon still read these values.
    */
-  updateAnalysis(levels, dtMs = 16.7) {
+  updateAnalysis(rawLevels, dtMs = 16.7) {
     const dt = clamp((dtMs || 16.7) / 1000, 0.001, 0.06);
     this.t += dt;
-    this.beatInfo = levels || this.beatInfo || { bpm: 0, beatPhase: 0 };
+    /* Everything downstream assumes finite, in-range numbers; one NaN here
+       latches into the smoothed bands permanently. See src/levels.js. */
+    const levels = sanitizeLevels(rawLevels);
+    this.beatInfo = levels;
     this.beat = beatEnergy(this.beat, levels, dt);
     this._updateLevels(levels, dt);
     return dt;
@@ -282,6 +289,13 @@ export class Renderer {
   render(idle, freq, wave, levels, dtMs = 16.7) {
     if (this._dead || !this.ctx) return;
     const { ctx, w, h } = this;
+    /* Four modes indexed straight into the spectrum and produced NaN
+       geometry from an empty one. Substitute silence rather than null —
+       two modes index freq directly, so a null would only move the crash. */
+    if (!usableSpectrum(freq)) {
+      this._silentFreq ||= new Uint8Array(1024);
+      freq = this._silentFreq;
+    }
     const dt = this.updateAnalysis(levels, dtMs);
     const dt60 = dt * 60;
     this._buildCache();

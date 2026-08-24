@@ -181,6 +181,64 @@ describe.each(MODES.map((m) => [m.id, m.name]))('stage mode %s (%s)', (id) => {
   });
 });
 
+describe('hostile analysis frames', () => {
+  /* A single non-finite value used to be fatal and permanent: NaN entering
+     a smoothed band stayed NaN forever, so one bad frame killed the stage
+     until reload. Eight modes threw outright on a NaN frame and four more
+     on an empty spectrum, surfacing as
+     "createRadialGradient: non-finite" or `rgba(..., NaN)`. */
+  const wave = new Uint8Array(2048).fill(128);
+  const spectrum = (fill) => new Uint8Array(1024).fill(fill);
+
+  const FRAMES = {
+    'silence': [spectrum(0), { bass: 0, mid: 0, high: 0, level: 0, beatPulse: 0, beatPhase: 0, bpm: 0, beatConfidence: 0 }],
+    'full scale': [spectrum(255), { bass: 1, mid: 1, high: 1, level: 1, beatPulse: 1, beatPhase: 0, bpm: 200, beatConfidence: 1 }],
+    'NaN levels': [spectrum(120), { bass: NaN, mid: NaN, high: NaN, level: NaN, beatPulse: NaN, beatPhase: NaN, bpm: NaN, beatConfidence: NaN }],
+    'out-of-range levels': [spectrum(120), { bass: -5, mid: 1e9, high: -1e9, level: 50, beatPulse: -2, beatPhase: 99, bpm: -30, beatConfidence: 7 }],
+    'null levels': [spectrum(120), null],
+    'empty spectrum': [new Uint8Array(0), { bass: 0.5, mid: 0.5, high: 0.5, level: 0.5, beatPulse: 0, beatPhase: 0, bpm: 120, beatConfidence: 0.5 }],
+    'missing spectrum': [null, { bass: 0.5, mid: 0.5, high: 0.5, level: 0.5, beatPulse: 0, beatPhase: 0, bpm: 120, beatConfidence: 0.5 }],
+  };
+
+  const fresh = (modeId) => {
+    const r = new Renderer(makeCanvas());
+    r.dpr = 1;
+    r.setTheme(THEMES.find((t) => t.id === 'brass'));
+    r.setMode(modeId);
+    return r;
+  };
+
+  for (const [label, [freq, levels]] of Object.entries(FRAMES)) {
+    it(`survives ${label} in every mode`, () => {
+      const broke = [];
+      for (const m of MODES) {
+        try {
+          const r = fresh(m.id);
+          for (let i = 0; i < 3; i++) r.render(false, freq, wave, levels, 16.7);
+        } catch (err) {
+          broke.push(`${m.id}: ${err.message}`);
+        }
+      }
+      expect(broke).toEqual([]);
+    });
+  }
+
+  it('recovers after a NaN frame instead of staying poisoned', () => {
+    const good = { bass: 0.6, mid: 0.4, high: 0.3, level: 0.5, beatPulse: 0, beatPhase: 0.2, bpm: 120, beatConfidence: 0.8 };
+    for (const m of MODES) {
+      const r = fresh(m.id);
+      r.render(false, spectrum(120), wave, FRAMES['NaN levels'][1], 16.7);
+      expect(() => {
+        for (let i = 0; i < 4; i++) r.render(false, spectrum(200), wave, good, 16.7);
+      }, `${m.id} stayed poisoned`).not.toThrow();
+      // and the smoothed bands must be real numbers again
+      for (const k of ['bass', 'mid', 'high', 'level']) {
+        expect(Number.isFinite(r.sm[k]), `${m.id}.sm.${k}`).toBe(true);
+      }
+    }
+  });
+});
+
 describe('theme coverage', () => {
   it.each(THEMES.map((t) => [t.id]))('renders bars under theme %s', (themeId) => {
     const { min, max, white } = stats(renderMode('bars', { themeId, frames: 30 }));
