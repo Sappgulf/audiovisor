@@ -39,10 +39,16 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Hashed build assets are immutable, so cache-first is safe for them.
-  // Everything else (sw.js, manifest, og image, unhashed files) goes
-  // network-first so a deploy is never masked by a stale copy.
-  const immutable = /\/assets\/.+\.[a-f0-9]{8,}\.(js|css)$/i.test(url.pathname);
+  /* Hashed build assets are immutable, so cache-first is safe for them.
+     Everything else (sw.js, manifest, og image, unhashed files) goes
+     network-first so a deploy is never masked by a stale copy.
+
+     This pattern used to expect `name.HASH.js` with a hex hash, but Vite
+     emits `name-HASH.js` with a base64url hash — so it matched nothing at
+     all and every build asset took the network path on every visit. The
+     cache-first branch had never once run. tests/sw.test.js checks this
+     against the filenames a real build produces. */
+  const immutable = /\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.(js|css)$/.test(url.pathname);
   if (immutable) {
     e.respondWith(
       caches.match(request).then(
