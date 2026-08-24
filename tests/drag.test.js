@@ -2,7 +2,9 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ratioAt, keyStep, bindDragTrack } from '../src/drag.js';
+import {
+  ratioAt, keyStep, bindDragTrack, makeDoubleTap, DOUBLE_TAP_MS, DOUBLE_TAP_SLOP,
+} from '../src/drag.js';
 
 const RECT = { left: 100, width: 200 };
 
@@ -142,5 +144,63 @@ describe('bindDragTrack', () => {
 
   it('is a no-op for a missing element', () => {
     expect(() => bindDragTrack(null, () => {})()).not.toThrow();
+  });
+});
+
+describe('makeDoubleTap', () => {
+  it('pairs two quick taps in the same spot', () => {
+    const tap = makeDoubleTap();
+    expect(tap(100, 100, 1000)).toBe(false);
+    expect(tap(103, 102, 1150)).toBe(true);
+  });
+
+  it('ignores taps too far apart in time', () => {
+    const tap = makeDoubleTap();
+    tap(100, 100, 1000);
+    expect(tap(100, 100, 1000 + DOUBLE_TAP_MS)).toBe(false);
+  });
+
+  it('ignores quick taps too far apart on screen', () => {
+    const tap = makeDoubleTap();
+    tap(100, 100, 1000);
+    expect(tap(100 + DOUBLE_TAP_SLOP + 1, 100, 1050)).toBe(false);
+  });
+
+  it('accepts a tap exactly at the slop boundary', () => {
+    const tap = makeDoubleTap();
+    tap(100, 100, 1000);
+    expect(tap(100 + DOUBLE_TAP_SLOP, 100, 1050)).toBe(true);
+  });
+
+  it('does not read three fast taps as two overlapping pairs', () => {
+    const tap = makeDoubleTap();
+    expect(tap(50, 50, 0)).toBe(false);
+    expect(tap(50, 50, 100)).toBe(true);
+    expect(tap(50, 50, 200)).toBe(false);
+    expect(tap(50, 50, 300)).toBe(true);
+  });
+
+  it('never fires on the very first tap, however early', () => {
+    expect(makeDoubleTap()(0, 0, 0)).toBe(false);
+  });
+
+  it('keeps separate state per instance', () => {
+    const a = makeDoubleTap();
+    const b = makeDoubleTap();
+    a(10, 10, 0);
+    expect(b(10, 10, 50)).toBe(false);
+  });
+
+  it('honours a custom time threshold', () => {
+    const tap = makeDoubleTap({ ms: 100, slop: 5 });
+    tap(0, 0, 0);
+    expect(tap(0, 0, 150)).toBe(false);   // 150ms apart, over the 100ms window
+    expect(tap(3, 3, 190)).toBe(true);    // 40ms apart, within slop
+  });
+
+  it('honours a custom slop threshold', () => {
+    const tap = makeDoubleTap({ ms: 100, slop: 5 });
+    tap(0, 0, 0);
+    expect(tap(20, 0, 40)).toBe(false);   // quick, but 20px is outside slop 5
   });
 });

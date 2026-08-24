@@ -4,7 +4,7 @@ import { AudioEngine } from './audio.js';
 import { Renderer } from './visualizers.js';
 import { fmtTime, pickRandom, fmtStamp, computePeaks } from './utils.js';
 import { filterCommands, clampActive } from './palette.js';
-import { bindDragTrack, keyStep } from './drag.js';
+import { bindDragTrack, keyStep, makeDoubleTap } from './drag.js';
 import { bindSheetDrag } from './sheet.js';
 import {
   SETTINGS_KEY, serializeSettings, validateSettings, readSettings,
@@ -1152,8 +1152,17 @@ document.addEventListener('fullscreenchange', () => {
       hid = setTimeout(() => shell.classList.add('is-chrome-hidden'), 2200);
     };
     const onMove = () => show();
-    shell.addEventListener('mousemove', onMove);
-    const clr = () => { shell.removeEventListener('mousemove', onMove); document.removeEventListener('fullscreenchange', clr); clearTimeout(hid); };
+    /* pointermove covers the mouse; a touch device never emits it while the
+       finger is off the glass, so without pointerdown the chrome hid after
+       2.2s in fullscreen and there was no way to bring it back. */
+    shell.addEventListener('pointermove', onMove);
+    shell.addEventListener('pointerdown', onMove);
+    const clr = () => {
+      shell.removeEventListener('pointermove', onMove);
+      shell.removeEventListener('pointerdown', onMove);
+      document.removeEventListener('fullscreenchange', clr);
+      clearTimeout(hid);
+    };
     // cleanup when exiting handled by next fullscreenchange
     shell._cinemaCleanup = clr;
   } else {
@@ -1161,8 +1170,16 @@ document.addEventListener('fullscreenchange', () => {
     if (shell._cinemaCleanup) { try { shell._cinemaCleanup(); } catch {} shell._cinemaCleanup = null; }
   }
 });
-// also toggle cinema on stage double-click
+/* Double-tap the stage for cinema mode. dblclick is unreliable on touch —
+   Safari withholds it, and elsewhere it arrives after a 300ms delay — so
+   taps are paired here. A second tap only counts if it lands near the first,
+   which keeps a quick tap on two different controls from triggering it. */
 $('stage').addEventListener('dblclick', () => $('fullscreen-btn').click());
+const stageDoubleTap = makeDoubleTap();
+$('stage').addEventListener('pointerup', (e) => {
+  if (e.pointerType === 'mouse') return;   // dblclick already covers the mouse
+  if (stageDoubleTap(e.clientX, e.clientY, e.timeStamp)) $('fullscreen-btn').click();
+});
 
 /* ---------- snapshot & session recorder ---------- */
 

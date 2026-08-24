@@ -2215,3 +2215,50 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .sheet-scrim { transition: none; }
 }
+
+/* ==========================================================================
+   Phone landscape — short viewport
+   ==========================================================================
+   812x375 is wider than the 640px phone breakpoint, so it was getting the
+   desktop transport in a 375px-tall window: the row overflowed its container
+   by ~140px, clipping the utility controls off the right edge, and the seek
+   console was crushed to 18px wide. Keyed on height and orientation rather
+   than width, because the problem is vertical room, not horizontal.
+   ========================================================================== */
+
+@media (max-height: 500px) and (orientation: landscape) {
+  /* claw back vertical space from the chrome */
+  .topbar {
+    height: 46px;
+    margin-top: calc(6px + var(--sat));
+  }
+  .workspace { padding: 6px 8px 4px; }
+  .stage { max-height: none; }
+
+  /* the transport wraps to two short rows so the scrubber gets real width
+     instead of whatever is left over */
+  .transport {
+    flex-wrap: wrap;
+    min-height: 0;
+    height: auto;
+    padding: 6px 14px;
+    margin-bottom: calc(6px + var(--sab));
+    gap: 4px 12px;
+  }
+  .track-info { width: auto; flex: 0 1 190px; gap: 10px; }
+  .track-label, .track-spec { display: none; }
+  .track-art { width: 32px; height: 32px; }
+  .transport-controls { flex: 0 0 auto; }
+  .utility-controls { flex: 0 1 auto; gap: 4px; }
+  .seek-console { order: 9; flex: 1 1 100%; }
+  #vu-meter { display: none; }
+
+  /* the side drawer has to fit between a shorter topbar and transport */
+  .drawer { top: 58px; bottom: 74px; }
+
+  /* a landscape notch sits on the left or right edge, not the top */
+  .topbar, .transport {
+    padding-left: max(14px, var(--sal));
+    padding-right: max(14px, var(--sar));
+  }
+}

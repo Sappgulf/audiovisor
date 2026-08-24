@@ -73,3 +73,33 @@ export function bindDragTrack(el, onRatio) {
     el.removeEventListener('pointercancel', up);
   };
 }
+
+export const DOUBLE_TAP_MS = 320;
+export const DOUBLE_TAP_SLOP = 40;   // px
+
+/**
+ * Pairs taps into double-taps.
+ *
+ * dblclick is unreliable on touch — Safari withholds it and elsewhere it
+ * trails a 300ms delay — so the stage pairs pointerup events itself. A
+ * second tap only counts when it lands close to the first, so two quick
+ * taps in different places do not read as one gesture.
+ *
+ * @returns {(x:number, y:number, t:number) => boolean} true on the second tap
+ */
+export function makeDoubleTap({ ms = DOUBLE_TAP_MS, slop = DOUBLE_TAP_SLOP } = {}) {
+  let lastT = -Infinity;
+  let lastX = 0;
+  let lastY = 0;
+  return (x, y, t) => {
+    const near = Math.hypot(x - lastX, y - lastY) <= slop;
+    if (t - lastT < ms && near) {
+      lastT = -Infinity;    // a third tap starts a new pair
+      return true;
+    }
+    lastT = t;
+    lastX = x;
+    lastY = y;
+    return false;
+  };
+}
