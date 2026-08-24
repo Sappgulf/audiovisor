@@ -111,16 +111,26 @@ VITE_SPOTIFY_CLIENT_ID=your_client_id npm run build
 ## Apple Music setup
 
 1. Create a MusicKit on the Web key in [Apple Developer](https://developer.apple.com/account/resources/authkeys/list)
-2. Generate a signed Apple Music developer token for this app's origin. The signing private key must stay on a server or secure build system; only the signed token is exposed to the browser
-3. Copy `.env.example` to `.env.local` and set:
+2. Add these values to Vercel Project Settings → Environment Variables:
+
+```bash
+APPLE_MUSIC_TEAM_ID=your_team_id
+APPLE_MUSIC_KEY_ID=your_key_id
+APPLE_MUSIC_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----"
+APPLE_MUSIC_ORIGIN=https://your-domain.example
+```
+
+The signing private key stays server-side in the Vercel function. The browser receives only a short-lived signed developer token from `/api/apple-music-token`.
+
+For local-only testing, you can instead copy `.env.example` to `.env.local` and set:
 
 ```bash
 VITE_APPLE_MUSIC_DEVELOPER_TOKEN=your_signed_developer_token
 ```
 
-4. Restart the dev server or rebuild, then open Settings → Source → Apple Music → **Connect Apple Music**
+3. Redeploy, then open Settings → Source → Apple Music → **Connect Apple Music**
 
-The Connect panel reads the signed token at build time, then MusicKit handles Apple authorization and the user music token. Playlist playback stays inside MusicKit; use **Capture** and share the current tab when you want the actual protected audio spectrum instead of AUDIOVISOR's synth fallback.
+Guest mode supports local files, URLs, microphone, and capture without an account. Spotify and Apple Music playlist access requires the user's own provider account. Playlist playback stays inside the provider player; use **Capture** and share the current tab when you want the actual protected audio spectrum instead of AUDIOVISOR's synth fallback. Disconnect before handing a shared device to another person.
 
 ## Keyboard
 

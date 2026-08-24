@@ -16,7 +16,9 @@ export const SCOPES = [
   'user-top-read',
 ].join(' ');
 
-const STORE_KEY = 'audiovisor.spotify.v1';
+const SESSION_KEY = 'audiovisor.spotify.session.v2';
+const CLIENT_KEY = 'audiovisor.spotify.client.v1';
+const LEGACY_KEY = 'audiovisor.spotify.v1';
 
 /* ---------- PKCE helpers ---------- */
 
@@ -57,23 +59,61 @@ export function parseRedirect(search) {
 
 /* ---------- storage ---------- */
 
-function loadStore() {
+function localStore() {
+  return typeof window !== 'undefined' ? window.localStorage : null;
+}
+
+function sessionStore() {
+  return typeof window !== 'undefined' ? window.sessionStorage : null;
+}
+
+function parseStore(storage, key) {
   try {
-    return JSON.parse(localStorage.getItem(STORE_KEY)) || {};
+    return storage ? JSON.parse(storage.getItem(key)) || {} : {};
   } catch {
     return {};
   }
 }
 
+function loadStore() {
+  return parseStore(sessionStore(), SESSION_KEY);
+}
+
 function saveStore(patch) {
+  const storage = sessionStore();
+  try { storage?.setItem(SESSION_KEY, JSON.stringify({ ...loadStore(), ...patch })); } catch {}
+}
+
+function clearStore() {
+  try { sessionStore()?.removeItem(SESSION_KEY); } catch {}
+}
+
+function saveClientId(clientId) {
+  try { localStore()?.setItem(CLIENT_KEY, clientId); } catch {}
+}
+
+function migrateLegacyStore() {
+  const storage = localStore();
+  if (!storage) return;
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ ...loadStore(), ...patch }));
+    const legacy = parseStore(storage, LEGACY_KEY);
+    if (legacy.clientId) saveClientId(legacy.clientId);
+    /* Remove access/refresh tokens written by versions before v2. */
+    storage.removeItem(LEGACY_KEY);
   } catch {}
 }
 
 export function storedClientId() {
-  return loadStore().clientId || (import.meta.env && import.meta.env.VITE_SPOTIFY_CLIENT_ID) || '';
+  try {
+    return localStore()?.getItem(CLIENT_KEY)
+      || (import.meta.env && import.meta.env.VITE_SPOTIFY_CLIENT_ID)
+      || '';
+  } catch {
+    return (import.meta.env && import.meta.env.VITE_SPOTIFY_CLIENT_ID) || '';
+  }
 }
+
+migrateLegacyStore();
 
 /* ---------- client ---------- */
 
@@ -87,14 +127,14 @@ export class SpotifyClient {
     this.paused = true;
     this._pos = { at: 0, ms: 0 };
     this._artwork = new Map();
+    this._auth = { accessToken: null, refreshToken: null, expiresAt: 0, clientId: storedClientId() };
     this.onAuthChange = null;
     this.onError = null;
     this.onTrackChange = null;
   }
 
   get authed() {
-    const s = loadStore();
-    return !!(s.accessToken && s.expiresAt > Date.now());
+    return !!(this._auth.accessToken && this._auth.expiresAt > Date.now());
   }
 
   _emitAuth() {
@@ -105,6 +145,8 @@ export class SpotifyClient {
 
   async login(clientId) {
     if (!clientId) throw new Error('Missing Spotify Client ID');
+    saveClientId(clientId);
+    this._auth = { accessToken: null, refreshToken: null, expiresAt: 0, clientId };
     saveStore({ clientId });
     const verifier = await pkceVerifier();
     const challenge = await pkceChallenge(verifier);
@@ -151,23 +193,25 @@ export class SpotifyClient {
       return true;
     }
     const tok = await res.json();
-    saveStore({
+    this._auth = {
+      clientId: s.clientId || storedClientId(),
       accessToken: tok.access_token,
-      refreshToken: tok.refresh_token,
+      refreshToken: tok.refresh_token || null,
       expiresAt: Date.now() + tok.expires_in * 1000,
-      verifier: null,
-      state: null,
-    });
+    };
+    /* Keep only one-use PKCE state in session storage; auth tokens stay memory-only. */
+    saveStore({ clientId: this._auth.clientId, verifier: null, state: null });
     this._emitAuth();
     return true;
   }
 
   logout() {
     try {
-      const { clientId } = loadStore();
-      localStorage.removeItem(STORE_KEY);
-      if (clientId) saveStore({ clientId });
+      const clientId = this._auth.clientId || loadStore().clientId || storedClientId();
+      clearStore();
+      if (clientId) saveClientId(clientId);
     } catch {}
+    this._auth = { accessToken: null, refreshToken: null, expiresAt: 0, clientId: storedClientId() };
     if (this.player) {
       this.player.disconnect();
       this.player = null;
@@ -179,15 +223,14 @@ export class SpotifyClient {
   }
 
   async _refreshToken() {
-    const s = loadStore();
-    if (!s.refreshToken) {
+    if (!this._auth.refreshToken) {
       this.logout();
       return null;
     }
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
-      refresh_token: s.refreshToken,
-      client_id: s.clientId,
+      refresh_token: this._auth.refreshToken,
+      client_id: this._auth.clientId || storedClientId(),
     });
     const res = await fetch(TOKEN_ENDPOINT, {
       method: 'POST',
@@ -199,17 +242,17 @@ export class SpotifyClient {
       return null;
     }
     const tok = await res.json();
-    saveStore({
+    this._auth = {
+      ...this._auth,
       accessToken: tok.access_token,
-      refreshToken: tok.refresh_token || s.refreshToken,
+      refreshToken: tok.refresh_token || this._auth.refreshToken,
       expiresAt: Date.now() + tok.expires_in * 1000,
-    });
+    };
     return tok.access_token;
   }
 
   async ensureToken() {
-    const s = loadStore();
-    if (s.accessToken && s.expiresAt - Date.now() > 30000) return s.accessToken;
+    if (this._auth.accessToken && this._auth.expiresAt - Date.now() > 30000) return this._auth.accessToken;
     return this._refreshToken();
   }
 

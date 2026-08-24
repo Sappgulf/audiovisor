@@ -80,19 +80,20 @@ export class ConnectPanel {
   /** Call once at app start: completes OAuth redirect and restores session. */
   async boot() {
     await this.client.handleRedirect();
-    if (!this.client.authed) return;
-    try {
-      await this.client.loadProfile();
-      this.render();
-      if (this.client.premium) {
-        this.toast('Reconnecting <b>Spotify</b> player…', { duration: 1800 });
-        await this.client.connectPlayer();
-        this.deviceReady = true;
-        this.toast('Spotify player <b>ready</b>', { duration: 1600 });
+    if (this.client.authed) {
+      try {
+        await this.client.loadProfile();
+        this.render();
+        if (this.client.premium) {
+          this.toast('Reconnecting <b>Spotify</b> player…', { duration: 1800 });
+          await this.client.connectPlayer();
+          this.deviceReady = true;
+          this.toast('Spotify player <b>ready</b>', { duration: 1600 });
+        }
+        this.render();
+      } catch (err) {
+        console.error(err);
       }
-      this.render();
-    } catch (err) {
-      console.error(err);
     }
     try {
       await this.apple.boot();
@@ -191,8 +192,7 @@ export class ConnectPanel {
           <span class="ic ic-lime" data-icon="spotify"></span>
           <span class="sp-title">Spotify Connect</span>
         </div>
-        <p class="sp-note">Stream your library through AUDIOVISOR. Requires a
-        <b>Premium</b> plan and your own app Client&nbsp;ID.</p>
+        <p class="sp-note">A Spotify account is required for playlists. AUDIOVISOR never stores your password; this browser session is cleared when you disconnect or close the tab.</p>
         <details class="sp-help">
           <summary class="mono">SETUP</summary>
           <ol>
@@ -248,17 +248,16 @@ export class ConnectPanel {
           <span class="ic ic-lime" data-icon="music2"></span>
           <span class="sp-title">Apple Music</span>
         </div>
-        <p class="sp-note">Connect your Apple Music account to browse personal playlists in AUDIOVISOR.</p>
+        <p class="sp-note">An Apple Music account is required for playlists. AUDIOVISOR never stores your password and asks for a fresh provider sign-in on each app load.</p>
         <details class="sp-help">
           <summary class="mono">SETUP</summary>
           <ol>
-            <li>Create a <i>MusicKit on the Web</i> key in Apple Developer</li>
-            <li>Generate a signed developer token and expose it as <code>VITE_APPLE_MUSIC_DEVELOPER_TOKEN</code></li>
-            <li>Rebuild the app, then authorize Apple Music here</li>
+            <li>Configure the server token endpoint with your Apple Developer credentials</li>
+            <li>Redeploy, then authorize Apple Music here</li>
           </ol>
         </details>
         <button class="lime-btn-sm apple-connect" id="am-connect" ${appleConfigured ? '' : 'disabled'}>
-          ${appleConfigured ? 'Connect Apple Music' : 'Developer token required'}
+          ${appleConfigured ? 'Connect Apple Music' : 'Server token required'}
         </button>`;
     } else {
       am.innerHTML = `

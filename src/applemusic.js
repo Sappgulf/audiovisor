@@ -1,8 +1,23 @@
 const MUSIC_KIT_SCRIPT = 'https://js-cdn.music.apple.com/musickit/v3/musickit.js';
 const MUSIC_KIT_TIMEOUT = 15000;
 
-function developerToken() {
+function buildDeveloperToken() {
   return String(import.meta.env?.VITE_APPLE_MUSIC_DEVELOPER_TOKEN || '').trim();
+}
+
+async function developerToken() {
+  const builtToken = buildDeveloperToken();
+  if (builtToken) return builtToken;
+  if (typeof window === 'undefined') return '';
+  const response = await fetch('/api/apple-music-token', {
+    headers: { Accept: 'application/json' },
+  });
+  let body = {};
+  try { body = await response.json(); } catch {}
+  if (!response.ok || !body.token) {
+    throw new Error(body.error || 'Apple Music token service is not configured');
+  }
+  return String(body.token);
 }
 
 function loadMusicKit() {
@@ -85,7 +100,9 @@ export class AppleMusicClient {
   }
 
   get configured() {
-    return !!developerToken();
+    if (buildDeveloperToken()) return true;
+    if (typeof window === 'undefined') return false;
+    return !['localhost', '127.0.0.1'].includes(window.location.hostname);
   }
 
   get authed() {
@@ -94,19 +111,19 @@ export class AppleMusicClient {
 
   async configure() {
     if (!this.configured) {
-      throw new Error('Add VITE_APPLE_MUSIC_DEVELOPER_TOKEN before connecting Apple Music');
+      throw new Error('Apple Music is not configured for this local app');
     }
     if (this.music) return this.music;
     if (!this._configurePromise) {
-      this._configurePromise = loadMusicKit().then(async (MusicKit) => {
+      this._configurePromise = developerToken().then((token) => loadMusicKit().then(async (MusicKit) => {
         await MusicKit.configure({
-          developerToken: developerToken(),
+          developerToken: token,
           app: { name: 'AUDIOVISOR', build: '8.9.4' },
         });
         this.music = MusicKit.getInstance();
         this._bindEvents();
         return this.music;
-      }).catch((err) => {
+      })).catch((err) => {
         this._configurePromise = null;
         throw err;
       });
@@ -116,9 +133,17 @@ export class AppleMusicClient {
 
   async boot() {
     if (!this.configured) return false;
-    await this.configure();
-    if (this.authed) this.syncTrack();
-    return this.authed;
+    try {
+      await this.configure();
+      /* MusicKit can retain its user token outside this page. Require a fresh
+         provider sign-in each new app load so shared devices do not inherit an
+         earlier user's Apple Music account. */
+      if (this.authed && this.music?.unauthorize) await this.music.unauthorize();
+    } catch {
+      /* The card remains usable; login surfaces the actionable config error. */
+    }
+    this.track = null;
+    return false;
   }
 
   _bindEvents() {
@@ -138,6 +163,7 @@ export class AppleMusicClient {
 
   async login() {
     await this.configure();
+    if (this.authed && this.music?.unauthorize) await this.music.unauthorize();
     await this.music.authorize();
     this.syncTrack();
     if (this.onAuthChange) this.onAuthChange(true);

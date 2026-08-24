@@ -17,7 +17,7 @@ export default [
     },
   },
   {
-    files: ['scripts/**/*.{js,mjs}'],
+    files: ['api/**/*.js', 'scripts/**/*.{js,mjs}'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
