@@ -132,6 +132,25 @@ VITE_APPLE_MUSIC_DEVELOPER_TOKEN=your_signed_developer_token
 
 Guest mode supports local files, URLs, microphone, and capture without an account. Spotify and Apple Music playlist access requires the user's own provider account. Playlist playback stays inside the provider player; use **Capture** and share the current tab when you want the actual protected audio spectrum instead of AUDIOVISOR's synth fallback. Disconnect before handing a shared device to another person.
 
+## Mobile
+
+Touch is a first-class input, not a fallback:
+
+- **Scrub and set volume by dragging** — both tracks run on Pointer Events
+  with pointer capture, so a drag survives the finger sliding off a 16px
+  bar. They are real sliders, so arrow keys, Home and End work too.
+- **Drag the settings sheet down to dismiss it**, or tap the scrim. A flick
+  or real travel closes it; a small slow drag snaps back.
+- **Double-tap the stage** for cinema mode.
+- **Safe areas** are respected in both orientations, including a landscape
+  notch on the left or right edge.
+- **Installs to a home screen** with proper PNG icons, a maskable variant
+  for Android, and the iOS meta tags that the manifest alone does not cover.
+
+Layout tiers: <=360px (narrow phones), <=640px (phones), phone landscape
+keyed on viewport height, 641-1179px (tablet through narrow desktop), and
+1180px+ where the transport fits on one row.
+
 ## Keyboard
 
 | Key | Action |
@@ -161,10 +180,12 @@ Requires Node 20.19+ / 22.12+ (Vite 8).
 
 ```bash
 npm test        # vitest — engine, beat tracker, synth feed, PKCE, utils,
-                #          settings schema, palette, per-mode stage render
+                #          settings schema, palette, per-mode stage render,
+                #          pointer drags, sheet gestures, PWA/responsive contract
 npm run lint    # eslint
 npm run size    # bundle budget (needs a build first)
 npm run shots   # render every stage mode to /tmp/audiovisor-shots for eyeballing
+npm run icons   # regenerate the PWA / home-screen icons
 ```
 
 `tests/stage-render.test.js` rasterizes every mode to a real canvas and
