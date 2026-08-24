@@ -12,6 +12,9 @@ import {
 /* localStorage writes throw in Safari private browsing and once the origin
    quota is full. Nothing here is worth failing over. See src/storage.js. */
 import { readJSON, writeJSON, writeText, remove as removeStored } from './storage.js';
+import {
+  shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr,
+} from './adaptive.js';
 import * as Library from './library.js';
 import { AI_PRESETS, suggestPreset } from './ai.js';
 import { detectPitch, freqToMidi, VoiceSynth } from './voice.js';
@@ -427,6 +430,17 @@ function pulseStage() {
 }
 
 function setMode(id) {
+  /* Each mode has its own cost, and the tier adapted for the last one says
+     nothing about this one — without this, stepping down for a heavy mode
+     left every later mode stuck at that tier. */
+  healthyStreak = 0;
+  /* The first frames of a new mode include one-time setup — shader paths
+     warming, history textures filling — and are not representative. Without
+     skipping them, switching to a light mode could step down on the setup
+     cost alone before recovering. */
+  settleFrames = SETTLE_AFTER_MODE_CHANGE;
+  frameTimes.length = 0;
+  if (ray.ok && ray.quality !== state.rayQuality) ray.setQuality(state.rayQuality);
   state.modeId = id;
   renderer.setMode(id);
   ray.setMode(id);
@@ -1622,6 +1636,15 @@ const moodChipEl = $('mood-chip');
 const moodValueEl = $('mood-value');
 const shellEl = $('shell');
 const frameTimes = [];
+/* the display's natural frame interval, learned from the fastest frames we
+   see rather than assumed to be 60Hz; null until one has been seen */
+let rayBaselineEstimate = null;
+/* consecutive healthy windows; vsync hides headroom, so climbing back up is
+   earned by a run of clean windows rather than measured directly */
+let healthyStreak = 0;
+/* frames to ignore after a mode change, while one-time setup settles */
+const SETTLE_AFTER_MODE_CHANGE = 12;
+let settleFrames = SETTLE_AFTER_MODE_CHANGE;
 let lastFrameTs = performance.now();
 let _frameErrors = 0;
 function frame(now) {
@@ -1641,8 +1664,13 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 function frameStep(now) {
-  const t0 = performance.now();
-  const dtMs = Math.min(50, now - lastFrameTs);
+  /* The gap since the last frame is what a viewer experiences, and the only
+     figure that reflects GPU cost — the CPU time this function takes is
+     ~0.1ms whatever the scene, because WebGL work is queued rather than
+     run. Animation still uses the clamped value so a tab restore does not
+     jump the scene; the adaptive sampler wants the real interval. */
+  const frameGap = now - lastFrameTs;
+  const dtMs = Math.min(50, frameGap);
   lastFrameTs = now;
 
   const input = engine.activeInput;
@@ -1750,26 +1778,26 @@ function frameStep(now) {
     }
   }
 
-  frameTimes.push(performance.now() - t0);
-  // 30 samples, not 90: on a slow machine 90 frames can be 15+ seconds of
-  // stutter before the quality tier reacts
-  if (frameTimes.length >= 30) {
+  // the interval, not this callback's CPU time — see src/adaptive.js
+  if (settleFrames > 0) settleFrames--;
+  else if (Number.isFinite(frameGap) && frameGap > 0) frameTimes.push(frameGap);
+  rayBaselineEstimate = estimateBaseline(frameTimes, rayBaselineEstimate);
+  const rayBaseline = baselineOr(rayBaselineEstimate);
+  /* Normally this waits for a full window before judging, but that window
+     costs more wall-clock the slower things are — at the ~98ms a frame
+     Aurora Terrain takes on an M1 at the default tier it was nearly three
+     seconds of stutter before anything happened. shouldEvaluate() acts on a
+     short window when every sample in it is severely over budget, which is
+     not an ambiguous signal. See src/adaptive.js. */
+  if (shouldEvaluate(frameTimes, rayBaseline)) {
     const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
     frameTimes.length = 0;
     if (state.raytraceWanted && ray.ok) {
-      // raytracing is the expensive path: step the sample budget down a
-      // tier when frames get long, back up when there's headroom
-      const order = ['low', 'medium', 'high', 'ultra'];
-      const i = order.indexOf(ray.quality);
-      // drop two tiers at once when frames are badly over budget
-      const want = avg > 55 ? Math.max(0, i - 2)
-        : avg > 26 ? Math.max(0, i - 1)
-        : avg < 9 && i < order.indexOf(state.rayQuality) ? i + 1
-        : i;
-      if (want !== i) ray.setQuality(order[want]);
+      const { tier, streak } = nextTier(ray.quality, avg, state.rayQuality, rayBaseline, healthyStreak);
+      healthyStreak = streak;
+      if (tier !== ray.quality) ray.setQuality(tier);
     } else {
-      const target = avg > 21 ? 'low' : avg < 13 ? 'high' : renderer.quality;
-      renderer.setQuality(target);
+      renderer.setQuality(next2dQuality(renderer.quality, avg, rayBaseline));
     }
   }
 
