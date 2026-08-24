@@ -5,9 +5,16 @@ export async function initWebGPU(canvas) {
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) return null;
     const device = await adapter.requestDevice();
-    const context = canvas.getContext('webgpu');
     const format = navigator.gpu.getPreferredCanvasFormat();
-    context.configure({ device, format, alphaMode: 'opaque' });
+    /* Everything that can fail is built before the canvas is touched.
+       A canvas keeps the first context type it is given, so once
+       getContext('webgpu') succeeds, getContext('webgl2') on the same
+       element returns null forever. This used to claim the canvas up
+       front and could then still bail out — on a shader compile error,
+       a pipeline error, or a buffer allocation — at which point main.js
+       fell back to initWebGL2() on that same canvas and got nothing. The
+       WGSL bug fixed in v8.9.1 took exactly that path, so GPU Core had no
+       working renderer at all. */
 
     const shader = `
       @group(0) @binding(0) var<uniform> time: f32;
@@ -54,6 +61,11 @@ export async function initWebGPU(canvas) {
       layout: pipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: timeBuf } }, { binding: 1, resource: { buffer: levelBuf } }]
     });
+
+    // last step, and the only one that consumes the canvas
+    const context = canvas.getContext('webgpu');
+    if (!context) return null;
+    context.configure({ device, format, alphaMode: 'opaque' });
     return { device, context, pipeline, bindGroup, timeBuf, levelBuf, format };
   } catch { return null; }
 }

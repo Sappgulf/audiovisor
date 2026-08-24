@@ -1924,10 +1924,12 @@ let webgpuState = null;
 let webgl2State = null;
 const webgpuCanvas = document.getElementById('webgpu-canvas');
 if (webgpuCanvas) {
-  initWebGPU(webgpuCanvas).then(s => {
-    webgpuState = s;
-    if (!s) webgl2State = initWebGL2(webgpuCanvas);
-  });
+  initWebGPU(webgpuCanvas)
+    .catch(() => null)
+    .then((s) => {
+      webgpuState = s;
+      if (!s) webgl2State = initWebGL2(webgpuCanvas);
+    });
 }
 // Voice AI
 let voiceSynth = null;
