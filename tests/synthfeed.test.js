@@ -49,6 +49,15 @@ describe('SynthFeed', () => {
     expect([...f.getData().freq]).toEqual(once);
   });
 
+  it('reuses a procedural frame between 30 Hz build points', () => {
+    const f = new SynthFeed('cadence');
+    f.tick(0);
+    const first = [...f.getData().freq];
+    f.tick(0.01);
+    expect([...f.getData().freq]).toEqual(first);
+    expect(f.beatPhase).not.toBe(0);
+  });
+
   it('clear zeroes freq and centers the waveform', () => {
     const f = new SynthFeed('clear-me');
     f.tick(4);
@@ -70,6 +79,14 @@ describe('SynthFeed', () => {
       highSum += freq[900];
     }
     expect(lowSum / 40).toBeGreaterThan(highSum / 40);
+  });
+
+  it('keeps beat phase tied to song time rather than call frequency', () => {
+    const f = new SynthFeed('clock');
+    f.tick(0);
+    f.tick(0.5);
+    const expected = (0.5 * f.bpm / 60) % 1;
+    expect(f.beatPhase).toBeCloseTo(expected, 6);
   });
 
 });

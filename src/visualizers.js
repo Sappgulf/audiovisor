@@ -389,7 +389,10 @@ export class Renderer {
       ctx.restore();
     }
 
-    if (this.mode !== 'bars' && this.beatInfo?.bpm > 0) this._beatGrid();
+    /* Keep decorative beat markers off during the first few uncertain
+       detections. The pulse still drives the scene immediately, but the
+       grid waits for a stable lock instead of teaching the eye a wrong bar. */
+    if (this.mode !== 'bars' && this.beatInfo?.bpm > 0 && (this.beatInfo.beatConfidence || 0) >= 0.35) this._beatGrid();
     this._bloom(this.beat);
     // cinematic vignette
     this._vignette();

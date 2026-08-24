@@ -169,4 +169,24 @@ describe('BeatTracker', () => {
     expect(() => bt.process(new Uint8Array(64), Infinity)).not.toThrow();
     expect(bt.bpm).toBe(0);
   });
+
+  it('ignores duplicate timestamps without double-counting an onset', () => {
+    const bt = new BeatTracker();
+    const onset = makeOnsetSpectrum();
+    const rest = restSpectrum();
+    bt.process(rest, 0);
+    bt.process(onset, 0.5);
+    bt.process(rest, 0.5);
+    expect(bt.pulse).toBe(1);
+    expect(bt._lastOnset).toBeCloseTo(0.5, 6);
+  });
+
+  it('resets the tempo grid after a backwards seek', () => {
+    const bt = new BeatTracker();
+    runSpaced(bt, { spacing: 0.5, beats: 16 });
+    expect(bt.bpm).toBeGreaterThan(0);
+    bt.process(restSpectrum(), 1.2);
+    expect(bt.bpm).toBe(0);
+    expect(bt.phase).toBe(0);
+  });
 });

@@ -67,6 +67,8 @@ export class AudioEngine {
 
     this.freqData = null;
     this.waveData = null;
+    this._frameData = { freq: null, wave: null };
+    this._levels = { bass: 0, mid: 0, high: 0, level: 0, bpm: 0, beatPhase: 0, beatPulse: 0, beatConfidence: 0, chop: false };
 
     this.beat = new BeatTracker();
 
@@ -958,12 +960,14 @@ export class AudioEngine {
    * getLevels() reuses this frame so every consumer sees the same
    * instant of audio (no double-sampling skew).
    */
-  getData() {
+  getData(timeSec = null) {
     if (this.micActive || this.captureActive) {
       if (!this.tapAnalyser) return null;
       this.tapAnalyser.getByteFrequencyData(this.tapFreq);
       this.tapAnalyser.getByteTimeDomainData(this.tapWave);
-      return { freq: this.tapFreq, wave: this.tapWave };
+      this._frameData.freq = this.tapFreq;
+      this._frameData.wave = this.tapWave;
+      return this._frameData;
     }
     if (this.isExternalMode()) {
       if (!this.synthExternal) {
@@ -971,7 +975,7 @@ export class AudioEngine {
           this.external?.seed ? this.external.seed : 'spotify',
         );
       }
-      if (this.playing) this.synthExternal.tick(this.getTime());
+      if (this.playing) this.synthExternal.tick(timeSec ?? this.getTime());
       else this.synthExternal.clear();
       return this.synthExternal.getData();
     }
@@ -979,19 +983,26 @@ export class AudioEngine {
       if (!this.synthFile) {
         this.synthFile = new SynthFeed(this.streamTrack?.url || 'stream');
       }
-      if (this.playing) this.synthFile.tick(this.getTime());
+      if (this.playing) this.synthFile.tick(timeSec ?? this.getTime());
       else this.synthFile.clear();
       return this.synthFile.getData();
     }
     if (!this.analyser) return null;
     this.analyser.getByteFrequencyData(this.freqData);
     this.analyser.getByteTimeDomainData(this.waveData);
-    return { freq: this.freqData, wave: this.waveData };
+    this._frameData.freq = this.freqData;
+    this._frameData.wave = this.waveData;
+    return this._frameData;
   }
 
-  getLevels(preFetched = null) {
-    const d = preFetched || this.getData();
-    if (!d) return { bass: 0, mid: 0, high: 0, level: 0 };
+  getLevels(preFetched = null, timeSec = null) {
+    const d = preFetched || this.getData(timeSec);
+    if (!d) {
+      this._levels.bass = this._levels.mid = this._levels.high = this._levels.level = 0;
+      this._levels.bpm = this._levels.beatPhase = this._levels.beatPulse = this._levels.beatConfidence = 0;
+      this._levels.chop = false;
+      return this._levels;
+    }
     const { freq } = d;
     const n = freq.length;
     const binHz = (this.ctx?.sampleRate || 44100) / 2 / n;
@@ -1012,17 +1023,19 @@ export class AudioEngine {
        live inputs have no song clock so use the audio context clock */
     const beatTime = (this.micActive || this.captureActive)
       ? (this.ctx?.currentTime || 0)
-      : this.getTime();
+      : (timeSec ?? this.getTime());
     this.beat.process(freq, beatTime);
     const bi = this.beat;
-    return {
-      bass, mid, high, level,
-      bpm: bi.bpm,
-      beatPhase: bi.phase,
-      beatPulse: bi.pulse,
-      beatConfidence: bi.confidence,
-      chop: !!this.fx.chop,
-    };
+    this._levels.bass = bass;
+    this._levels.mid = mid;
+    this._levels.high = high;
+    this._levels.level = level;
+    this._levels.bpm = bi.bpm;
+    this._levels.beatPhase = bi.phase;
+    this._levels.beatPulse = bi.pulse;
+    this._levels.beatConfidence = bi.confidence;
+    this._levels.chop = !!this.fx.chop;
+    return this._levels;
   }
 
   getBpm() {

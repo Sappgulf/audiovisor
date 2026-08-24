@@ -1510,8 +1510,13 @@ let rayDropped = false;
 let raySuspended = false;   // runtime-only kill switch, never persisted
 let _lastSecs = -1;
 let _vuAcc = 0;
+let _uiAcc = 0;
 const seekFillEl = $('seek-fill');
 const timeCurrentEl = $('time-current');
+const bpmValueEl = $('bpm-value');
+const bassChipEl = $('bass-chip');
+const moodChipEl = $('mood-chip');
+const moodValueEl = $('mood-value');
 const shellEl = $('shell');
 const frameTimes = [];
 let lastFrameTs = performance.now();
@@ -1541,19 +1546,20 @@ function frameStep(now) {
   const idle = input === 'none';
 
   engine.syncExternal();
+  const audioTime = idle ? 0 : engine.getTime();
 
   let levels = null;
   let freq = null;
   let wave = null;
   if (!idle) {
-    const d = engine.getData();
+    const d = engine.getData(audioTime);
     if (!d) {
       freq = wave = null;
     } else {
       freq = d.freq;
       wave = d.wave;
       if (engine.playing || engine.micActive || engine.captureActive) {
-        levels = engine.getLevels(d);
+        levels = engine.getLevels(d, audioTime);
       }
     }
   }
@@ -1602,7 +1608,7 @@ function frameStep(now) {
   }
 
   if (!idle) {
-    const t = engine.getTime();
+    const t = audioTime;
     const dur = engine.getDuration();
     seekFillEl.style.width = `${dur ? (t / dur) * 100 : 0}%`;
     _vuAcc += dtMs;
@@ -1610,18 +1616,21 @@ function frameStep(now) {
     const secs = Math.floor(t);
     if (secs !== _lastSecs) { _lastSecs = secs; timeCurrentEl.textContent = fmtTime(t); }
     if (_vuAcc >= 33) { _vuAcc = 0; drawVu(); }
-    const bi = engine.beatInfo;
-    $('bpm-value').textContent = bi.bpm && bi.confidence > 0.25 ? bi.bpm.toFixed(2) : '--.--';
-    $('bass-chip').classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));
-    if (levels) {
-      const mood = detectMood({ bpm: levels.bpm, bass: levels.bass, mid: levels.mid, high: levels.high });
-      const chip = $('mood-chip');
-      if (mood) { $('mood-value').textContent = mood.tag; chip.classList.remove('is-hidden'); }
-      else chip.classList.add('is-hidden');
+    _uiAcc += dtMs;
+    if (_uiAcc >= 100) {
+      _uiAcc = 0;
+      const bi = engine.beatInfo;
+      bpmValueEl.textContent = bi.bpm && bi.confidence > 0.25 ? bi.bpm.toFixed(2) : '--.--';
+      bassChipEl.classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));
+      if (levels) {
+        const mood = detectMood({ bpm: levels.bpm, bass: levels.bass, mid: levels.mid, high: levels.high });
+        if (mood) { moodValueEl.textContent = mood.tag; moodChipEl.classList.remove('is-hidden'); }
+        else moodChipEl.classList.add('is-hidden');
+      }
     }
     // Auto DJ crossfade near track end
     if (autoDj && !djFiring && engine.playing && engine.mode === 'file' && engine.queue.length > 1) {
-      const rem = engine.getDuration() - engine.getTime();
+      const rem = engine.getDuration() - audioTime;
       if (rem < 6) {
         djFiring = true;
         engine.crossfadeTo((engine.queueIndex + 1) % engine.queue.length, 4);

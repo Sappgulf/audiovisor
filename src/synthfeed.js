@@ -30,6 +30,8 @@ export class SynthFeed {
     this.bpm = Math.round(92 + rand(this.seedNum % 9973) * 56);
     this.sectionLen = 22 + Math.round(rand(this.seedNum % 7919) * 10); // seconds
     this.t = -1;
+    this._buildT = -1;
+    this._data = { freq: this.freq, wave: this.wave };
   }
 
   _sectionShape(tSec) {
@@ -44,14 +46,23 @@ export class SynthFeed {
 
   tick(tSec) {
     if (tSec === this.t) return;
+    const beatHz = this.bpm / 60;
+    this.beatPhase = ((tSec * beatHz) % 1 + 1) % 1;
     this.t = tSec;
+    /* External providers cannot expose their decoded PCM to this app, so
+       this feed is deliberately procedural. Thirty fresh analysis frames per
+       second are enough for the visual modes; the phase above remains
+       continuous at the caller's real playback time. */
+    if (this._buildT >= 0 && tSec - this._buildT < 1 / 30) return;
+    const dt = this._buildT < 0 ? 1 / 60 : Math.max(0, tSec - this._buildT);
+    this._buildT = tSec;
     const { freq, wave } = this;
 
     const shape = this._sectionShape(Math.max(0, tSec));
-    this.energy += (shape - this.energy) * 0.06;
+    /* Time-based envelope: the previous per-call coefficient made the
+       synthetic source sound different at 60 Hz versus 144 Hz. */
+    this.energy += (shape - this.energy) * (1 - Math.exp(-dt * 3.7));
 
-    const beatHz = this.bpm / 60;
-    this.beatPhase = (this.beatPhase + beatHz / 60) % 1;
     const kick = Math.pow(1 - this.beatPhase, 2.6) * this.energy;
 
     const bins = freq.length;
@@ -87,7 +98,7 @@ export class SynthFeed {
   }
 
   getData() {
-    return { freq: this.freq, wave: this.wave };
+    return this._data;
   }
 
   /** Zero the frame so paused sources decay visually instead of freezing. */

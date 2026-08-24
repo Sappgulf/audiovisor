@@ -1,4 +1,4 @@
-import { median, clamp } from './utils.js';
+import { clamp } from './utils.js';
 
 /**
  * Tempo-locked beat tracker.
@@ -28,9 +28,15 @@ export class BeatTracker {
 
     this._t = -1;            /* last processed audio time          */
     this._prev = null;       /* previous spectrum, for flux        */
-    this._fluxHist = [];     /* adaptive threshold window          */
+    this._prevFlux = 0;
+    this._fluxHist = new Float32Array(48); /* adaptive threshold ring */
+    this._fluxHistCount = 0;
+    this._fluxHistPos = 0;
+    this._sortScratch = new Float32Array(48);
     this._lastOnset = -1e9;
-    this._intervals = [];
+    this._intervals = new Float32Array(24);
+    this._intervalCount = 0;
+    this._intervalScratch = new Float32Array(24);
     this._anchor = 0;        /* grid point phase-locked to onsets  */
   }
 
@@ -41,9 +47,11 @@ export class BeatTracker {
     this.confidence = 0;
     this._t = -1;
     this._prev = null;
-    this._fluxHist.length = 0;
+    this._prevFlux = 0;
+    this._fluxHistCount = 0;
+    this._fluxHistPos = 0;
     this._lastOnset = -1e9;
-    this._intervals.length = 0;
+    this._intervalCount = 0;
   }
 
   /**
@@ -52,7 +60,13 @@ export class BeatTracker {
    * @param {number} tSec audio position in seconds (song time)
    */
   process(spectrum, tSec) {
-    if (!spectrum || !Number.isFinite(tSec)) return;
+    if (!spectrum?.length || !Number.isFinite(tSec)) return;
+    /* A backwards jump is a seek or a new external track. Do not let the
+       old phase grid leak into the new song; duplicate timestamps are common
+       when a media element pauses between animation frames. */
+    if (this._t >= 0 && tSec < this._t - 0.25) this.reset();
+    else if (this._t >= 0 && tSec <= this._t) return;
+
     const firstCall = this._t < 0;
     const dt = firstCall ? 0 : Math.max(0, tSec - this._t);
     this._t = tSec;
@@ -60,38 +74,53 @@ export class BeatTracker {
     /* decay the onset envelope across audio time */
     if (dt > 0) this.pulse *= Math.pow(0.5, dt / 0.11);
 
-    /* spectral flux — mean positive bin delta, normalized 0..1 */
+    /* spectral flux — weight the kick region more heavily than cymbal/high
+       frequency shimmer, then normalize by the total applied weight. */
     let flux = 0;
     if (this._prev) {
       let s = 0;
+      let weightSum = 0;
+      const lowEnd = Math.min(
+        spectrum.length - 1,
+        Math.max(8, Math.floor(spectrum.length * 0.18)),
+      );
       for (let i = 2; i < spectrum.length; i++) {
+        const w = i < lowEnd ? 2.2 - (i / lowEnd) * 1.25 : 0.35;
         const d = spectrum[i] - this._prev[i];
-        if (d > 0) s += d;
+        if (d > 0) s += d * w;
+        weightSum += w;
       }
-      flux = s / (Math.max(1, spectrum.length - 2) * 255);
+      flux = s / (Math.max(1, weightSum) * 255);
     }
-    const prev = this._prev || (this._prev = new Uint8Array(spectrum.length));
+    const prev = this._prev && this._prev.length === spectrum.length
+      ? this._prev
+      : (this._prev = new Uint8Array(spectrum.length));
     prev.set(spectrum);
 
-    /* adaptive threshold: recent flux median × margin + noise floor */
-    const histForThresh = this._fluxHist.length >= 8 ? median(this._fluxHist) * 1.5 + 0.008 : 0.008;
-    const thresh = histForThresh;
-    this._fluxHist.push(flux);
-    if (this._fluxHist.length > 43) this._fluxHist.shift();
+    /* Adaptive threshold: median + robust MAD noise estimate. Unlike a
+       copied/sorted JS array this uses fixed storage, so analysis creates no
+       per-frame garbage. Calculate before adding the current sample so a
+       strong onset cannot raise its own threshold. */
+    const thresh = this._adaptiveThreshold();
+    this._fluxHist[this._fluxHistPos] = flux;
+    this._fluxHistPos = (this._fluxHistPos + 1) % this._fluxHist.length;
+    this._fluxHistCount = Math.min(this._fluxHistCount + 1, this._fluxHist.length);
 
     const gap = this.bpm > 0 ? Math.max(0.12, (60 / this.bpm) * 0.33) : 0.14;
-    if (this._prev && flux > thresh && tSec - this._lastOnset >= gap) {
+    const rising = firstCall || flux > this._prevFlux * 1.06 + 0.0015;
+    if (this._prev && flux > thresh && rising && tSec - this._lastOnset >= gap) {
       this.pulse = 1;
       this._onOnset(tSec);
       this._lastOnset = tSec;
     }
+    this._prevFlux = flux;
 
     /* give up the lock after sustained silence */
     if (this.bpm > 0 && tSec - this._lastOnset > this.decaySec) {
       this.bpm = 0;
       this.confidence = 0;
       this.phase = 0;
-      this._intervals.length = 0;
+      this._intervalCount = 0;
     }
 
     /* advance predicted phase along the locked grid */
@@ -101,6 +130,38 @@ export class BeatTracker {
       if (ph < 0) ph += 1;
       this.phase = ph;
     }
+  }
+
+  _adaptiveThreshold() {
+    const n = this._fluxHistCount;
+    if (n < 8) return 0.008;
+
+    /* insertion sort is faster than allocating/sorting a new Array at this
+       tiny fixed window size, and keeps the RAF path allocation-free. */
+    for (let i = 0; i < n; i++) {
+      const idx = (this._fluxHistPos - n + i + this._fluxHist.length) % this._fluxHist.length;
+      const value = this._fluxHist[idx];
+      let j = i;
+      while (j > 0 && this._sortScratch[j - 1] > value) {
+        this._sortScratch[j] = this._sortScratch[j - 1];
+        j--;
+      }
+      this._sortScratch[j] = value;
+    }
+    const med = this._sortScratch[n >> 1];
+
+    for (let i = 0; i < n; i++) {
+      const idx = (this._fluxHistPos - n + i + this._fluxHist.length) % this._fluxHist.length;
+      const value = Math.abs(this._fluxHist[idx] - med);
+      let j = i;
+      while (j > 0 && this._sortScratch[j - 1] > value) {
+        this._sortScratch[j] = this._sortScratch[j - 1];
+        j--;
+      }
+      this._sortScratch[j] = value;
+    }
+    const mad = this._sortScratch[n >> 1];
+    return med + Math.max(0.008, med * 0.35, mad * 2.4);
   }
 
   _onOnset(t) {
@@ -115,8 +176,12 @@ export class BeatTracker {
         while (f < minIv) f *= 2;
         while (f > maxIv) f /= 2;
         if (f >= minIv && f <= maxIv) {
-          this._intervals.push(f);
-          if (this._intervals.length > 24) this._intervals.shift();
+          if (this._intervalCount < this._intervals.length) {
+            this._intervals[this._intervalCount++] = f;
+          } else {
+            this._intervals.copyWithin(0, 1);
+            this._intervals[this._intervals.length - 1] = f;
+          }
         }
         this._estimateTempo();
       }
@@ -137,18 +202,22 @@ export class BeatTracker {
   }
 
   _estimateTempo() {
-    if (this._intervals.length < 4) return;
+    if (this._intervalCount < 4) return;
 
     /* cluster folded intervals within 6% tolerance; strongest cluster wins */
-    const sorted = [...this._intervals].sort((a, b) => a - b);
+    const sorted = this._intervalScratch;
+    sorted.set(this._intervals.subarray(0, this._intervalCount));
+    sorted.subarray(0, this._intervalCount).sort();
     let best = null;
     let runStart = 0;
-    for (let i = 1; i <= sorted.length; i++) {
-      const brk = i === sorted.length || sorted[i] > sorted[runStart] * 1.06;
+    for (let i = 1; i <= this._intervalCount; i++) {
+      const brk = i === this._intervalCount || sorted[i] > sorted[runStart] * 1.06;
       if (!brk) continue;
       const count = i - runStart;
+      const center = (sorted[runStart] + sorted[i - 1]) * 0.5;
+      const previousIv = this.bpm > 0 ? 60 / this.bpm : 0.5;
       if (!best || count > best.count ||
-          (count === best.count && Math.abs(sorted[i - 1] - 0.5) < Math.abs(best.iv - 0.5))) {
+          (count === best.count && Math.abs(center - previousIv) < Math.abs(best.iv - previousIv))) {
         let sum = 0;
         for (let j = runStart; j < i; j++) sum += sorted[j];
         best = { iv: sum / count, count };
