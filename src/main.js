@@ -152,6 +152,29 @@ SLIDERS.forEach((cfg) => {
   });
 });
 
+/**
+ * Flip a control's visual state and the state it reports together.
+ *
+ * Every toggle in here used to set a class and nothing else, so a screen
+ * reader announced "Reverb, button" whether reverb was on or off — the same
+ * for Loop, Autopilot, Auto DJ, mic, capture and the panel toggles. Doing
+ * both in one call is the only way they stay in step as this grows.
+ */
+/* Controls that are on/off rather than one-shot actions. Kept in one place
+   so the boot-time seeding below and the test that checks it cannot drift
+   from each other. */
+const TOGGLE_SELECTOR = [
+  '.fx-chip', '#loop-btn', '#shuffle-btn', '#rt-chip', '#autopilot-chip',
+  '#autodj-chip', '#queue-btn', '#library-btn', '#mic-btn', '#capture-btn',
+  '#voice-btn', '#party-btn',
+].join(',');
+
+function setToggle(el, on, cls = 'is-on') {
+  if (!el) return;
+  el.classList.toggle(cls, !!on);
+  el.setAttribute('aria-pressed', String(!!on));
+}
+
 function applySlider(id, v) {
   if (id === 'sensitivity') {
     engine.sensitivity = v;
@@ -179,9 +202,10 @@ FX.forEach((fx) => {
   const btn = document.createElement('button');
   btn.className = 'fx-chip';
   btn.innerHTML = `<span class="chip-dot"></span><span class="chip-txt">${fx.toUpperCase()}</span>`;
+  setToggle(btn, false, 'is-active');   // report "off" from the start, not nothing
   btn.addEventListener('click', () => {
     const on = !btn.classList.contains('is-active');
-    btn.classList.toggle('is-active', on);
+    setToggle(btn, on, 'is-active');
     engine.setFx(fx, on);
     state.fx[fx] = on;
     saveSettings();
@@ -214,7 +238,7 @@ let autoDj = false;
 let djFiring = false;
 document.getElementById('autodj-chip')?.addEventListener('click', () => {
   autoDj = !autoDj;
-  document.getElementById('autodj-chip').classList.toggle('is-active', autoDj);
+  setToggle(document.getElementById('autodj-chip'), autoDj, 'is-active');
   toast(autoDj ? 'AUTO DJ <b>ON</b> — beat-matched crossfade' : 'AUTO DJ <b>OFF</b>', { duration: 1600 });
   saveSettings();
 });
@@ -286,7 +310,7 @@ function loadPreset(slot) {
   setTheme(p.theme);
   if (p.fx) for (const [k, v] of Object.entries(p.fx)) {
     engine.setFx(k, !!v);
-    fxEls[k]?.classList.toggle('is-active', !!v);
+    setToggle(fxEls[k], !!v, 'is-active');
     state.fx[k] = !!v;
   }
   saveSettings();
@@ -444,7 +468,7 @@ function setMode(id) {
   state.modeId = id;
   renderer.setMode(id);
   ray.setMode(id);
-  [...modeList.children].forEach((c, i) => c.classList.toggle('is-active', MODES[i].id === id));
+  [...modeList.children].forEach((c, i) => setToggle(c, MODES[i].id === id, 'is-active'));
   pulseStage();
   saveSettings();
 }
@@ -453,7 +477,7 @@ function setTheme(id) {
   state.themeId = id;
   renderer.setTheme(THEMES.find((t) => t.id === id));
   ray.setTheme(THEMES.find((t) => t.id === id));
-  [...themeRow.children].forEach((c, i) => c.classList.toggle('is-active', THEMES[i].id === id));
+  [...themeRow.children].forEach((c, i) => setToggle(c, THEMES[i].id === id, 'is-active'));
   updateFavicon();
   if (engine.track && !engine.isExternalMode()) {
     if (trackArtEl) trackArtEl._artName = null;
@@ -472,8 +496,8 @@ function randomizeLook() {
 
 function setAutopilot(on, opts = {}) {
   state.autopilot = on;
-  $('autopilot-chip').classList.toggle('is-active', on);
-  $('shuffle-btn').classList.toggle('is-on', on);
+  setToggle($('autopilot-chip'), on, 'is-active');
+  setToggle($('shuffle-btn'), on);
   if (on) {
     state.autopilotTimer = setInterval(randomizeLook, 12000);
     randomizeLook();
@@ -540,7 +564,7 @@ function applySettings(s, { eq = false } = {}) {
   }
   for (const [name, on] of Object.entries(s.fx || {})) {
     if (!fxEls[name]) continue;
-    fxEls[name].classList.toggle('is-active', on);
+    setToggle(fxEls[name], on, 'is-active');
     engine.setFx(name, on);
     state.fx[name] = on;
   }
@@ -556,10 +580,10 @@ function applySettings(s, { eq = false } = {}) {
   }
   if (s.loop) {
     engine.loop = true;
-    $('loop-btn').classList.add('is-on');
+    setToggle($('loop-btn'), true);
   }
   if (s.autopilot) setAutopilot(true, { silent: true });
-  if (s.autoDj) { autoDj = true; document.getElementById('autodj-chip')?.classList.add('is-active'); }
+  if (s.autoDj) { autoDj = true; setToggle(document.getElementById('autodj-chip'), true, 'is-active'); }
 }
 
 function loadSettings() {
@@ -632,7 +656,7 @@ function renderQueue() {
 function toggleQueue(force) {
   const show = force ?? queuePanel.classList.contains('is-hidden');
   queuePanel.classList.toggle('is-hidden', !show);
-  $('queue-btn').classList.toggle('is-on', show);
+  setToggle($('queue-btn'), show);
   if (show) renderQueue();
 }
 
@@ -715,9 +739,9 @@ async function renderLibrary() {
 function toggleLibrary(force) {
   const show = force ?? libraryPanel.classList.contains('is-hidden');
   libraryPanel.classList.toggle('is-hidden', !show);
-  $('library-btn').classList.toggle('is-on', show);
+  setToggle($('library-btn'), show);
   if (show) renderLibrary();
-  if (show) { queuePanel.classList.add('is-hidden'); $('queue-btn').classList.remove('is-on'); }
+  if (show) { queuePanel.classList.add('is-hidden'); setToggle($('queue-btn'), false); }
 }
 $('library-btn').addEventListener('click', () => toggleLibrary());
 // add to library from current track
@@ -812,8 +836,8 @@ function refreshStatus() {
   setIcon($('play-pause-icon'), icon);
 
   $('track-info').classList.toggle('is-playing', playing);
-  $('capture-btn').classList.toggle('is-on', engine.captureActive);
-  $('mic-btn').classList.toggle('is-on', engine.micActive);
+  setToggle($('capture-btn'), engine.captureActive);
+  setToggle($('mic-btn'), engine.micActive);
 
   let text = 'Engine: Idle';
   switch (engine.activeInput) {
@@ -1112,7 +1136,7 @@ $('prev-btn').addEventListener('click', () => engine.prevTrack());
 $('next-btn').addEventListener('click', () => engine.nextTrack());
 $('loop-btn').addEventListener('click', () => {
   engine.loop = !engine.loop;
-  $('loop-btn').classList.toggle('is-on', engine.loop);
+  setToggle($('loop-btn'), engine.loop);
   saveSettings();
   toast(engine.loop ? 'LOOP <b>ON</b>' : 'LOOP <b>OFF</b>', { duration: 1200 });
 });
@@ -1303,7 +1327,7 @@ $('record-btn').addEventListener('click', () => {
 $('mic-btn').addEventListener('click', async () => {
   try {
     const on = await engine.toggleMic();
-    $('mic-btn').classList.toggle('is-on', on);
+    setToggle($('mic-btn'), on);
     refreshStatus();
     toast(on ? 'MIC <b>LIVE</b> — engine listening' : 'MIC <b>OFF</b>', { duration: 1600 });
   } catch (err) {
@@ -1804,6 +1828,17 @@ function frameStep(now) {
 }
 
 loadSettings();
+
+/* Seed every toggle's reported state from the class it is already wearing.
+   Without this a control announces nothing at all until the first time it
+   is used — "Loop, button" rather than "Loop, button, not pressed" — and
+   several are only ever touched through paths that set the class directly.
+   Runs after loadSettings so restored preferences are reflected. */
+for (const el of document.querySelectorAll(TOGGLE_SELECTOR)) {
+  if (el.hasAttribute('aria-pressed')) continue;
+  el.setAttribute('aria-pressed', String(el.classList.contains('is-on') || el.classList.contains('is-active')));
+}
+
 refreshStatus();
 updateFavicon();
 requestAnimationFrame(frame);

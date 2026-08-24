@@ -173,3 +173,53 @@ describe('responsive layout rules', () => {
     expect(css).toContain('@media (min-width: 641px) and (max-width: 1179px)');
   });
 });
+
+describe('accessibility contract', () => {
+  let html, main;
+  beforeAll(() => {
+    html = readFileSync('index.html', 'utf8');
+    main = readFileSync('src/main.js', 'utf8');
+  });
+
+  it('hides the decorative canvases from assistive tech', () => {
+    /* Three unlabelled canvases were announced as "canvas" with no name.
+       The stage is a rendering of audio that is already playing and the
+       seek waveform sits behind a slider that reports its own position, so
+       there is nothing for a screen reader to gain by reaching them. */
+    for (const id of ['ray-canvas', 'viz-canvas', 'webgpu-canvas', 'seek-wave']) {
+      const tag = html.match(new RegExp(`<canvas[^>]*id="${id}"[^>]*>`));
+      expect(tag, `canvas#${id} not found`).toBeTruthy();
+      expect(tag[0], `canvas#${id} should be aria-hidden`).toMatch(/aria-hidden="true"/);
+    }
+  });
+
+  it('keeps the VU meter labelled, since it does carry information', () => {
+    const tag = html.match(/<canvas[^>]*id="vu-meter"[^>]*>/);
+    expect(tag[0]).toMatch(/aria-label=/);
+  });
+
+  it('flips class and reported state together', () => {
+    /* Every toggle used to set a class and nothing else, so a screen reader
+       announced "Reverb, button" whether it was on or off. One helper does
+       both, and nothing should be setting the class on its own any more. */
+    expect(main).toMatch(/function setToggle\(el, on, cls/);
+    const helper = main.slice(main.indexOf('function setToggle'), main.indexOf('function setToggle') + 260);
+    expect(helper).toMatch(/classList\.toggle/);
+    expect(helper).toMatch(/aria-pressed/);
+  });
+
+  it('seeds every toggle at boot, so none starts out silent', () => {
+    expect(main).toMatch(/TOGGLE_SELECTOR/);
+    expect(main).toMatch(/querySelectorAll\(TOGGLE_SELECTOR\)/);
+    // the seeding pass has to run after preferences are restored
+    expect(main.indexOf('querySelectorAll(TOGGLE_SELECTOR)'))
+      .toBeGreaterThan(main.indexOf('\nloadSettings();'));
+  });
+
+  it('routes the on/off controls through the helper rather than the class', () => {
+    for (const id of ['loop-btn', 'queue-btn', 'library-btn', 'mic-btn', 'capture-btn']) {
+      const direct = new RegExp(`\\$\\('${id}'\\)\\.classList\\.(toggle|add|remove)\\('is-on'`);
+      expect(main, `#${id} still sets is-on directly`).not.toMatch(direct);
+    }
+  });
+});
