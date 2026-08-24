@@ -2371,3 +2371,58 @@ html, body {
      actually need, and it still leaves the transport inset from the edges */
   .transport { width: min(1180px, calc(100vw - 32px)); }
 }
+
+/* ==========================================================================
+   Touch devices: no live blur over the animating stage
+   ==========================================================================
+   The topbar, transport, drawer and drop card each carried a
+   backdrop-filter, and all of them sit directly over a canvas that repaints
+   every frame. A backdrop blur has to resample and re-blur whatever is
+   behind it, so animating content underneath means recomputing a full-width
+   blur every single frame — on a 3x screen that is a lot of pixels, and it
+   happens on the compositor, where it never shows up in any JS profile. The
+   symptom is an interface that feels unresponsive to touch while the
+   visualiser looks fine, which is exactly what was reported on an iPhone
+   16 Pro: hardware fast enough that raw shading was never the problem.
+
+   Keyed on pointer rather than width so a touch laptop gets it too, and so
+   a narrow desktop window does not lose the effect for no reason. The
+   surfaces get a more opaque background instead, which is what the blur was
+   really providing — separation from the stage.
+   ========================================================================== */
+
+@media (pointer: coarse) {
+  /* Every backdrop-filter in the file, not only the obvious three. The BPM
+     chip sits directly on the stage and the scrim covers the whole screen,
+     so those matter as much as the bars do. tests/pwa.test.js checks this
+     list still covers them all, since a new one would otherwise slip in
+     and only show up as a phone feeling sluggish. */
+  .topbar,
+  .transport,
+  .drawer,
+  .queue-panel,
+  .library-panel,
+  .about-panel,
+  .cmd-palette,
+  .more-menu,
+  .dropzone,
+  .pill-nav,
+  .status-pill,
+  .mic-btn,
+  .toast,
+  .data-chip,
+  .sheet-scrim {
+    /* prefixed first, standard last: written the other way round the
+       minifier collapsed the pair and kept only the -webkit- form, which
+       would have left the blur running on Android Chrome while looking
+       fixed on iOS. */
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  /* the blur was carrying the separation from the stage; opacity does it now */
+  .topbar { background: rgba(26, 24, 22, 0.92); }
+  .transport { background: rgba(26, 24, 22, 0.94); }
+  .drawer { background: rgba(30, 28, 26, 0.97); }
+  .dropzone { background: rgba(18, 17, 16, 0.55); }
+}
