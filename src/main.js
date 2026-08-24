@@ -404,7 +404,7 @@ function setTheme(id) {
   [...themeRow.children].forEach((c, i) => c.classList.toggle('is-active', THEMES[i].id === id));
   updateFavicon();
   if (engine.track && engine.mode !== 'spotify') {
-    trackArtEl._artName = null;
+    if (trackArtEl) trackArtEl._artName = null;
     updateTrackUI();
   }
   pulseStage();
@@ -706,7 +706,7 @@ function updateTrackUI() {
     $('time-total').textContent = fmtTime(t.duration);
     drawWaveform(engine.buffer);
     // procedural album art
-    if (!trackArtEl._artName || trackArtEl._artName !== t.name) {
+    if (trackArtEl && (!trackArtEl._artName || trackArtEl._artName !== t.name)) {
       trackArtEl._artName = t.name;
       const art = generateAlbumArt(t.name, THEMES.find(th => th.id === state.themeId)?.colors || ['#d9b089','#c49a6e','#f5e6d3'], 96);
       trackArtEl.innerHTML = '';
@@ -736,7 +736,7 @@ function refreshStatus() {
   syncWakeLock(playing);
   const icon = playing ? 'pause' : 'play';
   setIcon($('play-pause-icon'), icon);
-  setIcon($('header-play-icon'), icon);
+
   $('track-info').classList.toggle('is-playing', playing);
   $('capture-btn').classList.toggle('is-on', engine.captureActive);
   $('mic-btn').classList.toggle('is-on', engine.micActive);
@@ -806,6 +806,30 @@ $('capture-btn').addEventListener('click', async () => {
   }
 });
 
+/* ---------- overflow menu ---------- */
+
+const moreMenu = $('more-menu');
+const moreBtn = $('more-btn');
+function closeMore() {
+  moreMenu?.classList.add('is-hidden');
+  moreBtn?.setAttribute('aria-expanded', 'false');
+}
+function toggleMore() {
+  const open = moreMenu?.classList.toggle('is-hidden') === false;
+  moreBtn?.setAttribute('aria-expanded', String(open));
+}
+moreBtn?.addEventListener('click', (e) => { e.stopPropagation(); toggleMore(); });
+document.addEventListener('click', (e) => {
+  if (!moreMenu || moreMenu.classList.contains('is-hidden')) return;
+  if (e.target.closest('#more-menu') || e.target.closest('#more-btn')) return;
+  closeMore();
+});
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMore(); });
+// every tool in the menu closes it after firing
+moreMenu?.querySelectorAll('.more-item').forEach((el) => {
+  if (el.id !== 'add-more-btn') el.addEventListener('click', () => setTimeout(closeMore, 0));
+});
+
 /* ---------- file loading ---------- */
 
 const fileInput = $('file-input');
@@ -829,7 +853,8 @@ async function loadFiles(files) {
       return;
     }
     dropzone.classList.add('is-hidden');
-    updateTrackUI();
+    // never let a UI hiccup abort the load: the audio decoded fine by here
+    try { updateTrackUI(); } catch (err) { console.error('track UI failed', err); }
     engine.play();
     const loaded = audioFiles.length - errors.length;
     toast(errors.length
@@ -847,11 +872,20 @@ fileInput.addEventListener('change', () => {
   fileInput.value = '';
 });
 
-dropzone.addEventListener('click', () => fileInput.click());
-$('stage').addEventListener('click', (e) => {
-  if (dropzone.classList.contains('is-hidden')) return;
-  if (e.target.closest('.dropzone')) return;
+/* One entry point for the picker. The dropzone wrapper and the stage used to
+   register separate click handlers, so a click on the empty stage opened the
+   file chooser twice. */
+function openFilePicker() {
   fileInput.click();
+}
+$('add-btn')?.addEventListener('click', openFilePicker);
+$('add-more-btn')?.addEventListener('click', () => { closeMore(); openFilePicker(); });
+$('stage').addEventListener('click', (e) => {
+  // clicking the empty stage is a shortcut for "add files"; once a track is
+  // loaded the stage belongs to the visuals
+  if (dropzone.classList.contains('is-hidden')) return;
+  if (e.target.closest('button')) return;
+  openFilePicker();
 });
 
 ['dragenter', 'dragover'].forEach((ev) =>
@@ -919,7 +953,7 @@ if ('mediaSession' in navigator) {
 /* ---------- transport ---------- */
 
 const playPauseBtn = $('play-pause-btn');
-const headerPlayBtn = $('header-play-btn');
+
 
 function transportToggle() {
   if (engine.activeInput === 'none') {
@@ -929,7 +963,7 @@ function transportToggle() {
   engine.toggle();
 }
 
-[playPauseBtn, headerPlayBtn].forEach((btn) => btn.addEventListener('click', transportToggle));
+playPauseBtn.addEventListener('click', transportToggle);
 
 $('prev-btn').addEventListener('click', () => engine.prevTrack());
 $('next-btn').addEventListener('click', () => engine.nextTrack());

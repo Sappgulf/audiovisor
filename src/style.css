@@ -842,7 +842,8 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   align-items: center;
   gap: 18px;
   flex-shrink: 0;
-  z-index: 30;
+  /* above the settings drawer (40) so the overflow menu isn't clipped by it */
+  z-index: 45;
 }
 
 .track-info {
@@ -1798,3 +1799,93 @@ input:focus-visible,
   filter: grayscale(0.6);
 }
 .fx-chip.is-disabled:hover { border-color: var(--border); }
+
+/* ---------- Transport: primary add action + overflow menu (v8.9) ---------- */
+
+.add-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px 0 11px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s var(--ease);
+}
+.add-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1816;
+  transform: translateY(-1px);
+}
+.add-btn:active { transform: none; }
+.add-label { line-height: 1; }
+
+.more-wrap { position: relative; display: flex; }
+.more-menu {
+  position: absolute;
+  right: -6px;
+  bottom: calc(100% + 12px);
+  min-width: 232px;
+  padding: 6px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(0,0,0,0.45), 0 0 0 1px var(--border-soft);
+  z-index: 60;
+  animation: more-in 0.16s var(--ease-out);
+}
+.more-menu.is-hidden { display: none; }
+@keyframes more-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.more-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 9px;
+  color: var(--text-60);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+.more-item:hover { background: var(--glass-strong); color: var(--text); }
+.more-item .ic { flex-shrink: 0; opacity: 0.8; }
+.more-item kbd {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-40);
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.more-sep { height: 1px; margin: 5px 8px; background: var(--border-soft); }
+.more-item.rec-btn.is-rec { color: #e85d3f; background: rgba(232, 93, 63, 0.12); }
+
+/* icon buttons were too dim to tell apart */
+.ghost-btn { color: var(--text-60); }
+.ghost-btn:hover { color: var(--text-strong); background: var(--glass-strong); }
+
+/* denser mode grid — 22 cards in two columns meant endless scrolling */
+.mode-list { grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.mode-preview { height: 26px; font-size: 13px; }
+.mode-card { padding: 6px 4px; gap: 4px; }
+.mode-name { font-size: 8px; letter-spacing: 0.03em; }
+
+@media (max-width: 1024px) {
+  .add-label { display: none; }
+  .add-btn { padding: 0 11px; }
+  .mode-list { grid-template-columns: 1fr 1fr; }
+}

@@ -55,9 +55,6 @@
             <span class="status-dot"></span>
             <span class="mono status-text" id="status-text">Engine: Idle</span>
           </div>
-          <button class="lime-btn" id="header-play-btn" title="Play / Pause" aria-label="Play or pause">
-            <span class="ic" data-icon="play" id="header-play-icon"></span>
-          </button>
         </div>
       </header>
 
@@ -213,13 +210,18 @@
       <footer class="transport">
         <div class="track-info" id="track-info">
           <button class="ghost-btn" id="save-library-btn" title="Save to library (with edits)" aria-label="Save to library" style="position:absolute; top:6px; right:6px; width:26px; height:26px; z-index:2;"><span class="ic ic-sm" data-icon="layers"></span></button>
-          <div class="track-art"><span class="ic" data-icon="music2"></span></div>
+          <div class="track-art" id="track-art"><span class="ic" data-icon="music2"></span></div>
           <div class="track-meta">
             <span class="mono track-label">Now Playing</span>
             <span class="track-name" id="track-name">Waiting for input...</span>
             <span class="mono track-spec" id="track-spec">44.1kHz / STEREO</span>
           </div>
         </div>
+
+        <button class="add-btn" id="add-btn" title="Add audio files" aria-label="Add audio files">
+          <span class="ic ic-sm" data-icon="plus"></span>
+          <span class="add-label">Add</span>
+        </button>
 
         <div class="transport-controls">
           <button class="ghost-btn" id="prev-btn" title="Back 10s" aria-label="Back 10 seconds">
@@ -251,28 +253,30 @@
             </div>
           </div>
           <div class="util-sep"></div>
-          <button class="ghost-btn" id="loop-btn" title="Loop" aria-label="Loop">
+          <button class="ghost-btn" id="loop-btn" title="Loop (L)" aria-label="Loop">
             <span class="ic" data-icon="repeat"></span>
           </button>
-          <button class="ghost-btn" id="queue-btn" title="Queue manager" aria-label="Queue manager">
+          <button class="ghost-btn" id="queue-btn" title="Queue (Q)" aria-label="Queue manager">
             <span class="ic" data-icon="list"></span>
           </button>
-          <button class="ghost-btn" id="library-btn" title="Library — saved tracks & remixes" aria-label="Library">
+          <button class="ghost-btn" id="library-btn" title="Library (L)" aria-label="Library">
             <span class="ic" data-icon="layers"></span>
           </button>
-          <button class="ghost-btn" id="snapshot-btn" title="Snapshot PNG" aria-label="Save snapshot">
-            <span class="ic" data-icon="camera"></span>
-          </button>
-          <button class="ghost-btn" id="export-remix-btn" title="Export remix WAV" aria-label="Export remix">
-            <span class="ic" data-icon="music"></span>
-          </button>
-          <button class="ghost-btn rec-btn" id="record-btn" title="Record session (WebM)" aria-label="Record session">
-            <span class="ic" data-icon="record"></span>
-          </button>
-          <button class="ghost-btn" id="shuffle-btn" title="Autopilot" aria-label="Autopilot">
-            <span class="ic" data-icon="shuffle"></span>
-          </button>
-          <button class="ghost-btn" id="fullscreen-btn" title="Fullscreen" aria-label="Fullscreen">
+          <div class="util-sep"></div>
+          <div class="more-wrap">
+            <button class="ghost-btn" id="more-btn" title="More tools" aria-label="More tools" aria-haspopup="true" aria-expanded="false">
+              <span class="ic" data-icon="more"></span>
+            </button>
+            <div class="more-menu is-hidden" id="more-menu" role="menu" aria-label="More tools">
+              <button class="more-item" id="snapshot-btn" role="menuitem"><span class="ic ic-sm" data-icon="camera"></span><span>Snapshot PNG</span><kbd>P</kbd></button>
+              <button class="more-item rec-btn" id="record-btn" role="menuitem"><span class="ic ic-sm" data-icon="record"></span><span>Record session</span></button>
+              <button class="more-item" id="export-remix-btn" role="menuitem"><span class="ic ic-sm" data-icon="music"></span><span>Export remix WAV</span></button>
+              <button class="more-item" id="shuffle-btn" role="menuitem"><span class="ic ic-sm" data-icon="shuffle"></span><span>Autopilot</span></button>
+              <div class="more-sep"></div>
+              <button class="more-item" id="add-more-btn" role="menuitem"><span class="ic ic-sm" data-icon="plus"></span><span>Add audio files…</span></button>
+            </div>
+          </div>
+          <button class="ghost-btn" id="fullscreen-btn" title="Cinema fullscreen (F)" aria-label="Fullscreen">
             <span class="ic" data-icon="maximize"></span>
           </button>
         </div>

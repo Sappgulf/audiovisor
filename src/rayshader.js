@@ -163,8 +163,8 @@ float scScope(vec3 p) {
     float a2 = a + TAU / 40.0;
     vec3 A = vec3(cos(a) * r, sin(a) * r, sin(a * 3.0) * 0.28);
     vec3 B = vec3(cos(a2) * r2, sin(a2) * r2, sin(a2 * 3.0) * 0.28);
-    float s = sdCapsule(p, A, B, 0.075 + uBeat * 0.02);
-    if (s < d) { d = s; g_id = 3.0; g_aux = u; }
+    float s = sdCapsule(p, A, B, 0.1 + uBeat * 0.03);
+    if (s < d) { d = s; g_id = 20.0; g_aux = fract(u + uTime * 0.05); }
   }
   float ring = abs(sdTorus(p.xzy, vec2(2.35, 0.02))) - 0.004;
   if (ring < d) { d = ring; g_id = 1.0; g_aux = 0.6; }
@@ -190,7 +190,7 @@ float scParticles(vec3 p) {
     float fade = smoothstep(5.4, 1.6, length(id * c));
     float r = (0.04 + 0.13 * band * uSens + uBeat * 0.035 * h.z) * fade;
     float s = sdSphere(q, max(r, 0.001));
-    if (s < d) { d = s; g_id = 4.0; g_aux = h.x; }
+    if (s < d) { d = s; g_id = 4.0; g_aux = fract(h.z * 3.7); }
   }
   return d;
 }
@@ -298,8 +298,9 @@ float scCity(vec3 p) {
 float scOrb(vec3 p) {
   float r = length(p);
   vec3 n = p / max(r, 1e-4);
-  float band = spec(abs(n.y) * 0.5 + 0.05);
-  float disp = band * 0.32 * uSens + sin(n.x * 8.0 + uTime * 2.0) * 0.02;
+  float band = spec(fract(atan2s(n.z, n.x) / TAU + 0.5) * 0.7 + 0.05);
+  float disp = band * 0.18 * uSens
+    + 0.05 * sin(n.y * 7.0 + uTime * 1.6) * sin(atan2s(n.z, n.x) * 5.0);
   float shell = abs(r - (1.15 + disp + uBeat * 0.09)) - 0.035;   // hollow glass
   float core = r - (0.5 + uBass * 0.16 + uBeat * 0.08);
   float d = shell;
@@ -325,6 +326,8 @@ float scFluid(vec3 p) {
   }
   d = smin(d, sdSphere(p, 0.34 + uBass * 0.1), 0.3);   // core keeps the mass connected
   g_id = 10.0; g_aux = 0.5;
+  float fl = p.y + 1.5;                                // chrome needs something to mirror
+  if (fl < d) { d = fl; g_id = 0.0; }
   float ring = abs(sdTorus(p, vec2(1.9, 0.02))) - 0.006;
   if (ring < d) { d = ring; g_id = 4.0; g_aux = 0.4; }
   return d;
@@ -389,7 +392,7 @@ float scVoid(vec3 p) {
 
 /* 17 bloomfield — bokeh sphere field (DOF does the work) */
 float scBloom(vec3 p) {
-  vec3 c = vec3(2.3, 2.3, 3.0);
+  vec3 c = vec3(2.8, 2.8, 3.4);
   vec3 cell = floor((p + 0.5 * c) / c);
   float d = 1e9;
   for (int x = -1; x <= 1; x++)
@@ -400,8 +403,8 @@ float scBloom(vec3 p) {
     vec3 off = (h - 0.5) * 1.0;
     off.y += sin(uTime * 0.4 + h.y * TAU) * 0.2;
     float fade = smoothstep(7.0, 2.0, length(id * c - vec3(0.0, 0.0, -2.0)));
-    float s = sdSphere(p - (id * c + off), max((0.07 + e * 0.22 * uSens + uBeat * 0.03) * fade, 0.001));
-    if (s < d) { d = s; g_id = 4.0; g_aux = h.x; }
+    float s = sdSphere(p - (id * c + off), max((0.13 + e * 0.34 * uSens + uBeat * 0.05) * fade, 0.001));
+    if (s < d) { d = s; g_id = 4.0; g_aux = fract(h.y * 2.9); }
   }
   return d;
 }
@@ -468,6 +471,18 @@ float scGpu(vec3 p) {
   return d;
 }
 
+/* 20 lava — the vessel; the wax itself is volumetric */
+float scLavaGlass(vec3 p) {
+  float wall = abs(sdCyl(p, 2.1, 1.16)) - 0.03;
+  g_id = 3.0; g_aux = 0.3;
+  float cap = sdCyl(p - vec3(0.0, 2.15, 0.0), 0.12, 0.75);
+  float base = sdCyl(p + vec3(0.0, 2.2, 0.0), 0.16, 0.9);
+  float metal = min(cap, base);
+  float d = wall;
+  if (metal < d) { d = metal; g_id = 6.0; g_aux = 0.25; }
+  return d;
+}
+
 /* dispatcher */
 float map(vec3 p) {
   if (uMode == 0)  return scBars(p);
@@ -488,6 +503,7 @@ float map(vec3 p) {
   if (uMode == 17) return scBloom(p);
   if (uMode == 18) return scFractal(p);
   if (uMode == 19) return scRadar(p);
+  if (uMode == 20) return scLavaGlass(p);
   if (uMode == 21) return scGpu(p);
   return sdSphere(p, 1.0);
 }
@@ -530,9 +546,10 @@ Mat matOf(float id, float aux, vec3 p) {
     m.alb = palf(0.3) * 0.25; m.rough = 0.3; m.metal = 0.8;
     m.emis = palf(0.25) * (0.12 + uLevel * 0.25);
   } else if (id < 7.5) {                // terrain rock
-    m.alb = mix(vec3(0.03, 0.028, 0.026), palf(aux) * 0.22, aux);
-    m.rough = 0.75; m.metal = 0.1;
-    m.emis = palf(aux) * pow(aux, 3.2) * 0.9;
+    m.alb = mix(vec3(0.025, 0.023, 0.021), palf(aux) * 0.3, aux);
+    m.rough = 0.62; m.metal = 0.18;
+    // snow-line glow on the crests plus a cool wash in the troughs
+    m.emis = palf(aux) * pow(aux, 2.4) * 2.2 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06;
   } else if (id < 8.5) {                // city block + windows
     // anti-aliased window grid: hard step() speckles badly at distance
     vec3 wp = p * vec3(2.6, 3.4, 2.6);
@@ -584,6 +601,10 @@ Mat matOf(float id, float aux, vec3 p) {
     vec3 cc = palf(0.25 + aux * 0.5);
     m.alb = cc * 0.2; m.rough = 0.4;
     m.emis = cc * (0.55 + 1.1 * aux + uBeat * 0.5);
+  } else if (id < 20.5) {               // scope trace — emissive glass tube
+    vec3 cc = palf(aux);
+    m.alb = cc * 0.2; m.rough = 0.12; m.metal = 0.3;
+    m.emis = cc * (1.4 + uLevel * 1.6 + uBeat * 0.8);
   } else {                              // accretion disc
     vec3 cc = mix(vec3(1.0, 0.93, 0.85), palf(0.85), clamp(aux * 1.4, 0.0, 1.0));
     m.alb = vec3(0.0); m.rough = 1.0;
@@ -781,14 +802,15 @@ vec3 volColor(float dens, vec3 p) {
   return c * (0.6 + uBeat * 0.5);
 }
 
-vec3 marchVolume(vec3 ro, vec3 rd) {
+/* Volume march with an optional far limit, so a surface can occlude it. */
+vec3 marchVolume(vec3 ro, vec3 rd, float tmax) {
   vec3 acc = vec3(0.0);
   float trans = 1.0;
   float t = 0.4;
   int steps = min(uSteps / 3, 72);
   float stepSize = 0.16;
   for (int i = 0; i < 72; i++) {
-    if (i >= steps || trans < 0.02 || t > 14.0) break;
+    if (i >= steps || trans < 0.02 || t > min(14.0, tmax)) break;
     vec3 p = ro + rd * t;
     float d = volDensity(p);
     if (d > 0.001) {
@@ -798,11 +820,11 @@ vec3 marchVolume(vec3 ro, vec3 rd) {
     }
     t += stepSize * (1.0 + t * 0.09);
   }
-  acc += envBase(rd) * trans;
+  if (tmax > 13.0) acc += envBase(rd) * trans;   // only the open sky adds background
   return acc;
 }
 
-bool isVolumetric(int m) { return m == 10 || m == 11 || m == 20; }
+bool isVolumetric(int m) { return m == 10 || m == 11; }
 
 /* ---------------- camera ---------------- */
 
@@ -828,7 +850,7 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 14) { ro = vec3(sin(t * 0.1) * 3.2, 1.6 + sin(t * 0.07), cos(t * 0.1) * 3.2); ap = 0.04; }
   else if (uMode == 15) { ro = vec3(0.0, 0.2, 4.2); ap = 0.02; }
   else if (uMode == 16) { ro = vec3(sin(t * 0.08) * 5.0, 1.1, cos(t * 0.08) * 5.0); ap = 0.03; }
-  else if (uMode == 17) { ro = vec3(sin(t * 0.07) * 1.4, cos(t * 0.06) * 0.8, 4.4); ta = vec3(0.0, 0.0, -2.0); ap = 0.11; }
+  else if (uMode == 17) { ro = vec3(sin(t * 0.07) * 1.4, cos(t * 0.06) * 0.8, 4.4); ta = vec3(0.0, 0.0, -2.6); ap = 0.19; }
   else if (uMode == 18) { ro = vec3(sin(t * 0.12) * 2.6, sin(t * 0.09) * 0.9, cos(t * 0.12) * 2.6); ap = 0.02; }
   else if (uMode == 19) { ro = vec3(sin(t * 0.1) * 3.4, 2.6, cos(t * 0.1) * 3.4); ta = vec3(0.0, -0.2, 0.0); ap = 0.03; }
   else if (uMode == 20) { ro = vec3(0.0, 0.0, 5.2); ap = 0.0; }
@@ -874,12 +896,13 @@ vec3 glassPath(vec3 p, vec3 rd, vec3 n, float ior) {
 /* ---------------- main trace ---------------- */
 
 vec3 trace(vec3 ro, vec3 rd) {
-  if (isVolumetric(uMode)) return marchVolume(ro, rd);
+  if (isVolumetric(uMode)) return marchVolume(ro, rd, 1e9);
 
   float id, aux;
   float t = march(ro, rd, 40.0, id, aux);
   if (t < 0.0) {
     vec3 bg = envBase(rd);
+    if (uMode == 20) bg += marchVolume(ro, rd, 1e9);
     if (uMode == 16) {
       // photon ring: glow for rays that pass just outside the horizon
       float b = length(ro - dot(ro, rd) * rd);          // closest approach to the singularity
@@ -927,6 +950,9 @@ vec3 trace(vec3 ro, vec3 rd) {
 
   // distance haze
   col = mix(col, envBase(rd) * 0.9, pow(clamp(t / 42.0, 0.0, 1.0), 1.4) * 0.7);
+  // lava lamp: the wax is a volume inside the glass vessel, so it has to be
+  // marched separately and composited in front of whatever the SDF hit
+  if (uMode == 20) col += marchVolume(ro, rd, t);
   return col;
 }
 

@@ -49,19 +49,25 @@ describe('ray shaders', () => {
   });
 
   it('has a scene branch for every stage mode', () => {
-    // map() dispatches on the MODES index; volumetric modes are handled by
-    // isVolumetric() instead of a map() branch
-    const volumetric = ['nebula', 'spiral', 'lava'];
+    // map() dispatches on the MODES index; the pure-volumetric modes are
+    // handled by isVolumetric() instead of a map() branch (lava is a hybrid:
+    // an SDF glass vessel with the wax composited in as a volume)
+    const volumetric = ['nebula', 'spiral'];
     MODES.forEach((m, i) => {
       if (volumetric.includes(m.id)) return;
       expect(SCENE_FRAG.includes(`uMode == ${i})`), `${m.id} (index ${i})`).toBe(true);
     });
   });
 
-  it('routes the volumetric modes through isVolumetric', () => {
-    const idx = ['nebula', 'spiral', 'lava'].map((id) => MODES.findIndex((m) => m.id === id));
-    const fn = SCENE_FRAG.slice(SCENE_FRAG.indexOf('bool isVolumetric'));
+  it('routes the pure-volumetric modes through isVolumetric', () => {
+    const idx = ['nebula', 'spiral'].map((id) => MODES.findIndex((m) => m.id === id));
+    const fn = SCENE_FRAG.slice(SCENE_FRAG.indexOf('bool isVolumetric'), SCENE_FRAG.indexOf('bool isVolumetric') + 120);
     for (const i of idx) expect(fn.includes(`m == ${i}`)).toBe(true);
+  });
+
+  it('composites the lava volume against its glass vessel', () => {
+    const lava = MODES.findIndex((m) => m.id === 'lava');
+    expect(SCENE_FRAG.includes(`if (uMode == ${lava}) col += marchVolume(ro, rd, t);`)).toBe(true);
   });
 
   it('gives every mode a camera rig', () => {
