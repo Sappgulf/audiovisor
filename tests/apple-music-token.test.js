@@ -44,6 +44,21 @@ describe('Apple Music token endpoint', () => {
     expect(res.out.body).toEqual({ error: 'Origin not allowed' });
   });
 
+  it('answers 501 when credentials are missing, not 503', () => {
+    /* Missing configuration is permanent until someone sets the env vars.
+       503 invites a retry, and the client called through here on every
+       Source-tab visit, sign-in and playlist action — a wasted round trip
+       each time, over cellular on a phone. */
+    delete process.env.APPLE_MUSIC_ORIGIN;
+    delete process.env.APPLE_MUSIC_TEAM_ID;
+    delete process.env.APPLE_MUSIC_KEY_ID;
+    delete process.env.APPLE_MUSIC_PRIVATE_KEY;
+    const res = response();
+    handler({ method: 'GET', headers: { host: 'audiovisor.example' } }, res);
+    expect(res.out.statusCode).toBe(501);
+    expect(res.out.body.configured).toBe(false);
+  });
+
   it('does not reveal configuration details when credentials are missing', () => {
     delete process.env.APPLE_MUSIC_ORIGIN;
     delete process.env.APPLE_MUSIC_TEAM_ID;
@@ -51,7 +66,19 @@ describe('Apple Music token endpoint', () => {
     delete process.env.APPLE_MUSIC_PRIVATE_KEY;
     const res = response();
     handler({ method: 'GET', headers: { host: 'audiovisor.example' } }, res);
+    // the message names no key, id or path
+    expect(res.out.body.error).toBe('Apple Music server credentials are not configured');
+    expect(JSON.stringify(res.out.body)).not.toMatch(/BEGIN|PRIVATE|[A-Z0-9]{10}/);
+  });
+
+  it('keeps 503 for a signing failure, which may pass', () => {
+    process.env.APPLE_MUSIC_TEAM_ID = 'TEAM123';
+    process.env.APPLE_MUSIC_KEY_ID = 'KEY123';
+    process.env.APPLE_MUSIC_PRIVATE_KEY = 'not a valid key';
+    delete process.env.APPLE_MUSIC_ORIGIN;
+    const res = response();
+    handler({ method: 'GET', headers: { host: 'audiovisor.example' } }, res);
     expect(res.out.statusCode).toBe(503);
-    expect(res.out.body).toEqual({ error: 'Apple Music server credentials are not configured' });
+    expect(res.out.body.configured).toBe(true);
   });
 });

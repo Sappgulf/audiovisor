@@ -25,7 +25,13 @@ function createDeveloperToken() {
   const keyId = String(process.env.APPLE_MUSIC_KEY_ID || '').trim();
   const privateKey = String(process.env.APPLE_MUSIC_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim();
   if (!teamId || !keyId || !privateKey) {
-    throw new Error('Apple Music server credentials are not configured');
+    const err = new Error('Apple Music server credentials are not configured');
+    /* Missing configuration is permanent until someone sets the env vars, not
+       a transient outage. Saying 503 invites the client to try again on every
+       interaction, which on a phone is a wasted round trip over cellular each
+       time. 501 says plainly that this deployment does not implement it. */
+    err.permanent = true;
+    throw err;
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -60,6 +66,10 @@ export default function handler(req, res) {
     res.setHeader('Cache-Control', 'private, no-store');
     res.status(200).json(cached);
   } catch (err) {
-    res.status(503).json({ error: err.message || 'Apple Music token unavailable' });
+    const permanent = err && err.permanent === true;
+    res.status(permanent ? 501 : 503).json({
+      error: err.message || 'Apple Music token unavailable',
+      configured: !permanent,
+    });
   }
 }

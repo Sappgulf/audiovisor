@@ -5,19 +5,38 @@ function buildDeveloperToken() {
   return String(import.meta.env?.VITE_APPLE_MUSIC_DEVELOPER_TOKEN || '').trim();
 }
 
-async function developerToken() {
+/* A deployment without Apple Music credentials answers 501, and no amount of
+   retrying will change that. Remembered so the request is not repeated on
+   every Source-tab visit, sign-in attempt and playlist action — each of
+   which called through here, and on a phone each is a wasted round trip
+   over cellular. A 503 or a network error stays retryable. */
+let tokenUnavailable = null;
+
+export async function developerToken() {
   const builtToken = buildDeveloperToken();
   if (builtToken) return builtToken;
   if (typeof window === 'undefined') return '';
+  if (tokenUnavailable) throw new Error(tokenUnavailable);
+
   const response = await fetch('/api/apple-music-token', {
     headers: { Accept: 'application/json' },
   });
   let body = {};
   try { body = await response.json(); } catch {}
   if (!response.ok || !body.token) {
-    throw new Error(body.error || 'Apple Music token service is not configured');
+    const message = body.error || 'Apple Music token service is not configured';
+    // 501 and 4xx describe this deployment, not a passing failure
+    if (response.status === 501 || (response.status >= 400 && response.status < 500)) {
+      tokenUnavailable = message;
+    }
+    throw new Error(message);
   }
   return String(body.token);
+}
+
+/** Test seam: forget a remembered failure. */
+export function _resetTokenCache() {
+  tokenUnavailable = null;
 }
 
 function loadMusicKit() {
