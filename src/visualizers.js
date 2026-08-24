@@ -501,7 +501,18 @@ export class Renderer {
     }
     const ga = this.glowACtx;
     ga.clearRect(0, 0, gw, gh);
+    ga.globalCompositeOperation = 'source-over';
     ga.drawImage(this.canvas, 0, 0, gw, gh);
+    /* Bright pass. The glow used to be a blurred copy of the entire frame
+       added back on top, so mid-tones were lifted along with highlights —
+       that flattened contrast, washed the colour out, and pushed already
+       bright areas past white. Multiplying the frame by itself squares each
+       channel, so 0.5 falls to 0.25 while 0.9 only falls to 0.81: mid-tones
+       drop out of the glow and highlights survive it, which is what bloom
+       is supposed to select. */
+    ga.globalCompositeOperation = 'multiply';
+    ga.drawImage(this.canvas, 0, 0, gw, gh);
+    ga.globalCompositeOperation = 'source-over';
     const gb = this.glowBCtx;
     gb.clearRect(0, 0, this.glowB.width, this.glowB.height);
     gb.drawImage(this.glowA, 0, 0, this.glowB.width, this.glowB.height);
@@ -515,9 +526,12 @@ export class Renderer {
       ctx.drawImage(this.glowB, -w * 0.02 + 1.2, -h * 0.02, w * 1.04, h * 1.04);
       ctx.drawImage(this.glowB, -w * 0.02 - 1.2, -h * 0.02, w * 1.04, h * 1.04);
     }
-    ctx.globalAlpha = clamp((0.20 + punch * 0.05) * (0.5 + this.bloomAmount), 0, 0.30);
+    /* The bright pass halves what reaches the glow, so the gain is raised to
+       keep the same amount of visible bloom — the difference is that it now
+       comes from highlights rather than from lifting the whole frame. */
+    ctx.globalAlpha = clamp((0.25 + punch * 0.06) * (0.5 + this.bloomAmount), 0, 0.36);
     ctx.drawImage(this.glowB, -w * 0.02, -h * 0.02, w * 1.04, h * 1.04);
-    ctx.globalAlpha = clamp((0.14 + punch * 0.04) * (0.5 + this.bloomAmount), 0, 0.24);
+    ctx.globalAlpha = clamp((0.17 + punch * 0.05) * (0.5 + this.bloomAmount), 0, 0.29);
     ctx.drawImage(this.glowA, 0, 0, w, h);
     ctx.restore();
   }

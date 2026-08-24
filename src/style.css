@@ -2146,6 +2146,35 @@ html, body {
   /* iOS zooms the page when a focused input is under 16px */
   input, select, textarea { font-size: 16px; }
 
+  /* ---- range sliders were a 5px-tall target ------------------------------
+     The Sensitivity / Bass / Smoothing / Colour / Bloom controls are native
+     range inputs styled to a 5px track, so the whole hit area was 5px tall —
+     touch worked in principle and was near-impossible with a thumb. Pad the
+     box out to a real target and paint the track into the content box, so
+     the control still *looks* like a 5px line. */
+  input[type="range"].ctrl-slider {
+    height: 44px;
+    padding-block: 19.5px;
+    background-clip: content-box;
+    touch-action: none;
+    /* the inset shadow paints on the border box, so once the box is 44px
+       tall it outlined the whole padded area instead of edging the track */
+    box-shadow: none;
+  }
+  .slider-group { margin-block: -6px; }
+
+  /* ---- studio / utility buttons sat at 28px ------------------------------ */
+  .mini-btn,
+  .lime-btn-sm,
+  #comment-send,
+  #settings-export,
+  #settings-import,
+  #settings-reset,
+  #tour-replay {
+    min-height: 40px;
+    padding-inline: 14px;
+  }
+
   /* ---- dense grids: grow the hit area, keep the look ---------------------
      Theme dots and mode cards are packed deliberately tight; sizing them to
      44px would wreck the grid. An invisible centred pseudo-element gives
