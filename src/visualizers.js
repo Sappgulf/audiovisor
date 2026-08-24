@@ -220,14 +220,22 @@ export class Renderer {
   /* ---------------- analysis smoothing ---------------- */
 
   _updateLevels(levels, dt) {
-    const k = 1 - Math.pow(1 - 0.28, dt * 60);
+    /* Asymmetric envelope: a transient should arrive instantly and leave
+       slowly. A single symmetric lerp made every band rise as sluggishly as
+       it fell, which is what made kicks read as mush — the peak was already
+       past by the time the bar got there. Attack is near-instant, release is
+       slower than the old constant, so the decay reads as a tail rather than
+       a flicker. Both are dt-shaped, so the feel holds at 60 and 144Hz. */
+    const attack = 1 - Math.pow(1 - 0.55, dt * 60);
+    const release = 1 - Math.pow(1 - 0.16, dt * 60);
     const t = levels
       ? { bass: Math.min(1.2, levels.bass * (1 + this.bassFocus * 0.6)), mid: levels.mid, high: levels.high, level: levels.level }
       : { bass: 0, mid: 0, high: 0, level: 0 };
-    this.sm.bass = lerp(this.sm.bass, t.bass, k);
-    this.sm.mid = lerp(this.sm.mid, t.mid, k);
-    this.sm.high = lerp(this.sm.high, t.high, k);
-    this.sm.level = lerp(this.sm.level, t.level, k);
+    const env = (cur, target) => lerp(cur, target, target > cur ? attack : release);
+    this.sm.bass = env(this.sm.bass, t.bass);
+    this.sm.mid = env(this.sm.mid, t.mid);
+    this.sm.high = env(this.sm.high, t.high);
+    this.sm.level = env(this.sm.level, t.level);
 
     // level history sampled on a fixed clock so tunnel/terrain speed is
     // refresh-rate independent

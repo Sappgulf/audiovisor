@@ -180,3 +180,63 @@ describe('Renderer', () => {
     expect(Math.max(...renderer.peaks)).toBeLessThan(Math.max(...peakAfterLoud));
   });
 });
+
+describe('band envelope shape', () => {
+  let Renderer;
+  beforeEach(async () => {
+    ensureGlobals();
+    ({ Renderer } = await import('../src/visualizers.js'));
+  });
+
+  /* A transient should arrive fast and leave slowly. The old symmetric
+     lerp rose as sluggishly as it fell (133ms either way), so a kick's
+     peak was already gone by the time the bar got there. */
+  const settle = (renderer, target, frames) => {
+    for (let i = 0; i < frames; i++) {
+      renderer.updateAnalysis({ bass: target, mid: target, high: target, level: target }, 16.7);
+    }
+    return renderer.sm.level;
+  };
+
+  const fresh = () => {
+    const r = new Renderer(makeFakeCanvas(800, 600));
+    r.bassFocus = 0;
+    return r;
+  };
+
+  it('reaches 90% of a step within ~50ms, not ~133ms', () => {
+    const r = fresh();
+    let frames = 0;
+    while (r.sm.level < 0.9 && frames < 120) {
+      r.updateAnalysis({ bass: 1, mid: 1, high: 1, level: 1 }, 16.7);
+      frames++;
+    }
+    expect(frames).toBeLessThanOrEqual(4);      // <= ~67ms at 60fps
+    expect(frames).toBeGreaterThan(1);          // not an instant snap
+  });
+
+  it('decays slower than it attacks, so peaks leave a tail', () => {
+    const r = fresh();
+    settle(r, 1, 40);
+    let frames = 0;
+    while (r.sm.level > 0.1 && frames < 200) {
+      r.updateAnalysis({ bass: 0, mid: 0, high: 0, level: 0 }, 16.7);
+      frames++;
+    }
+    expect(frames).toBeGreaterThan(8);          // > ~133ms, the old constant
+  });
+
+  it('keeps the same shape at 144Hz as at 60Hz', () => {
+    const a = fresh();
+    const b = fresh();
+    // 100ms of signal, delivered at two different refresh rates
+    for (let i = 0; i < 6; i++) a.updateAnalysis({ bass: 1, mid: 1, high: 1, level: 1 }, 16.7);
+    for (let i = 0; i < 14; i++) b.updateAnalysis({ bass: 1, mid: 1, high: 1, level: 1 }, 6.94);
+    expect(Math.abs(a.sm.level - b.sm.level)).toBeLessThan(0.05);
+  });
+
+  it('never overshoots the target', () => {
+    const r = fresh();
+    expect(settle(r, 0.5, 60)).toBeLessThanOrEqual(0.5 + 1e-6);
+  });
+});
