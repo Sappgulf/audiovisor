@@ -9,6 +9,9 @@ import { bindSheetDrag } from './sheet.js';
 import {
   SETTINGS_KEY, serializeSettings, validateSettings, readSettings,
 } from './settings.js';
+/* localStorage writes throw in Safari private browsing and once the origin
+   quota is full. Nothing here is worth failing over. See src/storage.js. */
+import { readJSON, writeJSON, writeText, remove as removeStored } from './storage.js';
 import * as Library from './library.js';
 import { AI_PRESETS, suggestPreset } from './ai.js';
 import { detectPitch, freqToMidi, VoiceSynth } from './voice.js';
@@ -353,7 +356,7 @@ shareBtn?.addEventListener('click', async () => {
   // store in local collab history
   const hist = JSON.parse(localStorage.getItem('audiovisor.collab')||'[]');
   hist.unshift({ url, at: Date.now() });
-  localStorage.setItem('audiovisor.collab', JSON.stringify(hist.slice(0,20)));
+  writeJSON('audiovisor.collab', hist.slice(0, 20));
 });
 const partyBtn = document.getElementById('party-btn');
 partyBtn?.addEventListener('click', () => {
@@ -380,7 +383,7 @@ document.getElementById('comment-send')?.addEventListener('click', () => {
   if (!text) return;
   const list = JSON.parse(localStorage.getItem('audiovisor.comments')||'[]');
   list.push({ user: 'You', text, at: Date.now() });
-  localStorage.setItem('audiovisor.comments', JSON.stringify(list));
+  writeJSON('audiovisor.comments', list);
   if (commentInput) commentInput.value = '';
   renderComments();
   toast('Comment <b>posted</b>');
@@ -393,7 +396,12 @@ try {
   const bc = new BroadcastChannel('audiovisor-party');
   bc.onmessage = (e) => {
     if (e.data?.type === 'party') { setMode(e.data.mode); setTheme(e.data.theme); toast('Party <b>sync</b>'); }
-    if (e.data?.type === 'comment') { const list = JSON.parse(localStorage.getItem('audiovisor.comments')||'[]'); list.push({ user: 'Guest', text: e.data.text, at: Date.now() }); localStorage.setItem('audiovisor.comments', JSON.stringify(list)); renderComments(); }
+    if (e.data?.type === 'comment') {
+      const list = readJSON('audiovisor.comments', []);
+      list.push({ user: 'Guest', text: e.data.text, at: Date.now() });
+      writeJSON('audiovisor.comments', list);
+      renderComments();
+    }
   };
 } catch {}
 // handle share hash on load
@@ -1781,7 +1789,7 @@ function runTour() {
     ['<b>R</b> random look · right-click P1-P3 to save looks', 9800],
   ];
   steps.forEach(([msg, at]) => setTimeout(() => toast(msg, { duration: 3000 }), at));
-  localStorage.setItem('audiovisor.tour', '1');
+  writeText('audiovisor.tour', '1');
 }
 if (!localStorage.getItem('audiovisor.tour')) runTour();
 document.getElementById('tour-replay')?.addEventListener('click', () => { toast('TOUR <b>restarted</b>'); runTour(); });
@@ -1854,8 +1862,8 @@ window.addEventListener('keydown', (e) => {
 });
 
 document.getElementById('settings-reset')?.addEventListener('click', () => {
-  localStorage.removeItem(SETTINGS_KEY);
-  localStorage.removeItem('audiovisor.tour');
+  removeStored(SETTINGS_KEY);
+  removeStored('audiovisor.tour');
   location.reload();
 });
 
@@ -2070,7 +2078,7 @@ function setDrawerTab(id, { persist = true } = {}) {
   if (btn.dataset.tab === 'source') ensureConnect();
   if (drawerScroll) drawerScroll.scrollTop = 0;
   moveInk(btn);
-  if (persist) localStorage.setItem(TAB_KEY, btn.dataset.tab);
+  if (persist) writeText(TAB_KEY, btn.dataset.tab);
 }
 drawerTabs.forEach((btn, i) => {
   btn.addEventListener('click', () => setDrawerTab(btn.dataset.tab));
