@@ -23,7 +23,10 @@ export async function initWebGPU(canvas) {
         let r = 0.35 + sin(time*0.7)*0.02 + level*0.12;
         let ring = smoothstep(0.015, 0.0, abs(d - r));
         let glow = exp(-abs(d - r)*18.0) * 0.6 * (0.6 + level);
-        let col = vec3f(0.85, 0.68, 0.53) * (ring + glow);
+        // var, not let: WGSL lets are immutable, and assigning to one made
+        // the whole module fail to compile, leaving the pipeline invalid and
+        // every frame submitting a broken command buffer
+        var col = vec3f(0.85, 0.68, 0.53) * (ring + glow);
         // ray-marched void core
         let core = smoothstep(r*0.45, r*0.42, d);
         col = mix(col, vec3f(0.02,0.015,0.015), core);
@@ -33,6 +36,12 @@ export async function initWebGPU(canvas) {
       }
     `;
     const module = device.createShaderModule({ code: shader });
+    // surface compile errors instead of silently shipping an invalid pipeline
+    const info = await module.getCompilationInfo?.();
+    if (info && info.messages.some((m) => m.type === 'error')) {
+      console.warn('webgpu shader failed to compile:', info.messages.filter((m) => m.type === 'error').map((m) => m.message).join('; '));
+      return null;
+    }
     const pipeline = device.createRenderPipeline({
       layout: 'auto',
       vertex: { module, entryPoint: 'vs' },

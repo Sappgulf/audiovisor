@@ -266,7 +266,8 @@ export class RayStage {
 
   _uploadAudio(freq, wave) {
     const gl = this.gl;
-    const s = new Uint8Array(256);
+    // reused scratch: these ran 60-144x a second and were pure GC churn
+    const s = this._specScratch || (this._specScratch = new Uint8Array(256));
     if (freq) {
       const n = freq.length;
       for (let i = 0; i < 256; i++) {
@@ -279,13 +280,14 @@ export class RayStage {
     gl.bindTexture(gl.TEXTURE_2D, this.specTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 1, gl.RED, gl.UNSIGNED_BYTE, s);
 
-    const wv = new Uint8Array(256);
+    const wv = this._waveScratch || (this._waveScratch = new Uint8Array(256));
     if (wave) {
       const step = Math.max(1, Math.floor(wave.length / 256));
       for (let i = 0; i < 256; i++) wv[i] = wave[i * step];
     } else {
       wv.fill(128);
     }
+    if (!freq) s.fill(0);
     gl.bindTexture(gl.TEXTURE_2D, this.waveTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 1, gl.RED, gl.UNSIGNED_BYTE, wv);
   }
@@ -294,6 +296,13 @@ export class RayStage {
 
   render(idle, freq, wave, levels, dtMs = 16.7, tOverride = null) {
     if (!this.ok) return;
+    // nothing is playing: render at ~30fps instead of burning a full GPU
+    // budget on an idle stage
+    if (idle && tOverride == null) {
+      this._idleSkip = !this._idleSkip;
+      if (this._idleSkip) { this.t += Math.min(Math.max((dtMs || 16.7) / 1000, 0.001), 0.06); return; }
+      dtMs = (dtMs || 16.7) * 2;
+    }
     const gl = this.gl;
     const dt = Math.min(Math.max((dtMs || 16.7) / 1000, 0.001), 0.06);
     this.t = tOverride != null ? tOverride : this.t + dt;
@@ -303,7 +312,13 @@ export class RayStage {
     this.beat = Math.max(pulse, this.beat * Math.pow(0.86, dt * 60));
     if (freq) {
       this._uploadAudio(freq, wave);
-      this.pushHistory(freq);
+      // fixed 45 rows/sec so the spectrogram and terrain scroll at the same
+      // speed on a 60Hz and a 144Hz display
+      this._histAcc = (this._histAcc || 0) + dt;
+      while (this._histAcc >= 1 / 45) {
+        this._histAcc -= 1 / 45;
+        this.pushHistory(freq);
+      }
     } else if (idle) {
       // no input yet — breathe a slow synthetic spectrum so the stage is
       // alive on first paint instead of an empty scene
@@ -322,6 +337,7 @@ export class RayStage {
         for (let i = 0; i < 2048; i++) w[i] = 128 + 42 * Math.sin(i * 0.012 + t * 1.1);
         this._uploadAudio(f, w);
         this.pushHistory(f);
+        this._histAcc = 0;
       }
     }
 
@@ -383,20 +399,26 @@ export class RayStage {
     // left every beat frame full of sampling noise
     const blend = stable ? q.blend * (1 - Math.min(this.beat, 0.6) * 0.5) : 0;
 
-    gl.useProgram(this.pAccum);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, next.fbo);
-    gl.viewport(0, 0, this.rw, this.rh);
-    gl.uniform2f(this.uAccum.uRes, this.rw, this.rh);
-    gl.uniform1f(this.uAccum.uBlend, blend);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, scene.tex); gl.uniform1i(this.uAccum.uScene, 0);
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, prev.tex); gl.uniform1i(this.uAccum.uHistory, 1);
-    this._fullscreen();
+    // when blend is 0 the accumulation pass is a straight copy — skip it and
+    // let the rest of the chain read the scene buffer directly
+    const accumulated = blend > 0.001;
+    if (accumulated) {
+      gl.useProgram(this.pAccum);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, next.fbo);
+      gl.viewport(0, 0, this.rw, this.rh);
+      gl.uniform2f(this.uAccum.uRes, this.rw, this.rh);
+      gl.uniform1f(this.uAccum.uBlend, blend);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, scene.tex); gl.uniform1i(this.uAccum.uScene, 0);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, prev.tex); gl.uniform1i(this.uAccum.uHistory, 1);
+      this._fullscreen();
+    }
+    const lit = accumulated ? next : scene;
 
     /* ---- 3. bloom: bright-pass H, then V (quarter res) ---- */
     gl.useProgram(this.pBlur);
     gl.bindFramebuffer(gl.FRAMEBUFFER, blurA.fbo);
     gl.viewport(0, 0, bw, bh);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, next.tex);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lit.tex);
     gl.uniform1i(this.uBlur.uTex, 0);
     gl.uniform2f(this.uBlur.uTexel, 1 / this.rw, 1 / this.rh);
     gl.uniform2f(this.uBlur.uDir, 1, 0);
@@ -421,7 +443,7 @@ export class RayStage {
     gl.uniform1f(this.uPost.uTime, this.t);
     gl.uniform1f(this.uPost.uBeat, this.beat);
     gl.uniform1f(this.uPost.uPop, this.colorPop);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, next.tex); gl.uniform1i(this.uPost.uScene, 0);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lit.tex); gl.uniform1i(this.uPost.uScene, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blurB.tex); gl.uniform1i(this.uPost.uBloom, 1);
     this._fullscreen();
 

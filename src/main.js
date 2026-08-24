@@ -438,7 +438,19 @@ $('shuffle-btn').addEventListener('click', () => setAutopilot(!state.autopilot))
 
 /* ---------- persistence ---------- */
 
+let _saveTimer = null;
+/** Debounced: dragging a slider fires input on every pixel. */
 function saveSettings() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(saveSettingsNow, 250);
+}
+// never let the debounce swallow the last change on the way out
+window.addEventListener('pagehide', () => { clearTimeout(_saveTimer); saveSettingsNow(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { clearTimeout(_saveTimer); saveSettingsNow(); }
+});
+
+function saveSettingsNow() {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
       mode: state.modeId,
@@ -957,7 +969,7 @@ const playPauseBtn = $('play-pause-btn');
 
 function transportToggle() {
   if (engine.activeInput === 'none') {
-    fileInput.click();
+    openFilePicker();
     return;
   }
   engine.toggle();
@@ -1048,7 +1060,7 @@ function downloadBlob(blob, name) {
 }
 
 function liveCanvas() {
-  return state.raytraceWanted && ray.ok ? ray.canvas : renderer.canvas;
+  return state.raytraceWanted && ray.ok && !raySuspended ? ray.canvas : renderer.canvas;
 }
 
 function snapshot() {
@@ -1389,14 +1401,27 @@ if (typeof ResizeObserver !== 'undefined') {
 /* ---------- render loop ---------- */
 
 let rayDropped = false;
+let raySuspended = false;   // runtime-only kill switch, never persisted
+let _lastSecs = -1;
+const seekFillEl = $('seek-fill');
+const timeCurrentEl = $('time-current');
+const shellEl = $('shell');
 const frameTimes = [];
 let lastFrameTs = performance.now();
 let _frameErrors = 0;
 function frame(now) {
   try {
     frameStep(now);
+    _frameErrors = 0;
   } catch (err) {
     if (_frameErrors++ < 3) console.error('frame error', err);
+    // a renderer that throws every frame would otherwise spin forever; drop
+    // to the Canvas2D stage for this session only — the stored preference is
+    // deliberately left alone so a transient fault isn't made permanent
+    if (_frameErrors === 8 && state.raytraceWanted && !raySuspended) {
+      raySuspended = true;
+      toast('Raytrace <b>suspended</b> — the stage kept erroring', { duration: 3600 });
+    }
   }
   requestAnimationFrame(frame);
 }
@@ -1426,7 +1451,7 @@ function frameStep(now) {
     }
   }
 
-  const rtOn = state.raytraceWanted && ray.ok;
+  const rtOn = state.raytraceWanted && ray.ok && !raySuspended;
   // surface a GPU context loss instead of silently swapping renderers
   if (state.raytraceWanted && !ray.ok && !rayDropped) {
     rayDropped = true;
@@ -1437,7 +1462,7 @@ function frameStep(now) {
     rayDropped = false;
     toast('RAYTRACE <b>recovered</b>', { duration: 1800 });
   }
-  $('shell').style.setProperty('--beat', (rtOn ? ray.beat : renderer.beat).toFixed(3));
+  shellEl.style.setProperty('--beat', (rtOn ? ray.beat : renderer.beat).toFixed(3));
 
   if (rtOn) {
     // raytraced stage owns every mode; the 2D renderer still advances its
@@ -1472,8 +1497,10 @@ function frameStep(now) {
   if (!idle) {
     const t = engine.getTime();
     const dur = engine.getDuration();
-    $('seek-fill').style.width = `${dur ? (t / dur) * 100 : 0}%`;
-    $('time-current').textContent = fmtTime(t);
+    seekFillEl.style.width = `${dur ? (t / dur) * 100 : 0}%`;
+    // the clock only ticks once a second — skip 59 of 60 text writes
+    const secs = Math.floor(t);
+    if (secs !== _lastSecs) { _lastSecs = secs; timeCurrentEl.textContent = fmtTime(t); }
     drawVu();
     const bi = engine.beatInfo;
     $('bpm-value').textContent = bi.bpm && bi.confidence > 0.25 ? bi.bpm.toFixed(2) : '--.--';
@@ -1746,6 +1773,7 @@ renderSocial();
 
 function setRaytrace(on, { quiet = false } = {}) {
   state.raytraceWanted = on;
+  if (on) raySuspended = false;
   const chip = $('rt-chip');
   chip?.classList.toggle('is-active', on);
   chip?.setAttribute('aria-pressed', String(on));

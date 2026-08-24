@@ -3,6 +3,7 @@ import { RayStage } from '../src/raystage.js';
 import { SCENE_FRAG, ACCUM_FRAG, BLUR_FRAG, POST_FRAG, VERT } from '../src/rayshader.js';
 import { MODES } from '../src/themes.js';
 import { parser } from '@shaderfrog/glsl-parser';
+import { readFileSync } from 'node:fs';
 
 function fakeCanvas(ctx = null) {
   return {
@@ -76,5 +77,21 @@ describe('ray shaders', () => {
       expect(cam.includes(`uMode == ${i})`), `camera for ${MODES[i].id}`).toBe(true);
     }
     expect(cam.includes('else')).toBe(true); // last mode falls through to the default rig
+  });
+});
+
+describe('RayStage runtime behaviour', () => {
+  it('reuses its audio scratch buffers instead of allocating per frame', () => {
+    const src = readFileSync(new URL('../src/raystage.js', import.meta.url), 'utf8');
+    // these run 60-144x a second; a fresh Uint8Array each time is pure GC churn
+    expect(src.includes('this._specScratch')).toBe(true);
+    expect(src.includes('this._waveScratch')).toBe(true);
+    expect(/_uploadAudio\([^)]*\)\s*\{[\s\S]{0,400}new Uint8Array\(256\)\s*;/.test(src)).toBe(false);
+  });
+
+  it('scrolls the spectrum history on a clock, not per frame', () => {
+    const src = readFileSync(new URL('../src/raystage.js', import.meta.url), 'utf8');
+    // per-frame pushes make the waterfall run at double speed on a 120Hz panel
+    expect(src.includes('this._histAcc >= 1 / 45')).toBe(true);
   });
 });
