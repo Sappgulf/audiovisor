@@ -65,13 +65,13 @@ export class RayStage {
     this.canvas = canvas;
     this.ok = false;
     this.error = null;
-    let gl = null;
+    let gl;
     try {
       gl = canvas.getContext('webgl2', {
         alpha: false, antialias: false, depth: false, stencil: false,
         powerPreference: 'high-performance', preserveDrawingBuffer: true,
       });
-    } catch { gl = null; }
+    } catch { /* context creation can throw on locked-down GPUs */ }
     // jsdom and some headless contexts hand back a stub that isn't a real
     // WebGL2 context, so check for the API before trusting it
     if (!gl || typeof gl.getExtension !== 'function' || typeof gl.createProgram !== 'function') {
@@ -79,6 +79,54 @@ export class RayStage {
       return;
     }
     this.gl = gl;
+    this.lost = false;
+
+    // A GPU reset (driver hiccup, laptop sleep, another tab hogging the GPU)
+    // kills the context. Without this the stage would stay black forever;
+    // instead we drop to ok=false so the caller falls back to Canvas2D, then
+    // rebuild everything when the browser hands the context back.
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      this.ok = false;
+      this.lost = true;
+      this.targets = {};
+    });
+    canvas.addEventListener('webglcontextrestored', () => this._recover());
+    // Some browsers never fire webglcontextrestored for a backgrounded page,
+    // so poll as well and rebuild as soon as the driver hands the context back.
+    this._watchdog = setInterval(() => {
+      if (this.lost && this.gl && !this.gl.isContextLost()) this._recover();
+    }, 2000);
+
+    // look/quality state survives a context loss — only GL objects are rebuilt
+    this.w = 0; this.h = 0;
+    this.rw = 0; this.rh = 0;
+    this.targets = {};
+    this.quality = 'high';
+    this.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    this.mode = 0;
+    this.pal = ['#ffb45c', '#ff8a3d', '#fff1d6'].map(hexToRgb);
+    this.sensitivity = 1.4;
+    this.colorPop = 1.0;
+    this.bloomAmount = 0.5;
+    this.bassFocus = 0.5;
+    this.exposure = 0.62;
+    this.t = 0;
+    this.beat = 0;
+    this.frames = 0;
+
+    this._init();
+  }
+
+  _recover() {
+    if (!this.gl || this.gl.isContextLost()) return;
+    this.lost = false;
+    this._init();
+    if (this.ok && this.w) this.resize(this.w, this.h);
+  }
+
+  _init() {
+    const gl = this.gl;
     this.float = !!gl.getExtension('EXT_color_buffer_float');
     gl.getExtension('OES_texture_float_linear');
 
@@ -112,22 +160,10 @@ export class RayStage {
       this.histRow = 0;
       this._histScratch = new Uint8Array(HIST_W);
 
-      this.targets = {};
-      this.w = 0; this.h = 0;
-      this.rw = 0; this.rh = 0;
-      this.quality = 'high';
-      this.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-      this.mode = 0;
-      this.pal = ['#ffb45c', '#ff8a3d', '#fff1d6'].map(hexToRgb);
-      this.sensitivity = 1.4;
-      this.colorPop = 1.0;
-      this.bloomAmount = 0.5;
-      this.bassFocus = 0.5;
-      this.exposure = 0.85;
-      this.t = 0;
-      this.beat = 0;
-      this.frames = 0;
       this._lastKey = '';
+      this.frames = 0;
+      this.targets = {};
+      this.error = null;
       this.ok = true;
     } catch (e) {
       this.error = e.message;

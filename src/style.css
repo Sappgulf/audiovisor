@@ -1791,3 +1791,10 @@ input:focus-visible,
 }
 .stage-canvas.is-live { visibility: visible; }
 #viz-canvas.is-off { visibility: hidden; }
+
+/* control that exists but can't run in this browser (e.g. no WebGL2) */
+.fx-chip.is-disabled {
+  opacity: 0.4;
+  filter: grayscale(0.6);
+}
+.fx-chip.is-disabled:hover { border-color: var(--border); }

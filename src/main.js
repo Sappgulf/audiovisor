@@ -27,6 +27,7 @@ renderer.setTheme(THEMES.find((t) => t.id === 'brass'));
 ray.setTheme(THEMES.find((t) => t.id === 'brass'));
 
 const SETTINGS_KEY = 'audiovisor.settings.v2';
+const RAY_QUALITIES = ['low', 'medium', 'high', 'ultra'];
 
 const state = {
   modeId: 'bars',
@@ -34,7 +35,9 @@ const state = {
   autopilot: false,
   autopilotTimer: null,
   drawerOpen: true,
-  raytrace: true,
+  // what the user asked for, persisted; whether it's actually running is
+  // ray.ok, which can flip on a GPU context loss
+  raytraceWanted: true,
   rayQuality: 'high',
   fx: { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false, widener: false },
 };
@@ -441,7 +444,7 @@ function saveSettings() {
       mode: state.modeId,
       theme: state.themeId,
       autopilot: state.autopilot,
-      raytrace: state.raytrace,
+      raytrace: state.raytraceWanted,
       rayQuality: state.rayQuality,
       fx: state.fx,
       sliders: {
@@ -462,7 +465,7 @@ function loadSettings() {
     const raw = localStorage.getItem(SETTINGS_KEY) || localStorage.getItem('audiovisor.settings.v1');
     if (!raw) return;
     const s = JSON.parse(raw);
-    if (typeof s.raytrace === 'boolean') setRaytrace(s.raytrace, { quiet: true });
+    if (typeof s.raytrace === 'boolean') setRaytrace(s.raytrace, { quiet: true });   // stored intent, not availability
     if (s.rayQuality) setRayQuality(s.rayQuality, { quiet: true });
     if (MODES.some((m) => m.id === s.mode)) setMode(s.mode);
     if (THEMES.some((t) => t.id === s.theme)) setTheme(s.theme);
@@ -1011,7 +1014,7 @@ function downloadBlob(blob, name) {
 }
 
 function liveCanvas() {
-  return state.raytrace && ray.ok ? ray.canvas : renderer.canvas;
+  return state.raytraceWanted && ray.ok ? ray.canvas : renderer.canvas;
 }
 
 function snapshot() {
@@ -1351,6 +1354,7 @@ if (typeof ResizeObserver !== 'undefined') {
 
 /* ---------- render loop ---------- */
 
+let rayDropped = false;
 const frameTimes = [];
 let lastFrameTs = performance.now();
 let _frameErrors = 0;
@@ -1388,7 +1392,15 @@ function frameStep(now) {
     }
   }
 
-  const rtOn = state.raytrace && ray.ok;
+  const rtOn = state.raytraceWanted && ray.ok;
+  // surface a GPU context loss instead of silently swapping renderers
+  if (state.raytraceWanted && !ray.ok && !rayDropped) {
+    rayDropped = true;
+    toast('GPU context lost — <b>Canvas2D stage</b> until it recovers', { duration: 3200 });
+  } else if (rtOn && rayDropped) {
+    rayDropped = false;
+    toast('RAYTRACE <b>recovered</b>', { duration: 1800 });
+  }
   $('shell').style.setProperty('--beat', (rtOn ? ray.beat : renderer.beat).toFixed(3));
 
   if (rtOn) {
@@ -1452,7 +1464,7 @@ function frameStep(now) {
   if (frameTimes.length >= 90) {
     const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
     frameTimes.length = 0;
-    if (state.raytrace && ray.ok) {
+    if (state.raytraceWanted && ray.ok) {
       // raytracing is the expensive path: step the sample budget down a
       // tier when frames get long, back up when there's headroom
       const order = ['low', 'medium', 'high', 'ultra'];
@@ -1507,6 +1519,12 @@ function buildCmds() {
   cmds.push({ label: 'Toggle Fullscreen', action: () => document.getElementById('fullscreen-btn')?.click(), keys: 'fullscreen' });
   cmds.push({ label: 'Snapshot PNG', action: snapshot, keys: 'snapshot' });
   cmds.push({ label: 'Keyboard Shortcuts', action: () => document.getElementById('help-btn')?.click(), keys: 'shortcuts help keys' });
+  cmds.push({ label: 'Toggle Raytrace', action: () => document.getElementById('rt-chip')?.click(), keys: 'raytrace rt gpu renderer' });
+  RAY_QUALITIES.forEach((q) => cmds.push({
+    label: `Raytrace Quality: ${q[0].toUpperCase()}${q.slice(1)}`,
+    action: () => setRayQuality(q),
+    keys: `raytrace quality ${q}`,
+  }));
   ['source', 'look', 'audio', 'studio'].forEach((t) => cmds.push({
     label: `Settings: ${t[0].toUpperCase()}${t.slice(1)} tab`,
     action: () => { if (!state.drawerOpen) document.getElementById('nav-settings')?.click(); document.getElementById(`tab-${t}`)?.click(); },
@@ -1684,19 +1702,18 @@ renderSocial();
 
 /* ---------- raytrace controls ---------- */
 
-const RAY_QUALITIES = ['low', 'medium', 'high', 'ultra'];
 function setRaytrace(on, { quiet = false } = {}) {
-  state.raytrace = on && ray.ok;
+  state.raytraceWanted = on;
   const chip = $('rt-chip');
-  chip?.classList.toggle('is-active', state.raytrace);
-  chip?.setAttribute('aria-pressed', String(state.raytrace));
-  if (state.raytrace) {
+  chip?.classList.toggle('is-active', on);
+  chip?.setAttribute('aria-pressed', String(on));
+  if (on && ray.ok) {
     ray.setMode(state.modeId);
     ray.setTheme(THEMES.find((t) => t.id === state.themeId));
     ray.resize(renderer.w, renderer.h);
   }
   if (!quiet) {
-    toast(state.raytrace ? 'RAYTRACE <b>engaged</b>' : 'Raytrace <b>off</b> — Canvas2D stage', { duration: 1600 });
+    toast(on ? 'RAYTRACE <b>engaged</b>' : 'Raytrace <b>off</b> — Canvas2D stage', { duration: 1600 });
     saveSettings();
   }
 }
@@ -1712,8 +1729,8 @@ function setRayQuality(q, { quiet = false } = {}) {
   }
 }
 $('rt-chip')?.addEventListener('click', () => {
-  if (!ray.ok) { toast('<b>Raytrace unavailable</b> — WebGL2 required', { duration: 2400 }); return; }
-  setRaytrace(!state.raytrace);
+  if (!ray.ok && !ray.lost) { toast('<b>Raytrace unavailable</b> — WebGL2 required', { duration: 2400 }); return; }
+  setRaytrace(!state.raytraceWanted);
 });
 $('rt-quality')?.addEventListener('click', () => {
   const i = (RAY_QUALITIES.indexOf(state.rayQuality) + 1) % RAY_QUALITIES.length;
@@ -1725,7 +1742,7 @@ if (!ray.ok) {
 }
 // re-apply whatever loadSettings() restored (or the defaults) now that the
 // chips exist in the DOM
-setRaytrace(state.raytrace, { quiet: true });
+setRaytrace(state.raytraceWanted, { quiet: true });
 setRayQuality(state.rayQuality, { quiet: true });
 
 

@@ -2108,7 +2108,9 @@ export class Renderer {
       ctx.strokeStyle = hexRgba(this._color(Math.floor(t * 4)), 0.18 + v * 0.32);
       ctx.lineWidth = 1.1 + v * 1.4;
       ctx.beginPath();
-      ctx.ellipse(cx, cy, r + wob, r * 0.38 + wob * 0.18, 0, 0, Math.PI * 2);
+      // wobble can exceed the radius on the innermost ring — a negative
+      // axis throws and kills the whole frame
+      ctx.ellipse(cx, cy, Math.max(0.1, r + wob), Math.max(0.1, r * 0.38 + wob * 0.18), 0, 0, Math.PI * 2);
       ctx.stroke();
     }
     ctx.globalCompositeOperation = 'source-over';
