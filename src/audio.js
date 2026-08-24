@@ -9,8 +9,8 @@ import { SynthFeed } from './synthfeed.js';
  *  - 'mic'      live microphone (analysis-only, no speaker routing)
  *  - 'capture'  system/tab audio capture (analysis-only)
  *  - 'stream'   HTMLMediaElement URLs (radio/podcast/direct links)
- *  - 'spotify'  external DRM playback — visuals driven by a synth feed
- *               unless capture/mic provides real spectrum data
+ *  - 'spotify' / 'apple' external DRM playback — visuals driven by a synth
+ *               feed unless capture/mic provides real spectrum data
  */
 export class AudioEngine {
   constructor() {
@@ -50,7 +50,7 @@ export class AudioEngine {
     this.mode = 'none';
     this.external = null;
     this.synthFile = null;
-    this.synthSpotify = null;
+    this.synthExternal = null;
 
     this.playing = false;
     this.loop = false;
@@ -96,9 +96,17 @@ export class AudioEngine {
   get activeInput() {
     if (this.micActive) return 'mic';
     if (this.captureActive) return 'capture';
-    if (this.mode === 'spotify') return 'spotify';
+    if (this.isExternalMode()) return this.mode;
     if (this.mode === 'stream') return 'stream';
     return this.hasTrack ? 'track' : 'none';
+  }
+
+  isExternalMode() {
+    return this.mode === 'spotify' || this.mode === 'apple';
+  }
+
+  isExternal() {
+    return this.isExternalMode() && !!this.external;
   }
 
   /* ---------- graph ---------- */
@@ -411,7 +419,7 @@ export class AudioEngine {
 
   play() {
     if (this.micActive || this.captureActive) return;
-    if (this.mode === 'spotify') {
+    if (this.isExternal()) {
       this.playing = true;
       if (this.external?.play) this.external.play();
       this._emit();
@@ -435,7 +443,7 @@ export class AudioEngine {
   }
 
   pause() {
-    if (this.mode === 'spotify' && this.playing) {
+    if (this.isExternal() && this.playing) {
       this.playing = false;
       if (this.external?.pause) this.external.pause();
       this._emit();
@@ -462,7 +470,7 @@ export class AudioEngine {
   seek(t) {
     /* onsets are timestamped in song time — a jump invalidates the grid */
     this.beat.reset();
-    if (this.mode === 'spotify') {
+    if (this.isExternal()) {
       if (this.external?.seek) this.external.seek(Math.max(0, t));
       return;
     }
@@ -490,7 +498,7 @@ export class AudioEngine {
   }
 
   prevTrack() {
-    if (this.mode === 'spotify') {
+    if (this.isExternal()) {
       if (this.external?.prev) this.external.prev();
       return;
     }
@@ -504,7 +512,7 @@ export class AudioEngine {
   }
 
   nextTrack() {
-    if (this.mode === 'spotify') {
+    if (this.isExternal()) {
       if (this.external?.next) this.external.next();
       return;
     }
@@ -891,13 +899,13 @@ export class AudioEngine {
     this._emit();
   }
 
-  /* ---------- external transport (e.g. Spotify) ---------- */
+  /* ---------- external transport (Spotify / Apple Music) ---------- */
 
   setExternal(controller) {
     this.external = controller;
     if (controller) {
-      this.synthSpotify = null;
-      this._setMode('spotify');
+      this.synthExternal = null;
+      this._setMode(controller.kind || 'spotify');
       this.playing = controller.isPlaying?.() ?? false;
     } else {
       this._setMode(this.hasTrack ? 'file' : 'none');
@@ -906,13 +914,13 @@ export class AudioEngine {
   }
 
   clearExternalIfIdle() {
-    if (this.mode === 'spotify' && !this.external) {
+    if (this.isExternalMode() && !this.external) {
       this._setMode(this.hasTrack ? 'file' : 'none');
     }
   }
 
   syncExternal() {
-    if (this.mode !== 'spotify' || !this.external) return;
+    if (!this.isExternal()) return;
     const nowPlaying = !!this.external.isPlaying();
     if (nowPlaying !== this.playing) {
       this.playing = nowPlaying;
@@ -923,7 +931,7 @@ export class AudioEngine {
   /* ---------- time ---------- */
 
   getTime() {
-    if (this.mode === 'spotify' && this.external) return this.external.getTime();
+    if (this.isExternal()) return this.external.getTime();
     if (this.mode === 'stream') {
       if (!this.mediaEl) return 0;
       return Number.isFinite(this.mediaEl.duration) ? this.mediaEl.currentTime : 0;
@@ -935,7 +943,7 @@ export class AudioEngine {
   }
 
   getDuration() {
-    if (this.mode === 'spotify' && this.external) return this.external.getDuration();
+    if (this.isExternal()) return this.external.getDuration();
     if (this.mode === 'stream') {
       const d = this.mediaEl?.duration;
       return Number.isFinite(d) ? d : 0;
@@ -957,15 +965,15 @@ export class AudioEngine {
       this.tapAnalyser.getByteTimeDomainData(this.tapWave);
       return { freq: this.tapFreq, wave: this.tapWave };
     }
-    if (this.mode === 'spotify') {
-      if (!this.synthSpotify) {
-        this.synthSpotify = new SynthFeed(
+    if (this.isExternalMode()) {
+      if (!this.synthExternal) {
+        this.synthExternal = new SynthFeed(
           this.external?.seed ? this.external.seed : 'spotify',
         );
       }
-      if (this.playing) this.synthSpotify.tick(this.getTime());
-      else this.synthSpotify.clear();
-      return this.synthSpotify.getData();
+      if (this.playing) this.synthExternal.tick(this.getTime());
+      else this.synthExternal.clear();
+      return this.synthExternal.getData();
     }
     if (this.mode === 'stream' && this.streamNoTap) {
       if (!this.synthFile) {

@@ -403,7 +403,7 @@ function setTheme(id) {
   ray.setTheme(THEMES.find((t) => t.id === id));
   [...themeRow.children].forEach((c, i) => c.classList.toggle('is-active', THEMES[i].id === id));
   updateFavicon();
-  if (engine.track && engine.mode !== 'spotify') {
+  if (engine.track && !engine.isExternalMode()) {
     if (trackArtEl) trackArtEl._artName = null;
     updateTrackUI();
   }
@@ -619,7 +619,7 @@ async function renderLibrary() {
     if (!rec) return;
     if (engine.captureActive) await engine.toggleCapture();
     if (engine.micActive) await engine.toggleMic();
-    if (engine.mode === 'spotify') engine.pause();
+    if (engine.isExternal()) engine.pause();
     engine.stopStream();
     // reconstruct file-like for engine
     const blob = new Blob([rec.arrayBuffer]);
@@ -695,15 +695,16 @@ const trackArtEl = $('track-art');
 function updateTrackUI() {
   const input = engine.activeInput;
 
-  if (input === 'spotify' && connect.client.track) {
-    const t = connect.client.track;
+  if ((input === 'spotify' || input === 'apple') && connect.currentTrack) {
+    const t = connect.currentTrack;
     $('track-name').textContent = t.name;
-    $('track-spec').textContent = `${t.artists} · SPOTIFY`;
-    $('time-total').textContent = fmtTime(t.durationMs / 1000);
-    trackArtEl.innerHTML = spotifyArtwork
-      ? `<img class="track-art-img" src="${spotifyArtwork}" alt="" />`
-      : '<span class="ic" data-icon="spotify"></span>';
-    if (spotifyArtwork == null) setIcon(trackArtEl.querySelector('.ic'), 'spotify');
+    $('track-spec').textContent = `${t.artists} · ${t.kind}`;
+    $('time-total').textContent = fmtTime(t.duration);
+    const icon = t.provider === 'apple' ? 'music2' : 'spotify';
+    trackArtEl.innerHTML = t.artwork
+      ? `<img class="track-art-img" src="${t.artwork}" alt="" />`
+      : `<span class="ic" data-icon="${icon}"></span>`;
+    if (!t.artwork) setIcon(trackArtEl.querySelector('.ic'), icon);
   } else if (input === 'stream' && engine.streamTrack) {
     $('track-name').textContent = engine.streamTrack.name;
     $('track-spec').textContent = `LIVE STREAM · ${engine.streamTrack.ext}`;
@@ -758,6 +759,7 @@ function refreshStatus() {
     case 'mic': text = playing || engine.micActive ? 'Engine: Live · MIC' : 'Engine: MIC'; break;
     case 'capture': text = 'Engine: Live · CAPTURE'; break;
     case 'spotify': text = playing ? 'SPOTIFY · Live' : 'SPOTIFY · Paused'; break;
+    case 'apple': text = playing ? 'APPLE MUSIC · Live' : 'APPLE MUSIC · Paused'; break;
     case 'stream': text = playing ? 'STREAM · Live' : 'STREAM · Paused'; break;
     case 'track': text = playing ? 'Engine: Live' : 'Engine: Paused'; break;
   }
@@ -786,19 +788,12 @@ engine.onQueueChange = () => {
   if (!queuePanel.classList.contains('is-hidden')) renderQueue();
 };
 
-/* ---------- spotify connect panel ---------- */
+/* ---------- music account connect panel ---------- */
 
-let spotifyArtwork = null;
 const connect = new ConnectPanel($('connect-root'), {
   engine,
   toast,
-  onSpotifyTrack: async (info) => {
-    if (!info) {
-      spotifyArtwork = null;
-      updateTrackUI();
-      return;
-    }
-    spotifyArtwork = info.artwork || null;
+  onExternalTrack: async () => {
     updateTrackUI();
   },
 });
@@ -883,7 +878,7 @@ async function loadFiles(files) {
     return;
   }
   if (engine.captureActive) await engine.toggleCapture();
-  if (engine.mode === 'spotify') engine.pause();
+  if (engine.isExternal()) engine.pause();
   engine.stopStream();
   $('status-text').textContent = 'Engine: Decoding';
   try {
@@ -938,6 +933,9 @@ function openFilePicker() {
 $('add-btn')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFilePicker(); }
 });
+$('browse-label')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFilePicker(); }
+});
 $('add-more-btn')?.addEventListener('click', () => { closeMore(); openFilePicker(); });
 $('stage').addEventListener('click', (e) => {
   // clicking the empty stage is a shortcut for "add files"; once a track is
@@ -969,13 +967,13 @@ async function updateMediaSession() {
   if (!('mediaSession' in navigator)) return;
   try {
     const input = engine.activeInput;
-    if (input === 'spotify' && connect.client.track) {
-      const t = connect.client.track;
-      const artwork = spotifyArtwork ? [{ src: spotifyArtwork, sizes: '640x640', type: 'image/jpeg' }] : [];
+    if ((input === 'spotify' || input === 'apple') && connect.currentTrack) {
+      const t = connect.currentTrack;
+      const artwork = t.artwork ? [{ src: t.artwork, sizes: '640x640', type: 'image/jpeg' }] : [];
       navigator.mediaSession.metadata = new MediaMetadata({
         title: t.name,
         artist: t.artists,
-        album: 'Spotify · AUDIOVISOR',
+        album: `${t.album} · AUDIOVISOR`,
         artwork,
       });
     } else if (input === 'stream' && engine.streamTrack) {
@@ -1208,12 +1206,20 @@ $('mic-btn').addEventListener('click', async () => {
 /* ---------- nav ---------- */
 
 const aboutPanel = document.createElement('div');
+aboutPanel.id = 'about-panel';
 aboutPanel.className = 'about-panel';
+aboutPanel.setAttribute('role', 'dialog');
+aboutPanel.setAttribute('aria-modal', 'true');
+aboutPanel.setAttribute('aria-hidden', 'true');
+aboutPanel.setAttribute('aria-labelledby', 'about-title');
+aboutPanel.setAttribute('aria-describedby', 'about-description');
+aboutPanel.tabIndex = -1;
 aboutPanel.innerHTML = `
   <div class="about-card">
-    <h2>AUDIOVISOR</h2>
+    <button class="about-close" type="button" aria-label="Close About">×</button>
+    <h2 id="about-title">AUDIOVISOR</h2>
     <div class="about-tag mono">Real-time audio visualizer</div>
-    <p>Drop in a track, stream a URL, capture any app's audio or connect your
+    <p id="about-description">Drop in a track, stream a URL, capture any app's audio or connect your
     Spotify account — twenty-two stage modes, twenty-five theme moods, a full
     FX chain and a beat tracker, all rendered live.</p>
     <div class="about-keys">
@@ -1232,19 +1238,64 @@ aboutPanel.innerHTML = `
     </div>
   </div>`;
 $('shell').appendChild(aboutPanel);
+aboutPanel.inert = true;
 
+const aboutClose = aboutPanel.querySelector('.about-close');
+let aboutReturnFocus = null;
+function setAboutOpen(open) {
+  aboutPanel.classList.toggle('is-open', open);
+  $('nav-about').setAttribute('aria-expanded', String(open));
+  if (open) {
+    aboutPanel.inert = false;
+    aboutPanel.setAttribute('aria-hidden', 'false');
+    aboutReturnFocus = document.activeElement;
+    requestAnimationFrame(() => aboutClose?.focus());
+  } else {
+    const restore = aboutReturnFocus;
+    aboutReturnFocus = null;
+    if (aboutPanel.contains(document.activeElement)) document.activeElement.blur();
+    aboutPanel.inert = true;
+    aboutPanel.setAttribute('aria-hidden', 'true');
+    restore?.focus?.();
+  }
+}
 $('nav-about').addEventListener('click', () => {
-  aboutPanel.classList.toggle('is-open');
+  setAboutOpen(!aboutPanel.classList.contains('is-open'));
 });
 aboutPanel.addEventListener('click', (e) => {
-  if (e.target === aboutPanel) aboutPanel.classList.remove('is-open');
+  if (e.target === aboutPanel) setAboutOpen(false);
+});
+aboutClose?.addEventListener('click', () => setAboutOpen(false));
+aboutPanel.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    setAboutOpen(false);
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const focusable = [...aboutPanel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')];
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
 });
 
 const drawer = $('drawer');
 function syncDrawerA11y() {
+  if (!state.drawerOpen && drawer.contains(document.activeElement)) document.activeElement.blur();
   $('nav-settings').setAttribute('aria-expanded', String(state.drawerOpen));
   $('drawer-toggle')?.setAttribute('aria-expanded', String(state.drawerOpen));
   drawer.setAttribute('aria-hidden', String(!state.drawerOpen));
+  drawer.inert = !state.drawerOpen;
+  $('shell').classList.toggle('drawer-open', state.drawerOpen);
+  const transport = document.querySelector('.transport');
+  if (transport) transport.inert = state.drawerOpen && window.innerWidth <= 640;
 }
 function toggleDrawer() {
   state.drawerOpen = !state.drawerOpen;
@@ -1324,7 +1375,7 @@ window.addEventListener('keydown', (e) => {
     case 'Escape': {
       if (!queuePanel.classList.contains('is-hidden')) toggleQueue(false);
       if (!libraryPanel.classList.contains('is-hidden')) toggleLibrary(false);
-      if (aboutPanel.classList.contains('is-open')) aboutPanel.classList.remove('is-open');
+      if (aboutPanel.classList.contains('is-open')) setAboutOpen(false);
       break;
     }
   }
@@ -1660,14 +1711,22 @@ function buildCmds() {
   return cmds;
 }
 let allCmds = buildCmds();
+let cmdReturnFocus = null;
 function renderCmds(filter = '') {
   const q = filter.toLowerCase();
   const filtered = q ? allCmds.filter(c => c.label.toLowerCase().includes(q) || c.keys.includes(q)) : allCmds.slice(0, 12);
   cmdList.innerHTML = filtered.map((c, i) => `<div class="cmd-item ${i===cmdActive?'is-active':''}" data-i="${i}"><span>${c.label}</span><kbd>↵</kbd></div>`).join('') || '<div style="padding:12px; font-size:11px; color:var(--text-40)">No matches</div>';
   cmdList.querySelectorAll('.cmd-item').forEach(el => el.addEventListener('click', () => { const c = filtered[Number(el.dataset.i)]; if (c) { c.action(); closeCmd(); }}));
 }
-function openCmd() { cmdPalette.classList.remove('is-hidden'); cmdInput.value = ''; cmdActive = 0; renderCmds(''); cmdInput.focus(); }
-function closeCmd() { cmdPalette.classList.add('is-hidden'); }
+function openCmd() { cmdReturnFocus = document.activeElement; cmdPalette.classList.remove('is-hidden'); cmdPalette.setAttribute('aria-hidden', 'false'); cmdInput.value = ''; cmdActive = 0; renderCmds(''); cmdInput.focus(); }
+function closeCmd() {
+  if (cmdPalette.contains(document.activeElement)) document.activeElement.blur();
+  cmdPalette.classList.add('is-hidden');
+  cmdPalette.setAttribute('aria-hidden', 'true');
+  const restore = cmdReturnFocus;
+  cmdReturnFocus = null;
+  restore?.focus?.();
+}
 cmdPalette?.addEventListener('click', (e) => { if (e.target === cmdPalette) closeCmd(); });
 cmdInput?.addEventListener('input', () => { cmdActive = 0; renderCmds(cmdInput.value); });
 cmdInput?.addEventListener('keydown', (e) => {
@@ -1975,6 +2034,7 @@ const SHORTCUTS = [
 ];
 const shortcutsOverlay = document.getElementById('shortcuts-overlay');
 const shortcutsGrid = document.getElementById('shortcuts-grid');
+let shortcutsReturnFocus = null;
 if (shortcutsGrid) {
   shortcutsGrid.innerHTML = SHORTCUTS.map(([group, rows]) =>
     `<div class="shortcuts-group">${group}</div>` +
@@ -1985,8 +2045,16 @@ function toggleShortcuts(force) {
   if (!shortcutsOverlay) return;
   const hidden = shortcutsOverlay.classList.contains('is-hidden');
   const open = force === undefined ? hidden : force;
+  if (open) shortcutsReturnFocus = document.activeElement;
+  else if (shortcutsOverlay.contains(document.activeElement)) document.activeElement.blur();
   shortcutsOverlay.classList.toggle('is-hidden', !open);
+  shortcutsOverlay.setAttribute('aria-hidden', String(!open));
   if (open) document.getElementById('shortcuts-close')?.focus();
+  else {
+    const restore = shortcutsReturnFocus;
+    shortcutsReturnFocus = null;
+    restore?.focus?.();
+  }
 }
 document.getElementById('help-btn')?.addEventListener('click', () => toggleShortcuts());
 document.getElementById('shortcuts-close')?.addEventListener('click', () => toggleShortcuts(false));

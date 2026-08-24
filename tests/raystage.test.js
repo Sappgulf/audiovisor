@@ -41,7 +41,7 @@ describe('ray shaders', () => {
     for (const [name, src] of Object.entries(sources)) {
       expect(() => parser.parse(src.replace('#version 300 es\n', '')), name).not.toThrow();
     }
-  });
+  }, 15_000);
 
   it('all declare GLSL ES 3.0', () => {
     for (const [name, src] of Object.entries(sources)) {

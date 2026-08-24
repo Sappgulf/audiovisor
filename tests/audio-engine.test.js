@@ -123,6 +123,32 @@ describe('AudioEngine', () => {
     expect(engine.track.duration).toBe(100);
   });
 
+  it('routes Apple Music through the external transport contract', () => {
+    const calls = [];
+    engine.setExternal({
+      kind: 'apple',
+      seed: 'apple-track',
+      isPlaying: () => true,
+      getTime: () => 12,
+      getDuration: () => 180,
+      play: () => calls.push('play'),
+      pause: () => calls.push('pause'),
+      seek: (value) => calls.push(['seek', value]),
+      next: () => calls.push('next'),
+      prev: () => calls.push('prev'),
+    });
+
+    expect(engine.activeInput).toBe('apple');
+    expect(engine.getTime()).toBe(12);
+    expect(engine.getDuration()).toBe(180);
+    engine.play();
+    engine.pause();
+    engine.seek(24);
+    engine.nextTrack();
+    engine.prevTrack();
+    expect(calls).toEqual(['play', 'pause', ['seek', 24], 'next', 'prev']);
+  });
+
   it('play starts a source at current offset and marks playing', async () => {
     await engine.addToQueue([makeFile()]);
     engine.play();

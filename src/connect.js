@@ -1,14 +1,15 @@
 import { setIcon } from './icons.js';
 import { fmtTime } from './utils.js';
 import { SpotifyClient, storedClientId, redirectUri } from './spotify.js';
+import { AppleMusicClient } from './applemusic.js';
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (ch) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 /**
- * Drawer "Connect" panel: Spotify account link (PKCE OAuth + Web Playback
- * SDK), system/tab-audio capture toggle and direct URL streaming.
+ * Drawer "Connect" panel: Spotify (PKCE OAuth + Web Playback SDK) and Apple
+ * Music (MusicKit) account links, system/tab-audio capture, and direct URLs.
  */
 export class ConnectPanel {
   /**
@@ -16,21 +17,24 @@ export class ConnectPanel {
    * @param {object} deps
    * @param {import('./audio.js').AudioEngine} deps.engine
    * @param {(msg:string, opts?:object)=>void} deps.toast
-   * @param {(info:object|null)=>void} [deps.onSpotifyTrack]
-   */
-  constructor(root, { engine, toast, onSpotifyTrack }) {
+   * @param {(info:object|null)=>void} [deps.onExternalTrack]
+   * @param {(info:object|null)=>void} [deps.onSpotifyTrack] backwards-compatible alias
+  */
+  constructor(root, { engine, toast, onExternalTrack, onSpotifyTrack }) {
     this.root = root;
     this.engine = engine;
     this.toast = toast;
-    this.onSpotifyTrack = onSpotifyTrack || (() => {});
+    this.onExternalTrack = onExternalTrack || onSpotifyTrack || (() => {});
 
     this.client = new SpotifyClient();
+    this.apple = new AppleMusicClient();
+    this.currentTrack = null;
     this.client.onError = (msg) => toast(`<b>Spotify</b> — ${esc(msg)}`, { duration: 3600 });
     this.client.onAuthChange = () => this.render();
     this.client.onTrackChange = async (track) => {
       this.engine.setExternal(this.makeController());
       const artwork = await this.client.artworkFor(track);
-      this.onSpotifyTrack({
+      this.setCurrentTrack({
         name: track.name,
         artists: track.artists,
         duration: track.durationMs / 1000,
@@ -40,12 +44,35 @@ export class ConnectPanel {
       });
     };
 
+    this.apple.onAuthChange = () => this.render();
+    this.apple.onTrackChange = (track) => {
+      if (!track) {
+        if (this.currentTrack?.provider === 'apple') this.setCurrentTrack(null);
+        return;
+      }
+      this.engine.setExternal(this.makeAppleController());
+      this.setCurrentTrack({
+        provider: 'apple',
+        name: track.name,
+        artists: track.artists,
+        duration: track.durationMs / 1000,
+        artwork: track.artwork,
+        album: 'Apple Music',
+        kind: 'APPLE MUSIC',
+      });
+    };
+
     this.deviceReady = false;
     this.searchTimer = null;
     this.lastResults = [];
 
     this.render();
     this.wireEngineEvents();
+  }
+
+  setCurrentTrack(info) {
+    this.currentTrack = info ? { provider: info.provider || 'spotify', ...info } : null;
+    this.onExternalTrack(this.currentTrack);
   }
 
   /* ---------- boot ---------- */
@@ -67,17 +94,44 @@ export class ConnectPanel {
     } catch (err) {
       console.error(err);
     }
+    try {
+      await this.apple.boot();
+    } catch (err) {
+      /* Apple Music is optional. Keep the provider card visible with setup
+         guidance instead of failing the rest of Connect boot. */
+      if (this.apple.configured) console.warn('Apple Music unavailable:', err.message || err);
+    }
+    this.render();
   }
 
   makeController() {
     const c = this.client;
     return {
+      kind: 'spotify',
       seed: c.track?.id || 'spotify',
       title: c.track?.name || '',
       isPlaying: () => !!c.track && !c.paused,
       getTime: () => c.getPositionMs() / 1000,
       getDuration: () => (c.track?.durationMs || 0) / 1000,
       play: () => c.resume(),
+      pause: () => c.pause(),
+      seek: (sec) => c.seek(Math.max(0, sec * 1000)),
+      next: () => c.next(),
+      prev: () => c.prev(),
+      setVolume: (v) => c.setVolume(v),
+    };
+  }
+
+  makeAppleController() {
+    const c = this.apple;
+    return {
+      kind: 'apple',
+      seed: c.track?.id || 'apple-music',
+      title: c.track?.name || '',
+      isPlaying: () => c.isPlaying(),
+      getTime: () => c.getPositionMs() / 1000,
+      getDuration: () => c.getDurationMs() / 1000,
+      play: () => c.play(),
       pause: () => c.pause(),
       seek: (sec) => c.seek(Math.max(0, sec * 1000)),
       next: () => c.next(),
@@ -183,7 +237,52 @@ export class ConnectPanel {
     this.root.appendChild(sp);
     sp.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
 
+    /* --- apple music block --- */
+    const am = document.createElement('div');
+    am.className = 'spotify-block apple-block';
+    const appleAuthed = this.apple.authed;
+    const appleConfigured = this.apple.configured;
+    if (!appleAuthed) {
+      am.innerHTML = `
+        <div class="sp-head">
+          <span class="ic ic-lime" data-icon="music2"></span>
+          <span class="sp-title">Apple Music</span>
+        </div>
+        <p class="sp-note">Connect your Apple Music account to browse personal playlists in AUDIOVISOR.</p>
+        <details class="sp-help">
+          <summary class="mono">SETUP</summary>
+          <ol>
+            <li>Create a <i>MusicKit on the Web</i> key in Apple Developer</li>
+            <li>Generate a signed developer token and expose it as <code>VITE_APPLE_MUSIC_DEVELOPER_TOKEN</code></li>
+            <li>Rebuild the app, then authorize Apple Music here</li>
+          </ol>
+        </details>
+        <button class="lime-btn-sm apple-connect" id="am-connect" ${appleConfigured ? '' : 'disabled'}>
+          ${appleConfigured ? 'Connect Apple Music' : 'Developer token required'}
+        </button>`;
+    } else {
+      am.innerHTML = `
+        <div class="sp-head">
+          <span class="ic ic-lime" data-icon="music2"></span>
+          <span class="sp-title">Apple Music</span>
+          <span class="sp-badge mono">CONNECTED</span>
+          <button class="icon-x" id="am-disconnect" title="Disconnect"><span class="ic ic-sm" data-icon="close"></span></button>
+        </div>
+        <div class="sp-profile mono">
+          <span class="sp-avatar apple-avatar">♪</span>
+          <span class="sp-name">Apple Music library</span>
+          <span class="sp-dev dot-ok">MUSIC KIT LIVE</span>
+        </div>
+        <div class="sp-actions">
+          <select class="mini-select mono" id="am-playlists"><option value="">Playlists…</option></select>
+        </div>
+        <p class="sp-note"><b>Playlist playback:</b> Apple Music keeps the protected stream in its player. Use <b>Capture</b> for the live spectrum.</p>`;
+    }
+    this.root.appendChild(am);
+    am.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
+
     this.bind(sources, urlRow, sp);
+    this.bindApple(am);
     this.syncChips();
   }
 
@@ -216,7 +315,7 @@ export class ConnectPanel {
       } catch {}
       this.engine.playUrl(url, { name }).then(() => {
         this.toast(`Streaming <b>${esc(name)}</b>`);
-        this.onSpotifyTrack(null);
+        this.setCurrentTrack(null);
       });
     };
     sources.querySelector('#chip-url').addEventListener('click', () => {
@@ -250,7 +349,7 @@ export class ConnectPanel {
       this.client.logout();
       this.deviceReady = false;
       this.engine.setExternal(null);
-      this.onSpotifyTrack(null);
+      if (this.currentTrack?.provider === 'spotify') this.setCurrentTrack(null);
       this.render();
       this.toast('Spotify <b>disconnected</b>', { duration: 1600 });
     });
@@ -359,6 +458,73 @@ export class ConnectPanel {
       this.toast(`▶ Playlist <b>${esc(label)}</b>`, { duration: 2000 });
     } catch (err) {
       this.toast(`<b>Playback failed</b> — ${esc(err.message)}`, { duration: 3400 });
+    }
+  }
+
+  bindApple(am) {
+    const connect = am.querySelector('#am-connect');
+    if (connect) {
+      connect.addEventListener('click', async () => {
+        connect.disabled = true;
+        connect.textContent = 'Opening Apple Music…';
+        try {
+          await this.apple.login();
+          this.toast('Apple Music <b>connected</b>', { duration: 1800 });
+          this.render();
+          this.loadApplePlaylists();
+        } catch (err) {
+          connect.disabled = false;
+          connect.textContent = 'Connect Apple Music';
+          this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3600 });
+        }
+      });
+      return;
+    }
+
+    am.querySelector('#am-disconnect')?.addEventListener('click', async () => {
+      try { await this.apple.logout(); } catch (err) { console.warn(err); }
+      if (this.engine.mode === 'apple') this.engine.setExternal(null);
+      if (this.currentTrack?.provider === 'apple') this.setCurrentTrack(null);
+      this.render();
+      this.toast('Apple Music <b>disconnected</b>', { duration: 1600 });
+    });
+
+    const playlists = am.querySelector('#am-playlists');
+    if (!playlists) return;
+    this.loadApplePlaylists(playlists);
+    playlists.addEventListener('change', async () => {
+      const id = playlists.value;
+      if (!id) return;
+      try {
+        await this.apple.playPlaylist(id);
+        this.engine.setExternal(this.makeAppleController());
+        this.toast(`▶ Apple playlist <b>${esc(playlists.selectedOptions[0].textContent)}</b>`, { duration: 2200 });
+      } catch (err) {
+        this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3400 });
+      }
+    });
+  }
+
+  async loadApplePlaylists(select = this.root.querySelector('#am-playlists')) {
+    if (!select) return;
+    select.disabled = true;
+    try {
+      const playlists = await this.apple.playlists();
+      select.innerHTML = '<option value="">Playlists…</option>';
+      for (const playlist of playlists) {
+        const option = document.createElement('option');
+        option.value = playlist.id;
+        option.textContent = playlist.trackCount
+          ? `${playlist.name} · ${playlist.trackCount}`
+          : playlist.name;
+        select.appendChild(option);
+      }
+      if (!playlists.length) select.innerHTML = '<option value="">No playlists found</option>';
+    } catch (err) {
+      select.innerHTML = '<option value="">Could not load playlists</option>';
+      if (this.apple.authed) this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3200 });
+    } finally {
+      select.disabled = false;
     }
   }
 

@@ -1,12 +1,13 @@
 # AUDIOVISOR — v8.9.4
 
-A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across twenty-two stage modes, twenty-five themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
+A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect Spotify / Apple Music — the engine renders the frequency spectrum live across twenty-two stage modes, twenty-five themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
 
 ## Features
 
 ### Sources
 - **Local files** — drag & drop, the **Add** control in the transport, or **Browse files** on the stage (MP3, WAV, FLAC, OGG, M4A…); multi-select builds a playlist queue
 - **Spotify Connect** — log in with PKCE OAuth, search your library, play tracks/playlists through the built-in Web Playback SDK player *(Premium required for playback)*
+- **Apple Music** — authorize with MusicKit on the Web, browse personal playlists, and start playback in Apple Music's protected player *(Apple Music subscription required for playback)*
 - **Tab / system capture** — visualize audio from *any* app: Spotify desktop, Apple Music, YouTube, anything playing on your machine (Chrome/Edge; share a tab with "share tab audio" enabled)
 - **Direct URLs** — stream any `http(s)` audio link (radio, podcasts, direct MP3s)
 - **Live mic input** — party mode; analysis-only (never routed to speakers, no feedback)
@@ -106,6 +107,20 @@ Optionally bake in a default Client ID at build time:
 ```bash
 VITE_SPOTIFY_CLIENT_ID=your_client_id npm run build
 ```
+
+## Apple Music setup
+
+1. Create a MusicKit on the Web key in [Apple Developer](https://developer.apple.com/account/resources/authkeys/list)
+2. Generate a signed Apple Music developer token for this app's origin. The signing private key must stay on a server or secure build system; only the signed token is exposed to the browser
+3. Copy `.env.example` to `.env.local` and set:
+
+```bash
+VITE_APPLE_MUSIC_DEVELOPER_TOKEN=your_signed_developer_token
+```
+
+4. Restart the dev server or rebuild, then open Settings → Source → Apple Music → **Connect Apple Music**
+
+The Connect panel reads the signed token at build time, then MusicKit handles Apple authorization and the user music token. Playlist playback stays inside MusicKit; use **Capture** and share the current tab when you want the actual protected audio spectrum instead of AUDIOVISOR's synth fallback.
 
 ## Keyboard
 

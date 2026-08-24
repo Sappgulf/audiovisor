@@ -14,6 +14,7 @@
   <meta property="og:image" content="/og.png" />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary_large_image" />
+  <script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js" async></script>
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -35,7 +36,7 @@
           <div class="nav-sep" aria-hidden="true"></div>
           <button class="nav-link" data-nav="settings" id="nav-settings" aria-expanded="true" aria-controls="drawer">Settings</button>
           <div class="nav-sep" aria-hidden="true"></div>
-          <button class="nav-link" data-nav="about" id="nav-about">About</button>
+          <button class="nav-link" data-nav="about" id="nav-about" aria-haspopup="dialog" aria-expanded="false">About</button>
         </nav>
 
         <div class="topbar-right">
@@ -89,7 +90,7 @@
               <div class="drop-icon-circle"><span class="ic" data-icon="music"></span></div>
               <p class="mono drop-title">Drag &amp; Drop Audio to Begin</p>
               <p class="drop-sub">MP3, WAV, FLAC, OGG — or connect Spotify / capture any app / stream a URL</p>
-              <label class="browse-btn" for="file-input" id="browse-label">Browse files</label>
+              <label class="browse-btn" for="file-input" id="browse-label" role="button" tabindex="0" aria-label="Browse audio files">Browse files</label>
             </div>
           </div>
 
@@ -287,7 +288,7 @@
       </footer>
     </div>
 
-    <div id="shortcuts-overlay" class="cmd-palette is-hidden" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+    <div id="shortcuts-overlay" class="cmd-palette is-hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Keyboard shortcuts">
       <div class="cmd-box shortcuts-box">
         <div class="shortcuts-head">
           <span class="shortcuts-title">Keyboard Shortcuts</span>
@@ -296,7 +297,7 @@
         <div class="shortcuts-grid" id="shortcuts-grid"></div>
       </div>
     </div>
-    <div id="cmd-palette" class="cmd-palette is-hidden" role="dialog" aria-label="Command palette">
+    <div id="cmd-palette" class="cmd-palette is-hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Command palette">
       <div class="cmd-box">
         <input id="cmd-input" class="cmd-input" placeholder="Type a command… (e.g. bars, brass, reverb)" autocomplete="off" />
         <div id="cmd-list" class="cmd-list"></div>
