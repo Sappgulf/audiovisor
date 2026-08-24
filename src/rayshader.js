@@ -272,8 +272,9 @@ float scTerrain(vec3 p) {
   float age = clamp((p.z + 2.0) / 16.0, 0.0, 1.0);
   float e = hist(u, age);
   float e2 = pow(e, 1.4) * uSens;
-  float ridge = 2.0 * e2 / (1.0 + 0.8 * e2);       // knee: peaks flatten, never wall off
-  ridge += fbm(vec3(p.x * 0.32, 0.0, p.z * 0.32 + uTime * 0.05)) * 0.5;
+  float ridge = 3.0 * e2 / (1.0 + 0.7 * e2);       // knee: peaks flatten, never wall off
+  ridge += fbm(vec3(p.x * 0.55, 0.0, p.z * 0.55 + uTime * 0.05)) * 0.9;
+  ridge += fbm(vec3(p.x * 1.7, 3.1, p.z * 1.7)) * 0.28;      // crest detail
   float d = (p.y + 1.2 - ridge) * 0.34;            // conservative slope for the heightfield march
   g_id = 7.0; g_aux = clamp(ridge * 0.4, 0.0, 1.0);
   return d;
@@ -339,7 +340,7 @@ float scTensor(vec3 p) {
   float rz = length(lp.xy) - 0.016;
   float d = min(rx, min(ry, rz));
   g_id = 6.0; g_aux = 0.3;
-  float node = sdSphere(lp, 0.045 + e * 0.075 * uSens + uBeat * 0.02);
+  float node = sdSphere(lp, 0.03 + e * 0.055 * uSens + uBeat * 0.015);
   if (node < d) { d = node; g_id = 4.0; g_aux = e; }
   d = max(d, length(p) - 3.4);          // lattice reads as a core, not a wall
   return d;
@@ -553,7 +554,7 @@ Mat matOf(float id, float aux, vec3 p) {
   } else if (id < 12.5) {               // event horizon — swallows everything
     m.alb = vec3(0.0); m.rough = 1.0; m.metal = 0.0; m.emis = vec3(0.0);
   } else if (id < 13.5) {               // fractal shell
-    vec3 cc = palf(fract(aux * 2.4 + uTime * 0.03));
+    vec3 cc = palf(fract(aux * 3.2 + 0.15 * sin(p.y * 2.0) + uTime * 0.03));
     m.alb = cc * (0.35 + 0.5 * (1.0 - aux));
     m.rough = 0.22 + aux * 0.2; m.metal = 0.8;
     m.emis = cc * (0.15 + pow(1.0 - aux, 2.0) * 0.9 + uBeat * 0.35);
@@ -594,7 +595,7 @@ Mat matOf(float id, float aux, vec3 p) {
   if (uMode == 3)  gain = 0.45;   // particles
   if (uMode == 5)  gain = 0.55;   // spectro terrace
   if (uMode == 6)  gain = 0.55;   // tunnel
-  if (uMode == 14) gain = 0.22;   // tensor lattice
+  if (uMode == 14) gain = 0.5;    // tensor lattice
   if (uMode == 17) gain = 0.35;   // bloom field
   if (uMode == 9)  gain = 0.70;   // city
   if (uMode == 13) gain = 1.6;    // fluid
@@ -632,7 +633,7 @@ vec3 envBase(vec3 rd) {
   if (uMode == 8) {
     // dusk wash + aurora ribbon over the ridges
     sky += palf(0.2) * 0.05 * pow(clamp(rd.y * 1.6 + 0.2, 0.0, 1.0), 1.5);
-    float band = exp(-pow((rd.y - 0.14) * 7.0, 2.0));
+    float band = exp(-pow((rd.y - 0.26) * 6.0, 2.0));
     float ripple = 0.45 + 0.55 * sin(rd.x * 7.0 + uTime * 0.5) * sin(rd.x * 3.0 - uTime * 0.3);
     sky += palf(0.7) * band * ripple * (0.3 + uLevel * 0.55);
     sky += starField(rd) * 0.5;
@@ -737,11 +738,13 @@ float volDensity(vec3 p) {
     vec3 q = p;
     q.xz *= rot(uTime * 0.05);
     float disc = exp(-abs(q.y * 1.9) * 1.6);
-    float f = fbm(q * 0.55 + vec3(0.0, uTime * 0.03, uTime * 0.02));
-    float arms = 0.55 + 0.45 * sin(atan2s(q.z, q.x) * 2.0 + length(q.xz) * 1.4);
-    float d = disc * f * arms;
-    d *= smoothstep(4.2, 1.2, length(q));
-    return max(0.0, d - 0.06) * (3.4 + uLevel * 3.0);
+    float f = fbm(q * 0.9 + vec3(0.0, uTime * 0.03, uTime * 0.02));
+    f = f * f * 1.6;                                    // more contrast between wisps
+    float arms = 0.5 + 0.5 * sin(atan2s(q.z, q.x) * 2.0 + length(q.xz) * 1.9);
+    float d = disc * f * (0.35 + arms);
+    d += 0.5 * exp(-length(q) * 1.6) * (1.0 + uBass);   // hot core
+    d *= smoothstep(4.6, 0.8, length(q));
+    return max(0.0, d - 0.05) * (3.2 + uLevel * 2.6);
   }
   if (uMode == 11) {                        // spiral galaxy
     vec3 q = p;
@@ -760,12 +763,12 @@ float volDensity(vec3 p) {
   for (int i = 0; i < 5; i++) {
     float fi = float(i);
     float ph = uTime * (0.25 + fi * 0.07) + fi * 2.1;
-    vec3 c = vec3(sin(ph * 0.7) * 0.5, sin(ph) * 1.25, cos(ph * 0.6) * 0.5);
-    float rr = 0.34 + spec(fi / 5.0) * 0.26 * uSens + uBass * 0.1;
+    vec3 c = vec3(sin(ph * 0.7) * 0.42, sin(ph) * 1.45, cos(ph * 0.6) * 0.42);
+    float rr = 0.46 + spec(fi / 5.0) * 0.3 * uSens + uBass * 0.14;
     float s = length(q - c) - rr;
     d = (i == 0) ? s : smin(d, s, 0.3);
   }
-  float cyl = sdCyl(q, 1.9, 1.0);
+  float cyl = sdCyl(q, 2.1, 1.15);
   return max(0.0, -d * 1.1) * step(cyl, 0.0) * (0.9 + uBass * 0.7);
 }
 
@@ -774,8 +777,8 @@ vec3 volColor(float dens, vec3 p) {
   float t = clamp(dens * 1.3, 0.0, 1.0);
   // cool at the rim, hot in the core, blowing out to white at peak density
   vec3 c = mix(palf(0.12), palf(0.8), clamp(r * 0.24, 0.0, 1.0));
-  c = mix(c, vec3(1.0, 0.94, 0.88), pow(t, 2.6) * 0.75);
-  return c * (0.85 + uBeat * 0.7);
+  c = mix(c, vec3(1.0, 0.94, 0.88), pow(t, 3.4) * 0.45);   // keep hue in the dense core
+  return c * (0.6 + uBeat * 0.5);
 }
 
 vec3 marchVolume(vec3 ro, vec3 rd) {
@@ -790,7 +793,7 @@ vec3 marchVolume(vec3 ro, vec3 rd) {
     float d = volDensity(p);
     if (d > 0.001) {
       float a = 1.0 - exp(-d * stepSize * 3.2);
-      acc += trans * a * volColor(d, p) * (0.85 + uLevel * 0.7);
+      acc += trans * a * volColor(d, p) * (0.6 + uLevel * 0.5);
       trans *= 1.0 - a;
     }
     t += stepSize * (1.0 + t * 0.09);
@@ -816,7 +819,7 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 5)  { ro = vec3(0.0, 3.6, 7.4); ta = vec3(0.0, 0.4, -0.6); ap = 0.03; }
   else if (uMode == 6)  { ro = vec3(sin(t * 0.4) * 0.3, cos(t * 0.33) * 0.3, 4.0); ta = ro + vec3(0.0, 0.0, -1.0); ap = 0.02; }
   else if (uMode == 7)  { ro = vec3(sway, 0.9, 4.6); ap = 0.02; }
-  else if (uMode == 8)  { ro = vec3(sway * 1.6, 3.4, 9.6); ta = vec3(0.0, 0.1, -3.0); ap = 0.03; }
+  else if (uMode == 8)  { ro = vec3(sway * 1.6, 3.2, 9.0); ta = vec3(0.0, 0.35, -3.5); ap = 0.008; }
   else if (uMode == 9)  { ro = vec3(sin(t * 0.09) * 7.0, 3.0 + sin(t * 0.14), cos(t * 0.09) * 7.0); ta = vec3(0.0, 1.8, 0.0); ap = 0.04; }
   else if (uMode == 10) { ro = vec3(sin(t * 0.08) * 5.4, 1.6, cos(t * 0.08) * 5.4); ap = 0.0; }
   else if (uMode == 11) { ro = vec3(sin(t * 0.06) * 4.2, 2.4 + sin(t * 0.1) * 0.5, cos(t * 0.06) * 4.2); ap = 0.0; }

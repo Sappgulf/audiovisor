@@ -1463,7 +1463,9 @@ function frameStep(now) {
   }
 
   frameTimes.push(performance.now() - t0);
-  if (frameTimes.length >= 90) {
+  // 30 samples, not 90: on a slow machine 90 frames can be 15+ seconds of
+  // stutter before the quality tier reacts
+  if (frameTimes.length >= 30) {
     const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
     frameTimes.length = 0;
     if (state.raytraceWanted && ray.ok) {
@@ -1471,7 +1473,11 @@ function frameStep(now) {
       // tier when frames get long, back up when there's headroom
       const order = ['low', 'medium', 'high', 'ultra'];
       const i = order.indexOf(ray.quality);
-      const want = avg > 26 ? Math.max(0, i - 1) : avg < 9 && i < order.indexOf(state.rayQuality) ? i + 1 : i;
+      // drop two tiers at once when frames are badly over budget
+      const want = avg > 55 ? Math.max(0, i - 2)
+        : avg > 26 ? Math.max(0, i - 1)
+        : avg < 9 && i < order.indexOf(state.rayQuality) ? i + 1
+        : i;
       if (want !== i) ray.setQuality(order[want]);
     } else {
       const target = avg > 21 ? 'low' : avg < 13 ? 'high' : renderer.quality;
