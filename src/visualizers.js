@@ -972,7 +972,12 @@ export class Renderer {
         if (i === s0) sctx.moveTo(pts[i * 2], pts[i * 2 + 1]);
         else sctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
       }
-      sctx.strokeStyle = hexRgba(this._color(s), 0.7);
+      /* This draws additively into a trail buffer that only fades ~22% a
+         frame, so a 0.7 trace reached a steady state around three times
+         over white wherever the figure crosses itself — the trail went
+         flat white instead of reading as phosphor. Set so accumulation
+         settles just about at full scale. */
+      sctx.strokeStyle = hexRgba(this._color(s), 0.26);
       sctx.lineWidth = 1.6;
       sctx.stroke();
     }
@@ -1365,7 +1370,9 @@ export class Renderer {
         const x = cx + Math.cos(ang) * rad;
         const y = cy + Math.sin(ang) * rad;
         const s = 7 + v * 6;
-        ctx.globalAlpha = clamp(0.2 + v * 0.6, 0.05, 0.85);
+        /* additive sprites that overlap along each arm; 0.85 each stacked
+           past white wherever two arms crossed */
+        ctx.globalAlpha = clamp(0.14 + v * 0.40, 0.04, 0.58);
         ctx.drawImage(sprite, x - s, y - s, s * 2, s * 2);
         trail.push([x, y]);
       }
@@ -1967,11 +1974,15 @@ export class Renderer {
       const { x, y, v } = blobs[i];
       const r = Math.min(w, h) * 0.11 * (0.6 + v * 0.85) * (0.7 + this.sm.bass * 0.5 + this.beat * 0.15);
       const c = this._color(i + Math.floor(this.t * 0.7));
-      ctx.globalAlpha = clamp(0.34 + v * 0.30, 0, 0.62);
+      /* Nine blobs orbit a tight centre and are drawn additively, so the
+         middle of the frame stacked three or four deep at up to 0.62 each
+         and flattened to white. Budgeted against that overlap: the core
+         still reads hot, it just stops being a flat disc of paper. */
+      ctx.globalAlpha = clamp(0.20 + v * 0.18, 0, 0.38);
       ctx.drawImage(this._dot(c), x - r, y - r, r * 2, r * 2);
     }
     const cr = Math.min(w, h) * 0.075 * (1 + this.sm.level * 0.5);
-    ctx.globalAlpha = 0.7;
+    ctx.globalAlpha = 0.5;
     ctx.drawImage(this._dot(this._color(0)), cx - cr, cy - cr, cr * 2, cr * 2);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
@@ -2190,7 +2201,12 @@ export class Renderer {
       const r = base * 1.7 + Math.pow(t, 1.2) * Math.min(w, h) * 0.38;
       const v = freq ? logSample(freq, t) : 0.5;
       const wob = Math.sin(t * 18 + this.t * 2.2) * v * 6;
-      ctx.strokeStyle = hexRgba(this._color(Math.floor(t * 4)), 0.18 + v * 0.32);
+      /* 36 rings drawn additively, and the radius curve packs them tightest
+         near the core — so the inner rings piled on top of each other and
+         burned out the centre. Fade the alpha in toward the middle, where
+         the crowding is, instead of paying it flat across every ring. */
+      const crowd = 0.45 + 0.55 * Math.min(1, t * 2.2);
+      ctx.strokeStyle = hexRgba(this._color(Math.floor(t * 4)), (0.18 + v * 0.32) * crowd);
       ctx.lineWidth = 1.1 + v * 1.4;
       ctx.beginPath();
       // wobble can exceed the radius on the innermost ring — a negative

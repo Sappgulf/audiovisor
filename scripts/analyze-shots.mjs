@@ -10,6 +10,10 @@
  *   clip%  share of pixels at pure white — detail and colour thrown away
  *   sat    mean saturation over non-black pixels; clipping drags it down
  *
+ * The modes use Math.random for jitter and the render is not seeded, so
+ * repeated runs vary by roughly 0.1 percentage points on the average. Treat
+ * anything smaller than that as noise rather than as a result.
+ *
  * Usage: npm run shots && npm run analyze [dir]
  */
 import { loadImage, createCanvas } from '@napi-rs/canvas';
