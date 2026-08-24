@@ -61,3 +61,29 @@ export function median(arr) {
   const sorted = [...arr].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)];
 }
+
+/**
+ * Downsample a decoded buffer to `buckets` normalized peak amplitudes for
+ * the seek-bar waveform. Sub-samples within each bucket (every `step/64`th
+ * frame) so a 10-minute track still draws in a few ms.
+ */
+export function computePeaks(buffer, buckets = 240) {
+  const ch = buffer.getChannelData(0);
+  const step = Math.max(1, Math.floor(ch.length / buckets));
+  const peaks = new Float32Array(buckets);
+  const sub = Math.max(1, Math.floor(step / 64));
+  for (let b = 0; b < buckets; b++) {
+    let max = 0;
+    const end = Math.min(ch.length, (b + 1) * step);
+    for (let i = b * step; i < end; i += sub) {
+      const v = Math.abs(ch[i]);
+      if (v > max) max = v;
+    }
+    peaks[b] = max;
+  }
+  let m = 0;
+  for (let i = 0; i < buckets; i++) if (peaks[i] > m) m = peaks[i];
+  if (!m) return peaks;
+  for (let i = 0; i < buckets; i++) peaks[i] /= m;
+  return peaks;
+}

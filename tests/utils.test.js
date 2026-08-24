@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clamp, lerp, fmtTime, fmtStamp, logFreqIndex, logSample, median, hexRgba, pickRandom } from '../src/utils.js';
+import { clamp, lerp, fmtTime, fmtStamp, logFreqIndex, logSample, median, hexRgba, pickRandom, computePeaks } from '../src/utils.js';
 
 describe('clamp', () => {
   it('clamps into range', () => {
@@ -129,5 +129,40 @@ describe('service worker cache versioning', () => {
     const name = sw.match(/const CACHE = '([^']+)'/)[1];
     // a stale cache name silently serves returning visitors an old build
     expect(name).toBe(`audiovisor-v${pkg.version}`);
+  });
+});
+
+describe('computePeaks', () => {
+  const buf = (data) => ({ getChannelData: () => Float32Array.from(data) });
+
+  it('returns exactly the requested bucket count', () => {
+    expect(computePeaks(buf(new Array(10000).fill(0.1)), 240)).toHaveLength(240);
+  });
+
+  it('normalizes so the loudest bucket is 1', () => {
+    const peaks = computePeaks(buf([0.1, 0.1, 0.5, 0.5]), 2);
+    expect(Math.max(...peaks)).toBeCloseTo(1);
+    expect(peaks[0]).toBeCloseTo(0.2);
+  });
+
+  it('uses absolute amplitude, so a negative-only signal is not flat zero', () => {
+    const peaks = computePeaks(buf([-0.8, -0.8, -0.2, -0.2]), 2);
+    expect(peaks[0]).toBeCloseTo(1);
+    expect(peaks[1]).toBeCloseTo(0.25);
+  });
+
+  it('returns all-zero for digital silence instead of dividing by zero', () => {
+    const peaks = computePeaks(buf(new Array(512).fill(0)), 8);
+    expect([...peaks].every((v) => v === 0)).toBe(true);
+  });
+
+  it('handles a buffer shorter than the bucket count without NaN', () => {
+    const peaks = computePeaks(buf([0.5, 0.25]), 16);
+    expect([...peaks].every(Number.isFinite)).toBe(true);
+  });
+
+  it('does not blow the stack on a large bucket count', () => {
+    // Math.max(...peaks) used to spread every bucket as an argument
+    expect(() => computePeaks(buf(new Array(400000).fill(0.3)), 200000)).not.toThrow();
   });
 });

@@ -4,7 +4,11 @@ import { AudioEngine } from './audio.js';
 import { RayStage } from './raystage.js';
 import { Renderer } from './visualizers.js';
 import { ConnectPanel } from './connect.js';
-import { fmtTime, pickRandom, fmtStamp } from './utils.js';
+import { fmtTime, pickRandom, fmtStamp, computePeaks } from './utils.js';
+import { filterCommands, clampActive } from './palette.js';
+import {
+  SETTINGS_KEY, serializeSettings, validateSettings, readSettings,
+} from './settings.js';
 import * as Library from './library.js';
 import { AI_PRESETS, suggestPreset } from './ai.js';
 import { detectPitch, freqToMidi, VoiceSynth } from './voice.js';
@@ -26,7 +30,6 @@ if (!ray.ok && ray.error) console.warn('raytrace stage unavailable:', ray.error)
 renderer.setTheme(THEMES.find((t) => t.id === 'brass'));
 ray.setTheme(THEMES.find((t) => t.id === 'brass'));
 
-const SETTINGS_KEY = 'audiovisor.settings.v2';
 const RAY_QUALITIES = ['low', 'medium', 'high', 'ultra'];
 
 const state = {
@@ -452,61 +455,70 @@ document.addEventListener('visibilitychange', () => {
 
 function saveSettingsNow() {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
-      mode: state.modeId,
-      theme: state.themeId,
-      autopilot: state.autopilot,
-      raytrace: state.raytraceWanted,
-      rayQuality: state.rayQuality,
-      fx: state.fx,
-      sliders: {
-        sensitivity: parseFloat(sliderEls.sensitivity.value),
-        'bass-focus': parseFloat(sliderEls['bass-focus'].value),
-        smoothing: parseFloat(sliderEls.smoothing.value),
-        'color-pop': parseFloat(sliderEls['color-pop']?.value || 1),
-        bloom: parseFloat(sliderEls.bloom?.value || 0.5),
-      },
-      volume: engine.volume,
-      loop: engine.loop,
-    }));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(currentSettings()));
   } catch {}
+}
+
+/** The ids this build accepts; anything else in stored/imported JSON is dropped. */
+const SETTINGS_VOCAB = {
+  modeIds: MODES.map((m) => m.id),
+  themeIds: THEMES.map((t) => t.id),
+  sliderIds: SLIDERS.map((c) => c.id),
+  fxNames: FX,
+  rayQualities: RAY_QUALITIES,
+  eqBands: EQ_FREQS.length,
+};
+
+/**
+ * Apply an already-validated settings object. Shared by localStorage
+ * restore and JSON import so both paths obey the same rules — import used
+ * to skip validation entirely and could set a mode id that does not exist.
+ */
+function applySettings(s, { eq = false } = {}) {
+  if (typeof s.raytrace === 'boolean') setRaytrace(s.raytrace, { quiet: true });   // stored intent, not availability
+  if (s.rayQuality) setRayQuality(s.rayQuality, { quiet: true });
+  if (s.mode) setMode(s.mode);
+  if (s.theme) setTheme(s.theme);
+  for (const [key, val] of Object.entries(s.sliders || {})) {
+    const input = sliderEls[key];
+    if (!input) continue;
+    input.value = val;
+    const cfg = SLIDERS.find((c) => c.id === key);
+    const group = input.closest('.slider-group');
+    const label = group?.querySelector('.slider-value');
+    if (label) label.textContent = cfg.fmt(parseFloat(input.value));
+    applySlider(key, parseFloat(input.value));
+  }
+  for (const [name, on] of Object.entries(s.fx || {})) {
+    if (!fxEls[name]) continue;
+    fxEls[name].classList.toggle('is-active', on);
+    engine.setFx(name, on);
+    state.fx[name] = on;
+  }
+  if (eq) {
+    (s.eq || []).forEach((v, i) => {
+      const input = document.querySelectorAll('.eq-row')[i]?.querySelector('input');
+      if (input) { input.value = v; input.dispatchEvent(new Event('input')); }
+    });
+  }
+  if (typeof s.volume === 'number') {
+    engine.setVolume(s.volume);
+    $('volume-fill').style.width = `${s.volume * 100}%`;
+  }
+  if (s.loop) {
+    engine.loop = true;
+    $('loop-btn').classList.add('is-on');
+  }
+  if (s.autopilot) setAutopilot(true, { silent: true });
+  if (s.autoDj) { autoDj = true; document.getElementById('autodj-chip')?.classList.add('is-active'); }
 }
 
 function loadSettings() {
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY) || localStorage.getItem('audiovisor.settings.v1');
-    if (!raw) return;
-    const s = JSON.parse(raw);
-    if (typeof s.raytrace === 'boolean') setRaytrace(s.raytrace, { quiet: true });   // stored intent, not availability
-    if (s.rayQuality) setRayQuality(s.rayQuality, { quiet: true });
-    if (MODES.some((m) => m.id === s.mode)) setMode(s.mode);
-    if (THEMES.some((t) => t.id === s.theme)) setTheme(s.theme);
-    for (const [key, val] of Object.entries(s.sliders || {})) {
-      const input = sliderEls[key];
-      if (!input) continue;
-      input.value = val;
-      const cfg = SLIDERS.find((c) => c.id === key);
-      const group = input.closest('.slider-group');
-      group.querySelector('.slider-value').textContent = cfg.fmt(parseFloat(val));
-      applySlider(key, parseFloat(val));
-    }
-    for (const [name, on] of Object.entries(s.fx || {})) {
-      if (fxEls[name] && on) {
-        fxEls[name].classList.add('is-active');
-        engine.setFx(name, true);
-        state.fx[name] = true;
-      }
-    }
-    if (typeof s.volume === 'number') {
-      engine.setVolume(s.volume);
-      $('volume-fill').style.width = `${s.volume * 100}%`;
-    }
-    if (s.loop) {
-      engine.loop = true;
-      $('loop-btn').classList.add('is-on');
-    }
-    if (s.autopilot) setAutopilot(true, { silent: true });
-  } catch {}
+    applySettings(readSettings(localStorage, SETTINGS_VOCAB));
+  } catch (err) {
+    console.warn('settings restore failed:', err);
+  }
 }
 
 /* ---------- queue manager ---------- */
@@ -1383,25 +1395,6 @@ window.addEventListener('keydown', (e) => {
 
 /* ---------- waveform seek preview ---------- */
 
-function computePeaks(buffer, buckets = 240) {
-  const ch = buffer.getChannelData(0);
-  const step = Math.max(1, Math.floor(ch.length / buckets));
-  const peaks = new Float32Array(buckets);
-  const sub = Math.max(1, Math.floor(step / 64));
-  for (let b = 0; b < buckets; b++) {
-    let max = 0;
-    const end = Math.min(ch.length, (b + 1) * step);
-    for (let i = b * step; i < end; i += sub) {
-      const v = Math.abs(ch[i]);
-      if (v > max) max = v;
-    }
-    peaks[b] = max;
-  }
-  const m = Math.max(...peaks) || 1;
-  for (let i = 0; i < buckets; i++) peaks[i] /= m;
-  return peaks;
-}
-
 function drawWaveform(buffer) {
   const c = document.getElementById('seek-wave');
   if (!c || !buffer) return;
@@ -1721,11 +1714,13 @@ function buildCmds() {
 }
 let allCmds = buildCmds();
 let cmdReturnFocus = null;
+/** The list currently on screen — what Enter must index into. */
+let cmdVisible = [];
 function renderCmds(filter = '') {
-  const q = filter.toLowerCase();
-  const filtered = q ? allCmds.filter(c => c.label.toLowerCase().includes(q) || c.keys.includes(q)) : allCmds.slice(0, 12);
-  cmdList.innerHTML = filtered.map((c, i) => `<div class="cmd-item ${i===cmdActive?'is-active':''}" data-i="${i}"><span>${c.label}</span><kbd>↵</kbd></div>`).join('') || '<div style="padding:12px; font-size:11px; color:var(--text-40)">No matches</div>';
-  cmdList.querySelectorAll('.cmd-item').forEach(el => el.addEventListener('click', () => { const c = filtered[Number(el.dataset.i)]; if (c) { c.action(); closeCmd(); }}));
+  cmdVisible = filterCommands(allCmds, filter);
+  cmdActive = clampActive(cmdActive, cmdVisible.length);
+  cmdList.innerHTML = cmdVisible.map((c, i) => `<div class="cmd-item ${i===cmdActive?'is-active':''}" data-i="${i}"><span>${esc(c.label)}</span><kbd>↵</kbd></div>`).join('') || '<div style="padding:12px; font-size:11px; color:var(--text-40)">No matches</div>';
+  cmdList.querySelectorAll('.cmd-item').forEach(el => el.addEventListener('click', () => { const c = cmdVisible[Number(el.dataset.i)]; if (c) { c.action(); closeCmd(); }}));
 }
 function openCmd() { cmdReturnFocus = document.activeElement; cmdPalette.classList.remove('is-hidden'); cmdPalette.setAttribute('aria-hidden', 'false'); cmdInput.value = ''; cmdActive = 0; renderCmds(''); cmdInput.focus(); }
 function closeCmd() {
@@ -1739,10 +1734,9 @@ function closeCmd() {
 cmdPalette?.addEventListener('click', (e) => { if (e.target === cmdPalette) closeCmd(); });
 cmdInput?.addEventListener('input', () => { cmdActive = 0; renderCmds(cmdInput.value); });
 cmdInput?.addEventListener('keydown', (e) => {
-  const items = cmdList.querySelectorAll('.cmd-item');
-  if (e.key === 'ArrowDown') { e.preventDefault(); cmdActive = Math.min(cmdActive + 1, items.length - 1); renderCmds(cmdInput.value); }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); cmdActive = Math.max(cmdActive - 1, 0); renderCmds(cmdInput.value); }
-  else if (e.key === 'Enter') { e.preventDefault(); const q = cmdInput.value.toLowerCase(); const filtered = q ? allCmds.filter(c => c.label.toLowerCase().includes(q) || c.keys.includes(q)) : allCmds.slice(0, 12); const c = filtered[cmdActive]; if (c) { c.action(); closeCmd(); } }
+  if (e.key === 'ArrowDown') { e.preventDefault(); cmdActive = clampActive(cmdActive + 1, cmdVisible.length); renderCmds(cmdInput.value); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); cmdActive = clampActive(cmdActive - 1, cmdVisible.length); renderCmds(cmdInput.value); }
+  else if (e.key === 'Enter') { e.preventDefault(); const c = cmdVisible[cmdActive]; if (c) { c.action(); closeCmd(); } }
   else if (e.key === 'Escape') closeCmd();
 });
 window.addEventListener('keydown', (e) => {
@@ -1758,13 +1752,19 @@ document.getElementById('settings-reset')?.addEventListener('click', () => {
 
 // Settings export/import
 function currentSettings() {
-  return {
-    version: 6,
-    mode: state.modeId, theme: state.themeId, autopilot: state.autopilot, fx: state.fx,
+  return serializeSettings({
+    mode: state.modeId,
+    theme: state.themeId,
+    autopilot: state.autopilot,
+    raytrace: state.raytraceWanted,
+    rayQuality: state.rayQuality,
+    fx: state.fx,
     sliders: Object.fromEntries(Object.entries(sliderEls).map(([k, el]) => [k, parseFloat(el.value)])),
     eq: EQ_FREQS.map((_, i) => engine.eqFilters?.[i]?.gain.value || 0),
-    volume: engine.volume, loop: engine.loop, autoDj,
-  };
+    volume: engine.volume,
+    loop: engine.loop,
+    autoDj,
+  });
 }
 document.getElementById('settings-export')?.addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(currentSettings(), null, 2)], { type: 'application/json' });
@@ -1777,25 +1777,10 @@ document.getElementById('settings-file')?.addEventListener('change', (e) => {
   if (!f) return;
   f.text().then(txt => {
     try {
-      const s = JSON.parse(txt);
-      if (s.mode) setMode(s.mode);
-      if (s.theme) setTheme(s.theme);
-      for (const [k, v] of Object.entries(s.sliders || {})) {
-        const input = sliderEls[k];
-        if (input) { input.value = v; input.dispatchEvent(new Event('input')); }
-      }
-      for (const [k, v] of Object.entries(s.fx || {})) {
-        if (fxEls[k]) { fxEls[k].classList.toggle('is-active', !!v); engine.setFx(k, !!v); state.fx[k] = !!v; }
-      }
-      (s.eq || []).forEach((v, i) => {
-        const rows = document.querySelectorAll('.eq-row');
-        const input = rows[i]?.querySelector('input');
-        if (input) { input.value = v; input.dispatchEvent(new Event('input')); }
-      });
-      if (typeof s.volume === 'number') setVolumeUI(s.volume);
-      if (s.loop) { engine.loop = true; $('loop-btn').classList.add('is-on'); }
-      if (s.autopilot) setAutopilot(true, { silent: true });
-      if (s.autoDj) { autoDj = true; document.getElementById('autodj-chip')?.classList.add('is-active'); }
+      const s = validateSettings(JSON.parse(txt), SETTINGS_VOCAB);
+      if (!Object.keys(s).length) { toast('<b>Import failed</b> — nothing usable in that file'); return; }
+      applySettings(s, { eq: true });
+      saveSettings();
       toast('Settings <b>imported</b>');
     } catch { toast('<b>Import failed</b>'); }
   });
