@@ -48,6 +48,9 @@
           <button class="mic-btn" id="voice-btn" title="Voice AI — hum to synth" aria-label="Voice AI">
             <span class="ic" data-icon="user"></span>
           </button>
+          <button class="mic-btn" id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+            <span class="ic" data-icon="keyboard"></span>
+          </button>
           <div class="status-pill" id="status-pill">
             <span class="status-dot"></span>
             <span class="mono status-text" id="status-text">Engine: Idle</span>
@@ -60,6 +63,7 @@
 
       <div class="workspace">
         <main class="stage" id="stage">
+          <canvas id="ray-canvas" class="stage-canvas"></canvas>
           <canvas id="viz-canvas"></canvas>
           <canvas id="webgpu-canvas" style="position:absolute; inset:0; width:100%; height:100%; display:none"></canvas>
 
@@ -88,76 +92,96 @@
             </div>
           </div>
 
-          <div class="toasts" id="toasts"></div>
+          <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
         </main>
 
         <aside class="drawer" id="drawer" aria-label="Settings panel">
+          <div class="drawer-tabbar" role="tablist" aria-label="Settings sections">
+            <button class="drawer-tab" id="tab-source" data-tab="source" role="tab" aria-controls="panel-source" aria-selected="false">Source</button>
+            <button class="drawer-tab" id="tab-look" data-tab="look" role="tab" aria-controls="panel-look" aria-selected="false">Look</button>
+            <button class="drawer-tab" id="tab-audio" data-tab="audio" role="tab" aria-controls="panel-audio" aria-selected="false">Audio</button>
+            <button class="drawer-tab" id="tab-studio" data-tab="studio" role="tab" aria-controls="panel-studio" aria-selected="false">Studio</button>
+            <div class="drawer-tab-ink" id="drawer-tab-ink" aria-hidden="true"></div>
+          </div>
           <div class="drawer-scroll">
+          <div class="drawer-panel" id="panel-source" data-panel="source" role="tabpanel" aria-labelledby="tab-source">
             <section>
               <h3 class="section-title">Connect</h3>
+
               <div id="connect-root"></div>
             </section>
-
             <div class="divider"></div>
-
             <section>
               <h3 class="section-title">Social Feed</h3>
+
               <div id="social-feed" style="display:flex; flex-direction:column; gap:8px; max-height:160px; overflow-y:auto"></div>
               <div style="display:flex; gap:6px; margin-top:8px">
                 <input id="social-input" class="connect-input" placeholder="Share a mix…" style="flex:1; font-size:11px; padding:6px 8px"/>
                 <button class="mini-btn" id="social-post">Post</button>
               </div>
             </section>
-
-            <div class="divider"></div>
-
+          </div>
+          <div class="drawer-panel" id="panel-look" data-panel="look" role="tabpanel" aria-labelledby="tab-look">
             <section>
               <h3 class="section-title">Stage Mode</h3>
+
+              <input id="mode-filter" class="connect-input drawer-filter" type="search" placeholder="Filter modes…" aria-label="Filter stage modes" autocomplete="off" />
               <div class="mode-list" id="mode-list"></div>
+              <p class="drawer-empty is-hidden" id="mode-empty">No modes match that filter.</p>
               <div class="fx-row" id="preset-row" style="margin-top:8px"></div>
+              <div class="fx-row" style="margin-top:8px">
+                <button class="fx-chip" id="rt-chip" title="Raytraced stage renderer"><span class="chip-dot"></span><span class="chip-txt">Raytrace</span></button>
+                <button class="fx-chip" id="rt-quality" title="Raytrace sample budget"><span class="chip-txt" id="rt-quality-label">Quality: High</span></button>
+              </div>
             </section>
-
             <div class="divider"></div>
-
             <section>
               <h3 class="section-title">Theme Mood</h3>
+
               <div class="theme-row" id="theme-row"></div>
             </section>
-
             <div class="divider"></div>
+            <section>
+              <h3 class="section-title">Autopilot</h3>
 
+              <div class="fx-row">
+                <button class="fx-chip" id="autopilot-chip" data-fx="autopilot"><span class="chip-txt">Auto</span></button>
+                <button class="fx-chip" id="autodj-chip" data-fx="autodj"><span class="chip-txt">Auto DJ</span></button>
+                <button class="fx-chip" id="sleep-chip" data-fx="sleep"><span class="chip-txt" id="sleep-label">Sleep</span></button>
+              </div>
+            </section>
+          </div>
+          <div class="drawer-panel" id="panel-audio" data-panel="audio" role="tabpanel" aria-labelledby="tab-audio">
             <section>
               <h3 class="section-title">Engine Control</h3>
+
               <div class="sliders" id="sliders"></div>
             </section>
-
             <div class="divider"></div>
-
             <section>
               <h3 class="section-title">EQ — 5 Band</h3>
+
               <div class="eq-bands" id="eq-bands"></div>
             </section>
-
             <div class="divider"></div>
-
             <section>
               <h3 class="section-title">FX Chain</h3>
+
               <div class="fx-row" id="fx-row"></div>
             </section>
-
-            <div class="divider"></div>
-
+          </div>
+          <div class="drawer-panel" id="panel-studio" data-panel="studio" role="tabpanel" aria-labelledby="tab-studio">
             <section>
               <h3 class="section-title">AI Remix Studio</h3>
+
               <div class="fx-row" id="ai-stems"></div>
               <div class="fx-row" id="ai-presets" style="margin-top:8px"></div>
               <button class="fx-chip" id="ai-suggest" style="margin-top:10px"><span class="chip-dot"></span><span class="chip-txt">AI Suggest</span></button>
             </section>
-
             <div class="divider"></div>
-
             <section>
               <h3 class="section-title">Collab &amp; Share</h3>
+
               <div class="fx-row" style="margin-bottom:10px">
                 <button class="fx-chip" id="share-btn"><span class="ic ic-sm" data-icon="link"></span><span class="chip-txt">Copy Link</span></button>
                 <button class="fx-chip" id="party-btn"><span class="ic ic-sm" data-icon="sparkles"></span><span class="chip-txt">Party QR</span></button>
@@ -169,22 +193,10 @@
               </div>
               <div id="party-qr" class="is-hidden" style="margin-top:10px; padding:10px; background:var(--glass); border:1px solid var(--border); border-radius:8px; text-align:center; font-family:var(--font-mono); font-size:10px; color:var(--text-60); word-break:break-all">QR: <span id="qr-url"></span></div>
             </section>
-
             <div class="divider"></div>
-
-            <section>
-              <h3 class="section-title">Autopilot</h3>
-              <div class="fx-row">
-                <button class="fx-chip" id="autopilot-chip" data-fx="autopilot"><span class="chip-txt">Auto</span></button>
-                <button class="fx-chip" id="autodj-chip" data-fx="autodj"><span class="chip-txt">Auto DJ</span></button>
-                <button class="fx-chip" id="sleep-chip" data-fx="sleep"><span class="chip-txt" id="sleep-label">Sleep</span></button>
-              </div>
-            </section>
-
-            <div class="divider"></div>
-
             <section>
               <h3 class="section-title">System</h3>
+
               <div class="fx-row" style="margin-bottom:10px">
                 <button class="mini-btn" id="settings-export">Export</button>
                 <button class="mini-btn" id="settings-import">Import</button>
@@ -193,6 +205,7 @@
               </div>
               <input type="file" id="settings-file" accept=".json" hidden />
             </section>
+          </div>
           </div>
         </aside>
       </div>
@@ -266,6 +279,15 @@
       </footer>
     </div>
 
+    <div id="shortcuts-overlay" class="cmd-palette is-hidden" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+      <div class="cmd-box shortcuts-box">
+        <div class="shortcuts-head">
+          <span class="shortcuts-title">Keyboard Shortcuts</span>
+          <button class="mini-btn" id="shortcuts-close" aria-label="Close shortcuts">Esc</button>
+        </div>
+        <div class="shortcuts-grid" id="shortcuts-grid"></div>
+      </div>
+    </div>
     <div id="cmd-palette" class="cmd-palette is-hidden" role="dialog" aria-label="Command palette">
       <div class="cmd-box">
         <input id="cmd-input" class="cmd-input" placeholder="Type a command… (e.g. bars, brass, reverb)" autocomplete="off" />

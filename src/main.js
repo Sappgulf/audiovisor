@@ -1,6 +1,7 @@
 import { setIcon } from './icons.js';
 import { MODES, THEMES } from './themes.js';
 import { AudioEngine } from './audio.js';
+import { RayStage } from './raystage.js';
 import { Renderer } from './visualizers.js';
 import { ConnectPanel } from './connect.js';
 import { fmtTime, pickRandom, fmtStamp } from './utils.js';
@@ -20,7 +21,10 @@ const esc = (s) =>
 
 const engine = new AudioEngine();
 const renderer = new Renderer($('viz-canvas'));
+const ray = new RayStage($('ray-canvas'));
+if (!ray.ok && ray.error) console.warn('raytrace stage unavailable:', ray.error);
 renderer.setTheme(THEMES.find((t) => t.id === 'brass'));
+ray.setTheme(THEMES.find((t) => t.id === 'brass'));
 
 const SETTINGS_KEY = 'audiovisor.settings.v2';
 
@@ -30,6 +34,8 @@ const state = {
   autopilot: false,
   autopilotTimer: null,
   drawerOpen: true,
+  raytrace: true,
+  rayQuality: 'high',
   fx: { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false, widener: false },
 };
 
@@ -111,15 +117,19 @@ function applySlider(id, v) {
   if (id === 'sensitivity') {
     engine.sensitivity = v;
     renderer.setSensitivity(v);
+    ray.setSensitivity(v);
   } else if (id === 'bass-focus') {
     engine.bassFocus = v;
     renderer.setBassFocus(v);
+    ray.setBassFocus(v);
   } else if (id === 'smoothing') {
     engine.setSmoothing(v);
   } else if (id === 'color-pop') {
     renderer.setColorPop(v);
+    ray.setColorPop(v);
   } else if (id === 'bloom') {
     renderer.setBloom(v);
+    ray.setBloom(v);
   }
 }
 
@@ -378,6 +388,7 @@ function pulseStage() {
 function setMode(id) {
   state.modeId = id;
   renderer.setMode(id);
+  ray.setMode(id);
   [...modeList.children].forEach((c, i) => c.classList.toggle('is-active', MODES[i].id === id));
   pulseStage();
   saveSettings();
@@ -386,6 +397,7 @@ function setMode(id) {
 function setTheme(id) {
   state.themeId = id;
   renderer.setTheme(THEMES.find((t) => t.id === id));
+  ray.setTheme(THEMES.find((t) => t.id === id));
   [...themeRow.children].forEach((c, i) => c.classList.toggle('is-active', THEMES[i].id === id));
   updateFavicon();
   if (engine.track && engine.mode !== 'spotify') {
@@ -429,6 +441,8 @@ function saveSettings() {
       mode: state.modeId,
       theme: state.themeId,
       autopilot: state.autopilot,
+      raytrace: state.raytrace,
+      rayQuality: state.rayQuality,
       fx: state.fx,
       sliders: {
         sensitivity: parseFloat(sliderEls.sensitivity.value),
@@ -448,6 +462,8 @@ function loadSettings() {
     const raw = localStorage.getItem(SETTINGS_KEY) || localStorage.getItem('audiovisor.settings.v1');
     if (!raw) return;
     const s = JSON.parse(raw);
+    if (typeof s.raytrace === 'boolean') setRaytrace(s.raytrace, { quiet: true });
+    if (s.rayQuality) setRayQuality(s.rayQuality, { quiet: true });
     if (MODES.some((m) => m.id === s.mode)) setMode(s.mode);
     if (THEMES.some((t) => t.id === s.theme)) setTheme(s.theme);
     for (const [key, val] of Object.entries(s.sliders || {})) {
@@ -994,9 +1010,13 @@ function downloadBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+function liveCanvas() {
+  return state.raytrace && ray.ok ? ray.canvas : renderer.canvas;
+}
+
 function snapshot() {
   try {
-    renderer.canvas.toBlob((blob) => {
+    liveCanvas().toBlob((blob) => {
       if (!blob) return;
       downloadBlob(blob, `audiovisor-snapshot-${fmtStamp()}.png`);
       toast('SNAPSHOT <b>SAVED</b>', { duration: 1400 });
@@ -1028,12 +1048,12 @@ function setRecBtn(on) {
 }
 
 function startRecording() {
-  if (!('MediaRecorder' in window) || !renderer.canvas.captureStream) {
+  if (!('MediaRecorder' in window) || !liveCanvas().captureStream) {
     toast('<b>Recording unavailable</b> — browser lacks MediaRecorder', { duration: 3000 });
     return;
   }
   try {
-    const stream = renderer.canvas.captureStream(60);
+    const stream = liveCanvas().captureStream(60);
     try {
       const audio = engine.getRecordStream();
       if (audio) audio.getAudioTracks().forEach((t) => stream.addTrack(t));
@@ -1322,10 +1342,11 @@ function updateFavicon() {
 if (typeof ResizeObserver !== 'undefined') {
   new ResizeObserver(() => {
     renderer.resize();
+    ray.resize(renderer.w, renderer.h);
     if (engine.buffer && engine.mode === 'file') drawWaveform(engine.buffer);
-  }).observe($('viz-canvas'));
+  }).observe($('stage'));
 } else {
-  window.addEventListener('resize', () => renderer.resize());
+  window.addEventListener('resize', () => { renderer.resize(); ray.resize(renderer.w, renderer.h); });
 }
 
 /* ---------- render loop ---------- */
@@ -1367,25 +1388,37 @@ function frameStep(now) {
     }
   }
 
-  const gpuReady = !!(webgpuState || webgl2State);
-  const gpuMode = state.modeId === 'gpu' && gpuReady;
-  $('shell').style.setProperty('--beat', renderer.beat.toFixed(3));
-  // fit GPU canvas to stage
-  if (webgpuCanvas && gpuReady && (webgpuCanvas.width !== Math.round(renderer.w * renderer.dpr) || webgpuCanvas.height !== Math.round(renderer.h * renderer.dpr))) {
-    webgpuCanvas.width = Math.round(renderer.w * renderer.dpr);
-    webgpuCanvas.height = Math.round(renderer.h * renderer.dpr);
-  }
-  if (webgpuCanvas) webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
-  $('viz-canvas').style.display = gpuMode ? 'none' : 'block';
-  if (gpuMode && !idle && levels) {
-    if (webgpuState) renderWebGPU(webgpuState, renderer.t, levels.level);
-    else renderWebGL2(webgl2State, renderer.t, levels.level, webgpuCanvas.width, webgpuCanvas.height);
+  const rtOn = state.raytrace && ray.ok;
+  $('shell').style.setProperty('--beat', (rtOn ? ray.beat : renderer.beat).toFixed(3));
+
+  if (rtOn) {
+    // raytraced stage owns every mode; the 2D renderer still advances its
+    // beat envelope so chrome (VU, chips, favicon) keeps working
+    if (ray.w !== renderer.w || ray.h !== renderer.h) ray.resize(renderer.w, renderer.h);
+    $('ray-canvas').classList.add('is-live');
+    $('viz-canvas').classList.add('is-off');
+    if (webgpuCanvas) webgpuCanvas.style.display = 'none';
+    renderer.updateAnalysis(levels, dtMs);
+    ray.render(idle, freq, wave, levels, dtMs);
   } else {
-    // gpu mode without gpu support falls back to void core 2D
-    const effMode = state.modeId === 'gpu' ? 'void' : null;
-    if (effMode) renderer.setMode(effMode);
-    renderer.render(idle, freq, wave, levels, dtMs);
-    if (effMode) renderer.setMode('gpu');
+    $('ray-canvas').classList.remove('is-live');
+    const gpuReady = !!(webgpuState || webgl2State);
+    const gpuMode = state.modeId === 'gpu' && gpuReady;
+    if (webgpuCanvas && gpuReady && (webgpuCanvas.width !== Math.round(renderer.w * renderer.dpr) || webgpuCanvas.height !== Math.round(renderer.h * renderer.dpr))) {
+      webgpuCanvas.width = Math.round(renderer.w * renderer.dpr);
+      webgpuCanvas.height = Math.round(renderer.h * renderer.dpr);
+    }
+    if (webgpuCanvas) webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
+    $('viz-canvas').classList.toggle('is-off', gpuMode);
+    if (gpuMode && !idle && levels) {
+      if (webgpuState) renderWebGPU(webgpuState, renderer.t, levels.level);
+      else renderWebGL2(webgl2State, renderer.t, levels.level, webgpuCanvas.width, webgpuCanvas.height);
+    } else {
+      const effMode = state.modeId === 'gpu' ? 'void' : null;
+      if (effMode) renderer.setMode(effMode);
+      renderer.render(idle, freq, wave, levels, dtMs);
+      if (effMode) renderer.setMode('gpu');
+    }
   }
 
   if (!idle) {
@@ -1419,8 +1452,17 @@ function frameStep(now) {
   if (frameTimes.length >= 90) {
     const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
     frameTimes.length = 0;
-    const target = avg > 21 ? 'low' : avg < 13 ? 'high' : renderer.quality;
-    renderer.setQuality(target);
+    if (state.raytrace && ray.ok) {
+      // raytracing is the expensive path: step the sample budget down a
+      // tier when frames get long, back up when there's headroom
+      const order = ['low', 'medium', 'high', 'ultra'];
+      const i = order.indexOf(ray.quality);
+      const want = avg > 26 ? Math.max(0, i - 1) : avg < 9 && i < order.indexOf(state.rayQuality) ? i + 1 : i;
+      if (want !== i) ray.setQuality(order[want]);
+    } else {
+      const target = avg > 21 ? 'low' : avg < 13 ? 'high' : renderer.quality;
+      renderer.setQuality(target);
+    }
   }
 
 }
@@ -1464,6 +1506,12 @@ function buildCmds() {
   cmds.push({ label: 'Toggle Queue', action: () => toggleQueue(), keys: 'queue' });
   cmds.push({ label: 'Toggle Fullscreen', action: () => document.getElementById('fullscreen-btn')?.click(), keys: 'fullscreen' });
   cmds.push({ label: 'Snapshot PNG', action: snapshot, keys: 'snapshot' });
+  cmds.push({ label: 'Keyboard Shortcuts', action: () => document.getElementById('help-btn')?.click(), keys: 'shortcuts help keys' });
+  ['source', 'look', 'audio', 'studio'].forEach((t) => cmds.push({
+    label: `Settings: ${t[0].toUpperCase()}${t.slice(1)} tab`,
+    action: () => { if (!state.drawerOpen) document.getElementById('nav-settings')?.click(); document.getElementById(`tab-${t}`)?.click(); },
+    keys: `tab ${t}`,
+  }));
   cmds.push({ label: 'Export Remix', action: () => document.getElementById('export-remix-btn')?.click(), keys: 'export' });
   return cmds;
 }
@@ -1634,5 +1682,201 @@ renderSocial();
 // hook frame to also render WebGPU when available
 
 
+/* ---------- raytrace controls ---------- */
+
+const RAY_QUALITIES = ['low', 'medium', 'high', 'ultra'];
+function setRaytrace(on, { quiet = false } = {}) {
+  state.raytrace = on && ray.ok;
+  const chip = $('rt-chip');
+  chip?.classList.toggle('is-active', state.raytrace);
+  chip?.setAttribute('aria-pressed', String(state.raytrace));
+  if (state.raytrace) {
+    ray.setMode(state.modeId);
+    ray.setTheme(THEMES.find((t) => t.id === state.themeId));
+    ray.resize(renderer.w, renderer.h);
+  }
+  if (!quiet) {
+    toast(state.raytrace ? 'RAYTRACE <b>engaged</b>' : 'Raytrace <b>off</b> — Canvas2D stage', { duration: 1600 });
+    saveSettings();
+  }
+}
+function setRayQuality(q, { quiet = false } = {}) {
+  if (!RAY_QUALITIES.includes(q)) return;
+  state.rayQuality = q;
+  ray.setQuality(q);
+  const label = $('rt-quality-label');
+  if (label) label.textContent = `Quality: ${q[0].toUpperCase()}${q.slice(1)}`;
+  if (!quiet) {
+    toast(`Raytrace quality <b>${q}</b>`, { duration: 1400 });
+    saveSettings();
+  }
+}
+$('rt-chip')?.addEventListener('click', () => {
+  if (!ray.ok) { toast('<b>Raytrace unavailable</b> — WebGL2 required', { duration: 2400 }); return; }
+  setRaytrace(!state.raytrace);
+});
+$('rt-quality')?.addEventListener('click', () => {
+  const i = (RAY_QUALITIES.indexOf(state.rayQuality) + 1) % RAY_QUALITIES.length;
+  setRayQuality(RAY_QUALITIES[i]);
+});
+if (!ray.ok) {
+  $('rt-chip')?.classList.add('is-disabled');
+  $('rt-quality')?.classList.add('is-disabled');
+}
+// re-apply whatever loadSettings() restored (or the defaults) now that the
+// chips exist in the DOM
+setRaytrace(state.raytrace, { quiet: true });
+setRayQuality(state.rayQuality, { quiet: true });
+
+
+/* ---------- drawer tabs (v8.7) ---------- */
+
+const TAB_KEY = 'audiovisor.drawerTab';
+const drawerTabs = [...document.querySelectorAll('.drawer-tab')];
+const drawerPanels = [...document.querySelectorAll('.drawer-panel')];
+const tabInk = document.getElementById('drawer-tab-ink');
+const drawerScroll = document.querySelector('.drawer-scroll');
+
+function moveInk(btn) {
+  if (!tabInk || !btn) return;
+  tabInk.style.width = `${btn.offsetWidth}px`;
+  tabInk.style.transform = `translateX(${btn.offsetLeft}px)`;
+}
+function setDrawerTab(id, { persist = true } = {}) {
+  const btn = drawerTabs.find((b) => b.dataset.tab === id) || drawerTabs[0];
+  if (!btn) return;
+  drawerTabs.forEach((b) => {
+    const on = b === btn;
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+  drawerPanels.forEach((p) => p.classList.toggle('is-active', p.dataset.panel === btn.dataset.tab));
+  if (drawerScroll) drawerScroll.scrollTop = 0;
+  moveInk(btn);
+  if (persist) localStorage.setItem(TAB_KEY, btn.dataset.tab);
+}
+drawerTabs.forEach((btn, i) => {
+  btn.addEventListener('click', () => setDrawerTab(btn.dataset.tab));
+  btn.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const next = drawerTabs[(i + (e.key === 'ArrowRight' ? 1 : drawerTabs.length - 1)) % drawerTabs.length];
+    next.focus();
+    setDrawerTab(next.dataset.tab);
+  });
+});
+setDrawerTab(localStorage.getItem(TAB_KEY) || 'look', { persist: false });
+// ink position depends on layout/fonts — re-measure once settled and on resize
+window.addEventListener('load', () => moveInk(drawerTabs.find((b) => b.getAttribute('aria-selected') === 'true')));
+window.addEventListener('resize', () => moveInk(drawerTabs.find((b) => b.getAttribute('aria-selected') === 'true')));
+
+/* ---------- mode filter ---------- */
+
+const modeFilter = document.getElementById('mode-filter');
+const modeEmpty = document.getElementById('mode-empty');
+modeFilter?.addEventListener('input', () => {
+  const q = modeFilter.value.trim().toLowerCase();
+  let shown = 0;
+  [...modeList.children].forEach((card, i) => {
+    const m = MODES[i];
+    const hit = !q || (m && (m.name.toLowerCase().includes(q) || m.id.includes(q)));
+    card.classList.toggle('is-filtered', !hit);
+    if (hit) shown++;
+  });
+  modeEmpty?.classList.toggle('is-hidden', shown > 0);
+});
+modeFilter?.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { modeFilter.value = ''; modeFilter.dispatchEvent(new Event('input')); modeFilter.blur(); }
+  if (e.key === 'Enter') {
+    const first = [...modeList.children].find((c) => !c.classList.contains('is-filtered'));
+    if (first) first.click();
+  }
+});
+
+/* ---------- keyboard shortcuts overlay ---------- */
+
+const SHORTCUTS = [
+  ['Transport', [
+    ['Play / pause', 'Space'],
+    ['Seek ±10s', '← / →'],
+    ['Fine seek ±3s', 'Shift + ← / →'],
+    ['Volume', '↑ / ↓'],
+    ['Volume (stage)', 'Scroll wheel'],
+  ]],
+  ['Look', [
+    ['Next stage mode', 'M'],
+    ['Next theme', 'T'],
+    ['Random look', 'R'],
+    ['Jump to mode 1–9', '1 … 9'],
+    ['Chop N Screwed FX', 'C'],
+  ]],
+  ['Panels', [
+    ['Command palette', '⌘ / Ctrl + K'],
+    ['Keyboard shortcuts', '?'],
+    ['Library', 'L'],
+    ['Queue', 'Q'],
+    ['Cinema fullscreen', 'F'],
+    ['Snapshot PNG', 'P'],
+    ['Close any panel', 'Esc'],
+  ]],
+];
+const shortcutsOverlay = document.getElementById('shortcuts-overlay');
+const shortcutsGrid = document.getElementById('shortcuts-grid');
+if (shortcutsGrid) {
+  shortcutsGrid.innerHTML = SHORTCUTS.map(([group, rows]) =>
+    `<div class="shortcuts-group">${group}</div>` +
+    rows.map(([label, key]) => `<div class="shortcut-row"><span>${label}</span><kbd>${key}</kbd></div>`).join('')
+  ).join('');
+}
+function toggleShortcuts(force) {
+  if (!shortcutsOverlay) return;
+  const hidden = shortcutsOverlay.classList.contains('is-hidden');
+  const open = force === undefined ? hidden : force;
+  shortcutsOverlay.classList.toggle('is-hidden', !open);
+  if (open) document.getElementById('shortcuts-close')?.focus();
+}
+document.getElementById('help-btn')?.addEventListener('click', () => toggleShortcuts());
+document.getElementById('shortcuts-close')?.addEventListener('click', () => toggleShortcuts(false));
+shortcutsOverlay?.addEventListener('click', (e) => { if (e.target === shortcutsOverlay) toggleShortcuts(false); });
+window.addEventListener('keydown', (e) => {
+  const typing = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT';
+  if (!typing && (e.key === '?' || (e.key === '/' && !e.shiftKey))) { e.preventDefault(); toggleShortcuts(); }
+  else if (e.key === 'Escape') toggleShortcuts(false);
+});
+
+
 /* debug/testing hook */
-window.__av = { engine, renderer, connect };
+window.__av = { engine, renderer, connect, ray, state };
+
+/* Dev-only: drive the ray stage with a synthetic track so scenes can be
+   inspected (and screenshotted) without loading audio. */
+if (import.meta.env?.DEV) {
+  window.__av.pump = (modeIdx, frames = 30, t0 = 3) => {
+    const freq = new Uint8Array(1024);
+    const wave = new Uint8Array(2048);
+    ray.setMode(MODES[modeIdx]?.id || 'bars');
+    for (let f = 0; f < frames; f++) {
+      const t = t0 + f * 0.033;
+      for (let i = 0; i < 1024; i++) {
+        const u = i / 1024;
+        const v = 0.06
+          + 0.7 * Math.exp(-Math.pow((u - 0.02) * 16, 2))
+          + 0.45 * Math.abs(Math.sin(u * 26 + t)) * Math.exp(-u * 2.4)
+          + 0.25 * Math.exp(-Math.pow((u - 0.3) * 10, 2))
+          + 0.12 * Math.abs(Math.sin(u * 90 + t * 3.7)) * Math.exp(-u * 4.2);
+        freq[i] = Math.max(0, Math.min(255, v * 255));
+      }
+      for (let i = 0; i < 2048; i++) wave[i] = 128 + 90 * Math.sin(i * 0.017 + t * 2.2) + 20 * Math.sin(i * 0.0053 - t);
+      const beat = (t % 0.55) < 0.12 ? 0.85 : 0;
+      ray.render(false, freq, wave, {
+        bass: 0.6, mid: 0.45, high: 0.3, level: 0.55,
+        beatPulse: beat, beatPhase: (t % 0.55) / 0.55, bpm: 109, beatConfidence: 0.9,
+      }, 33, t);
+    }
+    $('ray-canvas').classList.add('is-live');
+    $('viz-canvas').classList.add('is-off');
+    $('dropzone').style.display = 'none';
+    if (state.drawerOpen) $('nav-settings').click();
+    return { mode: MODES[modeIdx]?.id, res: `${ray.rw}x${ray.rh}`, glError: ray.gl.getError() };
+  };
+}

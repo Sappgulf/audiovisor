@@ -241,21 +241,30 @@ export class Renderer {
 
   /* ---------------- main entry ---------------- */
 
-  render(idle, freq, wave, levels, dtMs = 16.7) {
-    if (this._dead || !this.ctx) return;
-    const { ctx, w, h } = this;
+  /**
+   * Advance the analysis envelopes (beat, smoothed bands, history) without
+   * drawing. The raytraced stage owns the pixels in that mode, but the VU
+   * meter, chips and favicon still read these values.
+   */
+  updateAnalysis(levels, dtMs = 16.7) {
     const dt = clamp((dtMs || 16.7) / 1000, 0.001, 0.06);
-    const dt60 = dt * 60;
-
     this.t += dt;
     this.beatInfo = levels || this.beatInfo || { bpm: 0, beatPhase: 0 };
     const tracked = levels?.beatPulse;
     if (tracked != null) {
-      this.beat = Math.max(tracked, this.beat * Math.pow(0.86, dt60));
+      this.beat = Math.max(tracked, this.beat * Math.pow(0.86, dt * 60));
     } else {
-      this.beat *= Math.pow(0.86, dt60);
+      this.beat *= Math.pow(0.86, dt * 60);
     }
     this._updateLevels(levels, dt);
+    return dt;
+  }
+
+  render(idle, freq, wave, levels, dtMs = 16.7) {
+    if (this._dead || !this.ctx) return;
+    const { ctx, w, h } = this;
+    const dt = this.updateAnalysis(levels, dtMs);
+    const dt60 = dt * 60;
     this._buildCache();
 
     const scale = this.quality === 'low' ? 1 : this.dpr;

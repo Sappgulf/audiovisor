@@ -1,4 +1,4 @@
-# AUDIOVISOR — v8.6
+# AUDIOVISOR — v8.8
 
 A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect your Spotify account — the engine renders the frequency spectrum live across twenty-two stage modes, twenty-five themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
 
@@ -12,6 +12,17 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 - **Live mic input** — party mode; analysis-only (never routed to speakers, no feedback)
 
 > **Note on streaming services:** DRM-protected streams (Spotify/Apple Music in-app playback) can't be tapped by the Web Audio API directly. When Spotify plays through the built-in player without capture, AUDIOVISOR drives the visuals with a procedural synth feed seeded from the track — hit **Capture** and share the current tab for true spectrum-reactive visuals of the actual audio.
+
+### Raytraced stage (v8.8)
+Every one of the 22 stage modes is now a **live raytraced scene** rendered on a WebGL2 ray-marcher — the Canvas2D engine remains as a fallback and can be toggled back on at any time (Look tab → **Raytrace**).
+
+- **Path** — per-frame: SDF/volumetric ray march into a linear HDR buffer → temporal accumulation with neighbourhood clamping → bright-pass + separable gaussian bloom at quarter res → ACES tonemap with chromatic aberration, vignette and grain
+- **Shading** — Cook-Torrance GGX with metallic/roughness materials, penumbra soft shadows, 4-tap AO, one reflection bounce for polished metals, and a theme-tinted procedural environment used as both key light and reflection probe
+- **Glass** — true two-interface refraction (into the solid, march to the far wall, refract back out); Prism Ray splits R/G/B at 1.38/1.45/1.53 for real dispersion
+- **Depth of field** — thin-lens camera with a per-sample golden-angle lens jitter; Bloom Field is built around it
+- **Audio → geometry** — spectrum and waveform ride into the shader as textures, plus a 256×128 rolling spectrum history that drives the Spectrogram terrace and Aurora Terrain ridges
+- **Quality tiers** — Low / Medium / High / Ultra (resolution scale, march steps, samples per pixel, reflection bounce), cycled from the Look tab and auto-stepped down when frames run long
+- **Themes** — all 25 palettes feed the shader in linear space, so every scene re-lights with the theme
 
 ### Stage
 - **22 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Pulse Orb, Fluid Metal, Tensor Grid, Prism Ray, Void Core, Bloom Field, Fractal Bloom, Beat Radar (beat-dropped contacts + spectrum blips), Lava Lamp (bass-heated metaball drift), GPU Core (rotating voxel compute stack)
@@ -49,6 +60,10 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 - **5-band Parametric EQ** — 60/250/1K/4K/12K ±10dB with live curve
 - **Genre/Mood detector** — tempo + spectral centroid → Ambient/Lo-Fi/House/EDM/Trap/Drill/DnB tag chip
 - **Procedural album art** — deterministic cover per track (arcs + diamond + grain)
+- **Tabbed settings drawer** — Source / Look / Audio / Studio tabs (animated ink underline, arrow-key navigation, remembered between sessions) replace the single endless-scroll panel; every section now fits on one screen
+- **Mode filter** — type to narrow the 22 stage modes, Enter selects the first match, Esc clears
+- **Keyboard shortcuts overlay** — press `?` (or the topbar key icon) for the full grouped shortcut sheet; also in the Cmd+K palette along with direct tab jumps
+- **Focus rings + live-region toasts** — visible keyboard focus across all controls, toasts announced to screen readers
 - **Onboarding tour** — first-run hint chain, replayable
 - **Wake lock** — screen stays on during playback
 - **Settings export/import** — full JSON share (mode/theme/FX/EQ/vol/loop/DJ)

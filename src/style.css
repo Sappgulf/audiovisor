@@ -1642,3 +1642,152 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------- Drawer tabs (v8.7) ---------- */
+
+.drawer-tabbar {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  padding: 10px 10px 0;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: linear-gradient(180deg, rgba(255,250,243,0.035), transparent);
+}
+.drawer-tab {
+  flex: 1;
+  padding: 9px 4px 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-40);
+  background: none;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
+}
+.drawer-tab:hover { color: var(--text-60); background: rgba(255,250,243,0.03); }
+.drawer-tab[aria-selected="true"] { color: var(--accent); }
+.drawer-tab-ink {
+  position: absolute;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-line);
+  transition: transform 0.32s var(--ease-out), width 0.32s var(--ease-out);
+  will-change: transform, width;
+}
+.drawer-panel { display: none; flex-direction: column; gap: 20px; animation: panel-in 0.26s var(--ease-out); }
+.drawer-panel.is-active { display: flex; }
+@keyframes panel-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.drawer-filter {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  font-size: 11px;
+}
+.drawer-filter::-webkit-search-cancel-button { filter: invert(0.6); }
+.drawer-empty {
+  padding: 14px 10px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text-40);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  margin-top: 8px;
+}
+.drawer-empty.is-hidden { display: none; }
+.mode-card.is-filtered { display: none; }
+
+/* ---------- Shortcuts overlay ---------- */
+
+.shortcuts-box { width: min(640px, calc(100vw - 32px)); }
+.shortcuts-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.shortcuts-title {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text);
+}
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 4px 18px;
+  padding: 14px 16px 18px;
+  max-height: min(60vh, 460px);
+  overflow-y: auto;
+}
+.shortcuts-group {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-40);
+}
+.shortcuts-group:first-child { margin-top: 0; }
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+  font-size: 12px;
+  color: var(--text-60);
+  border-bottom: 1px solid rgba(255,235,205,0.045);
+}
+.shortcut-row kbd {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text);
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+/* focus visibility pass */
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .drawer-tab { font-size: 9px; letter-spacing: 0.1em; }
+  .shortcuts-grid { grid-template-columns: 1fr; }
+}
+
+/* raytraced stage canvas — sits under the 2D canvas, only one is visible */
+.stage-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  /* kept in layout even when inactive — measuring a display:none canvas
+     collapses the stage size and starves the renderers */
+  visibility: hidden;
+}
+.stage-canvas.is-live { visibility: visible; }
+#viz-canvas.is-off { visibility: hidden; }
