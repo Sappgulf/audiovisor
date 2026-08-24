@@ -1,5 +1,6 @@
 import { VERT, SCENE_FRAG, BLUR_FRAG, ACCUM_FRAG, POST_FRAG } from './rayshader.js';
 import { MODES } from './themes.js';
+import { beatEnergy } from './beatenergy.js';
 
 /**
  * RayStage — WebGL2 raytraced stage renderer (v8.7).
@@ -308,8 +309,7 @@ export class RayStage {
     this.t = tOverride != null ? tOverride : this.t + dt;
 
     const lv = levels || {};
-    const pulse = lv.beatPulse != null ? lv.beatPulse : 0;
-    this.beat = Math.max(pulse, this.beat * Math.pow(0.86, dt * 60));
+    this.beat = beatEnergy(this.beat, lv, dt);
     if (freq) {
       this._uploadAudio(freq, wave);
       // fixed 45 rows/sec so the spectrogram and terrain scroll at the same

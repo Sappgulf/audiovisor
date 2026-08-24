@@ -1,5 +1,6 @@
 import { THEMES } from './themes.js';
 import { lerp, logFreqIndex, logSample, hexRgba, clamp } from './utils.js';
+import { beatEnergy } from './beatenergy.js';
 
 /**
  * Canvas2D renderer — delta-time driven, sprite-cached, bloom-composited.
@@ -258,12 +259,7 @@ export class Renderer {
     const dt = clamp((dtMs || 16.7) / 1000, 0.001, 0.06);
     this.t += dt;
     this.beatInfo = levels || this.beatInfo || { bpm: 0, beatPhase: 0 };
-    const tracked = levels?.beatPulse;
-    if (tracked != null) {
-      this.beat = Math.max(tracked, this.beat * Math.pow(0.86, dt * 60));
-    } else {
-      this.beat *= Math.pow(0.86, dt * 60);
-    }
+    this.beat = beatEnergy(this.beat, levels, dt);
     this._updateLevels(levels, dt);
     return dt;
   }
