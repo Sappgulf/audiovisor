@@ -34,7 +34,7 @@ const state = {
   themeId: 'brass',
   autopilot: false,
   autopilotTimer: null,
-  drawerOpen: true,
+  drawerOpen: typeof window !== 'undefined' ? window.innerWidth > 640 : true,
   // what the user asked for, persisted; whether it's actually running is
   // ray.ok, which can flip on a GPU context loss
   raytraceWanted: true,
@@ -818,6 +818,34 @@ $('capture-btn').addEventListener('click', async () => {
   }
 });
 
+/* ---------- autoplay policy safety net ---------- */
+
+let _armedForGesture = false;
+/**
+ * Browsers only let an AudioContext run off a user gesture. If the gesture
+ * that loaded the file doesn't carry (Safari is strict about this, and a
+ * file-picker selection isn't always enough), the engine reports playing
+ * while nothing is audible. Detect that and resume on the next interaction
+ * instead of leaving the user with a silent stage.
+ */
+function ensureAudible() {
+  const ctx = engine.ctx;
+  if (!ctx || ctx.state !== 'suspended' || _armedForGesture) return;
+  _armedForGesture = true;
+  toast('Tap anywhere to <b>start audio</b>', { duration: 5000 });
+  const kick = () => {
+    ctx.resume().then(() => {
+      _armedForGesture = false;
+      if (!engine.playing) engine.play();
+      refreshStatus();
+    }).catch(() => {});
+    window.removeEventListener('pointerdown', kick, true);
+    window.removeEventListener('keydown', kick, true);
+  };
+  window.addEventListener('pointerdown', kick, true);
+  window.addEventListener('keydown', kick, true);
+}
+
 /* ---------- overflow menu ---------- */
 
 const moreMenu = $('more-menu');
@@ -868,7 +896,11 @@ async function loadFiles(files) {
     // never let a UI hiccup abort the load: the audio decoded fine by here
     try { updateTrackUI(); } catch (err) { console.error('track UI failed', err); }
     engine.play();
+    ensureAudible();
     const loaded = audioFiles.length - errors.length;
+    if (engine.evicted) {
+      toast(`<b>${engine.evicted}</b> track${engine.evicted > 1 ? 's' : ''} unloaded to save memory — they reload on play`, { duration: 3200 });
+    }
     toast(errors.length
       ? `Loaded <b>${loaded}</b> · skipped <b>${errors.length}</b> corrupt`
       : (loaded > 1 ? `Loaded <b>${loaded} tracks</b> — queue playing` : `Loaded <b>${engine.track.name}</b>`));
@@ -1211,14 +1243,21 @@ aboutPanel.addEventListener('click', (e) => {
 const drawer = $('drawer');
 function syncDrawerA11y() {
   $('nav-settings').setAttribute('aria-expanded', String(state.drawerOpen));
+  $('drawer-toggle')?.setAttribute('aria-expanded', String(state.drawerOpen));
   drawer.setAttribute('aria-hidden', String(!state.drawerOpen));
 }
-$('nav-settings').addEventListener('click', () => {
+function toggleDrawer() {
   state.drawerOpen = !state.drawerOpen;
   drawer.classList.toggle('is-closed', !state.drawerOpen);
   $('nav-settings').classList.toggle('is-active', state.drawerOpen);
+  $('drawer-toggle')?.classList.toggle('is-on', state.drawerOpen);
   syncDrawerA11y();
-});
+}
+$('nav-settings').addEventListener('click', toggleDrawer);
+$('drawer-toggle')?.addEventListener('click', toggleDrawer);
+drawer.classList.toggle('is-closed', !state.drawerOpen);
+$('nav-settings').classList.toggle('is-active', state.drawerOpen);
+$('drawer-toggle')?.classList.toggle('is-on', state.drawerOpen);
 syncDrawerA11y();
 
 /* ---------- keyboard ---------- */
@@ -1419,6 +1458,7 @@ if (typeof ResizeObserver !== 'undefined') {
 let rayDropped = false;
 let raySuspended = false;   // runtime-only kill switch, never persisted
 let _lastSecs = -1;
+let _vuAcc = 0;
 const seekFillEl = $('seek-fill');
 const timeCurrentEl = $('time-current');
 const shellEl = $('shell');
@@ -1514,10 +1554,11 @@ function frameStep(now) {
     const t = engine.getTime();
     const dur = engine.getDuration();
     seekFillEl.style.width = `${dur ? (t / dur) * 100 : 0}%`;
+    _vuAcc += dtMs;
     // the clock only ticks once a second — skip 59 of 60 text writes
     const secs = Math.floor(t);
     if (secs !== _lastSecs) { _lastSecs = secs; timeCurrentEl.textContent = fmtTime(t); }
-    drawVu();
+    if (_vuAcc >= 33) { _vuAcc = 0; drawVu(); }
     const bi = engine.beatInfo;
     $('bpm-value').textContent = bi.bpm && bi.confidence > 0.25 ? bi.bpm.toFixed(2) : '--.--';
     $('bass-chip').classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));

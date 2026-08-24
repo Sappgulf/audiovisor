@@ -378,4 +378,53 @@ describe('AudioEngine', () => {
     expect(lv).toHaveProperty('beatPulse');
     expect(lv).toHaveProperty('beatConfidence');
   });
+
+  it('seeking while playing does not fire the ended handler', async () => {
+    // src.stop() fires onended asynchronously; that handler used to treat the
+    // stop as "track finished", clearing playing and advancing the queue, so
+    // dragging the seek bar could jump to the next track
+    await engine.addToQueue([makeFile('one.wav'), makeFile('two.wav')]);
+    engine.play();
+    const first = engine.source;
+    engine.seek(12);
+    expect(first.stopped).toBe(true);
+    expect(first.onended).toBe(null);          // detached before stopping
+    first.onended?.();                          // a late callback must be inert
+    expect(engine.playing).toBe(true);
+    expect(engine.queueIndex).toBe(0);
+    expect(engine.source).not.toBe(first);
+  });
+
+  it('pause detaches the ended handler so a later play is not cancelled', async () => {
+    await engine.addToQueue([makeFile('one.wav'), makeFile('two.wav')]);
+    engine.play();
+    const first = engine.source;
+    engine.pause();
+    expect(first.onended).toBe(null);
+    engine.play();
+    expect(engine.playing).toBe(true);
+    expect(engine.queueIndex).toBe(0);
+  });
+
+  it('bounds decoded audio without losing queue entries', async () => {
+    const many = Array.from({ length: 45 }, (_, i) => makeFile(`t${i}.wav`));
+    await engine.addToQueue(many);
+    // every track keeps its slot, but the far ones give up their buffer
+    expect(engine.queue.length).toBe(45);
+    expect(engine.evicted).toBeGreaterThan(0);
+    expect(engine.queue.filter((q) => q.buffer).length).toBeLessThan(45);
+    expect(engine.queue[engine.queueIndex].buffer).toBeTruthy();
+    expect(engine.queue.every((q) => q.meta && q.file)).toBe(true);
+  });
+
+  it('reloads a released buffer when its track is selected', async () => {
+    const many = Array.from({ length: 45 }, (_, i) => makeFile(`t${i}.wav`));
+    await engine.addToQueue(many);
+    const released = engine.queue.findIndex((q) => !q.buffer);
+    expect(released).toBeGreaterThan(-1);
+    engine.playTrack(released);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(engine.queue[released].buffer).toBeTruthy();
+    expect(engine.queueIndex).toBe(released);
+  });
 });

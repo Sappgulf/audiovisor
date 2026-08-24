@@ -257,6 +257,7 @@ export class AudioEngine {
     }
     return {
       buffer: audioBuf,
+      file,          // kept so the buffer can be released and decoded again
       meta: {
         name: file.name.replace(/\.[^.]+$/, ''),
         ext: file.name.split('.').pop().toUpperCase(),
@@ -269,10 +270,12 @@ export class AudioEngine {
 
   async addToQueue(files) {
     const errors = [];
+    this.evicted = 0;
     for (const file of files) {
       try {
         const decoded = await this.decodeFile(file);
         this.queue.push(decoded);
+        this.evicted += this._trimQueue();
       } catch {
         errors.push(file.name || 'file');
       }
@@ -285,6 +288,47 @@ export class AudioEngine {
     return errors;
   }
 
+  /**
+   * Decoded audio is held uncompressed: a five-minute stereo track is ~100MB
+   * of Float32, so a dropped-in album can exhaust the tab.
+   *
+   * Rather than discard tracks, release the decoded buffer of the ones
+   * furthest from the playhead and keep the File handle. The queue entry
+   * stays put — name, duration and position are all intact — and the buffer
+   * is decoded again the moment that track is selected.
+   */
+  _trimQueue() {
+    // ~1500s of 44.1kHz stereo float32 is roughly 500MB resident
+    const MAX_SECONDS = 1500;
+    let released = 0;
+    const loaded = () => this.queue.filter((q) => q.buffer);
+    const seconds = () => loaded().reduce((a, q) => a + (q.meta?.duration || 0), 0);
+    while (seconds() > MAX_SECONDS) {
+      // furthest from the current track wins, but never the current one
+      let victim = -1;
+      let best = -1;
+      this.queue.forEach((q, i) => {
+        if (!q.buffer || !q.file || i === this.queueIndex) return;
+        const d = Math.abs(i - this.queueIndex);
+        if (d > best) { best = d; victim = i; }
+      });
+      if (victim < 0) break;
+      this.queue[victim].buffer = null;
+      released++;
+    }
+    return released;
+  }
+
+  /** Decode a queue entry whose buffer was released under memory pressure. */
+  async _rehydrate(i) {
+    const item = this.queue[i];
+    if (!item || item.buffer || !item.file) return item?.buffer || null;
+    const decoded = await this.decodeFile(item.file);
+    item.buffer = decoded.buffer;
+    this._trimQueue();
+    return item.buffer;
+  }
+
   _applyQueueItem(i) {
     this.queueIndex = i;
     const item = this.queue[i];
@@ -293,6 +337,16 @@ export class AudioEngine {
     this.offset = 0;
     this.beat.reset();
     this._setMode('file');
+    // buffer was released to save memory — decode it again, then resume
+    if (!item.buffer && item.file) {
+      const wasPlaying = this.playing;
+      this._rehydrate(i).then((buf) => {
+        if (this.queueIndex !== i || !buf) return;
+        this.buffer = buf;
+        if (wasPlaying) { this.playing = false; this.play(); }
+        this._emit();
+      }).catch(() => {});
+    }
   }
 
   _setMode(mode) {
@@ -303,13 +357,27 @@ export class AudioEngine {
 
   playTrack(i) {
     if (!this.queue.length) return;
-    if (this.playing) {
-      try { this.source.stop(); } catch {}
-      this.source = null;
-    }
+    if (this.playing) this._retireSource();
     this._applyQueueItem(i);
     this.playing = false;
     this.play();
+  }
+
+  /**
+   * Stop a buffer source we are replacing on purpose.
+   *
+   * src.stop() fires onended asynchronously. That handler treats the end of a
+   * source as the end of the track: it clears `playing` and, with a queue
+   * loaded, advances to the next track. So a seek — or a pause immediately
+   * followed by play — could silently jump tracks or stop playback. Detaching
+   * the handler first makes the stop intentional and inert.
+   */
+  _retireSource(src = this.source) {
+    if (!src) return;
+    src.onended = null;
+    try { src.stop(); } catch { /* already stopped */ }
+    try { src.disconnect(); } catch { /* already disconnected */ }
+    if (src === this.source) this.source = null;
   }
 
   _connectSource() {
@@ -381,8 +449,7 @@ export class AudioEngine {
     }
     if (!this.playing || !this.source) return;
     this.offset = this.getTime();
-    try { this.source.stop(); } catch {}
-    this.source = null;
+    this._retireSource();
     this.playing = false;
     this._emit();
   }
@@ -410,7 +477,7 @@ export class AudioEngine {
     t = Math.max(0, Math.min(t, this.buffer.duration - 0.05));
     this.offset = t;
     if (this.playing) {
-      try { this.source.stop(); } catch {}
+      this._retireSource();
       this._connectSource();
       this.source.start(0, this.offset);
       this.startedAt = this.ctx.currentTime - this.offset;

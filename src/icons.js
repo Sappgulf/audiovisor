@@ -28,6 +28,7 @@ export const ICONS = {
   keyboard: svg('<rect x="2.6" y="6" width="18.8" height="12" rx="2.2" fill="none"/><path d="M6.4 9.8 H6.5"/><path d="M9.8 9.8 H9.9"/><path d="M13.2 9.8 H13.3"/><path d="M16.6 9.8 H16.7"/><path d="M6.4 13 H6.5"/><path d="M9.8 13 H9.9"/><path d="M13.2 13 H13.3"/><path d="M16.6 13 H16.7"/><path d="M8.6 15.9 H15.4"/>'),
   plus: svg('<path d="M12 5.2 V18.8"/><path d="M5.2 12 H18.8"/>'),
   more: svg('<circle cx="5.4" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18.6" cy="12" r="1.7" fill="currentColor" stroke="none"/>'),
+  sliders: svg('<path d="M5 20V14"/><path d="M5 10V4"/><path d="M12 20V12"/><path d="M12 8V4"/><path d="M19 20V16"/><path d="M19 12V4"/><path d="M2.6 14 H7.4"/><path d="M9.6 8 H14.4"/><path d="M16.6 16 H21.4"/>'),
   search: svg('<circle cx="11" cy="11" r="6.2" fill="none"/><path d="M15.6 15.6 L20.2 20.2"/>'),
   link: svg('<path d="M10 13.2 A4.2 4.2 0 0 0 15.8 13.7 L18.2 11.3 A4.2 4.2 0 0 0 12.3 5.4 L10.6 7.1"/><path d="M14 10.8 A4.2 4.2 0 0 0 8.2 10.3 L5.8 12.7 A4.2 4.2 0 0 0 11.7 18.6 L13.4 16.9"/>'),
   close: svg('<path d="M6.2 6.2 L17.8 17.8"/><path d="M17.8 6.2 L6.2 17.8"/>'),

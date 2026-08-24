@@ -1929,3 +1929,33 @@ input:focus-visible,
 /* the transport Add control is a <label> now — keep it looking like a button */
 label.add-btn { user-select: none; }
 label.add-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- Small screens (v8.9.4) ---------- */
+
+/* the pill nav is hidden under 1024px, which left no way to open or close
+   the settings drawer on a phone */
+.compact-only { display: none; }
+@media (max-width: 1024px) {
+  .compact-only { display: flex; }
+}
+
+@media (max-width: 640px) {
+  /* the topbar ran off the right edge once the drawer toggle was added;
+     keyboard shortcuts are the least useful control on a touch device */
+  #help-btn { display: none; }
+  .topbar-right { gap: 8px; }
+
+  /* the sheet sits at the bottom of the screen and the transport floats over
+     it, so the last controls were unreachable */
+  .drawer-scroll { padding-bottom: 132px; }
+  .drawer { max-height: 68vh; }
+
+  /* keep the transport readable instead of wrapping into the sheet */
+  .transport { gap: 8px; padding: 10px 12px; }
+  .track-info { width: auto; flex: 1 1 auto; gap: 10px; }
+  .track-art { width: 38px; height: 38px; }
+  .utility-controls { gap: 10px; order: 4; width: 100%; justify-content: center; }
+  .seek-console { order: 3; }
+  .add-btn { order: 2; }
+  #vu-meter { display: none; }
+}
