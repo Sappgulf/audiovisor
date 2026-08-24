@@ -1,6 +1,7 @@
 import { VERT, SCENE_FRAG, BLUR_FRAG, ACCUM_FRAG, POST_FRAG } from './rayshader.js';
 import { MODES } from './themes.js';
 import { beatEnergy } from './beatenergy.js';
+import { sanitizeLevels, usableSpectrum } from './levels.js';
 
 /**
  * RayStage — WebGL2 raytraced stage renderer (v8.7).
@@ -308,9 +309,13 @@ export class RayStage {
     const dt = Math.min(Math.max((dtMs || 16.7) / 1000, 0.001), 0.06);
     this.t = tOverride != null ? tOverride : this.t + dt;
 
-    const lv = levels || {};
+    /* Same boundary guard as the Canvas2D renderer. WebGL accepts a NaN
+       uniform without complaint, so a bad analysis frame does not throw
+       here — it just pushes NaN into the shader and the whole stage renders
+       as garbage. See src/levels.js. */
+    const lv = sanitizeLevels(levels);
     this.beat = beatEnergy(this.beat, lv, dt);
-    if (freq) {
+    if (usableSpectrum(freq)) {
       this._uploadAudio(freq, wave);
       // fixed 45 rows/sec so the spectrogram and terrain scroll at the same
       // speed on a 60Hz and a 144Hz display

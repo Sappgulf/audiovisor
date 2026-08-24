@@ -35,16 +35,21 @@ const GRID_SHARPNESS = 2.4;
  * @param {number} decay per-60Hz-frame decay factor
  */
 export function beatEnergy(prev, levels, dt, decay = 0.86) {
-  const tail = (prev || 0) * Math.pow(decay, dt * 60);
+  /* Math.max propagates NaN, so a poisoned `prev` would keep returning NaN
+     no matter how clean the incoming frames are. Callers sanitise their
+     levels; this makes the accumulator itself unable to latch. */
+  const last = Number.isFinite(prev) ? prev : 0;
+  const step = Number.isFinite(dt) ? dt : 0;
+  const tail = last * Math.pow(decay, step * 60);
   if (!levels) return tail;
 
-  const pulse = levels.beatPulse != null ? levels.beatPulse : 0;
+  const pulse = Number.isFinite(levels.beatPulse) ? levels.beatPulse : 0;
 
   let grid = 0;
-  const bpm = levels.bpm || 0;
-  const conf = clamp(levels.beatConfidence || 0, 0, 1);
+  const bpm = Number.isFinite(levels.bpm) ? levels.bpm : 0;
+  const conf = Number.isFinite(levels.beatConfidence) ? clamp(levels.beatConfidence, 0, 1) : 0;
   if (bpm > 0 && conf >= GRID_MIN_CONFIDENCE) {
-    const phase = clamp(levels.beatPhase || 0, 0, 1);
+    const phase = Number.isFinite(levels.beatPhase) ? clamp(levels.beatPhase, 0, 1) : 0;
     grid = Math.pow(1 - phase, GRID_SHARPNESS) * conf * GRID_MAX;
   }
 

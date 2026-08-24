@@ -93,3 +93,24 @@ describe('beatEnergy', () => {
     expect(peaks).toBe(2);
   });
 });
+
+describe('beatEnergy cannot latch a bad value', () => {
+  it('recovers from a NaN accumulator', () => {
+    // Math.max propagates NaN, so without a guard this stays NaN forever
+    let v = beatEnergy(NaN, locked(0.5), DT);
+    expect(Number.isFinite(v)).toBe(true);
+    for (let i = 0; i < 5; i++) v = beatEnergy(v, locked(0.5), DT);
+    expect(Number.isFinite(v)).toBe(true);
+  });
+
+  it('tolerates a non-finite dt', () => {
+    for (const bad of [NaN, Infinity, undefined]) {
+      expect(Number.isFinite(beatEnergy(0.5, locked(0.2), bad))).toBe(true);
+    }
+  });
+
+  it('never returns NaN for any level field being NaN', () => {
+    const nan = { beatPulse: NaN, bpm: NaN, beatConfidence: NaN, beatPhase: NaN };
+    expect(Number.isFinite(beatEnergy(0.4, nan, DT))).toBe(true);
+  });
+});
