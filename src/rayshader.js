@@ -59,6 +59,13 @@ vec3 palf(float t) {
 
 /* ---------------- hash / noise ---------------- */
 
+/* atan(y, x) is undefined at the origin and returns NaN on ANGLE. A flat
+   upward normal (mirror floor, radar plate, spectrogram terrace, rooftop)
+   hits that case exactly, and the NaN then poisons the whole pixel. */
+float atan2s(float y, float x) {
+  return (abs(x) < 1e-8 && abs(y) < 1e-8) ? 0.0 : atan(y, x);
+}
+
 float hash11(float p) { return fract(sin(p * 127.1) * 43758.5453); }
 float hash13(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
 vec3 hash33(vec3 p) {
@@ -190,7 +197,7 @@ float scParticles(vec3 p) {
 
 /* 4 kaleido — mirrored crystal cluster */
 float scKaleido(vec3 p) {
-  float a = atan(p.y, p.x);
+  float a = atan2s(p.y, p.x);
   float r = length(p.xy);
   float seg = TAU / 8.0;
   a = mod(a + seg * 0.5, seg) - seg * 0.5;
@@ -233,7 +240,7 @@ float scTunnel(vec3 p) {
   float lz = mod(z, 1.1) - 0.55;
   float band = spec(fract(cell * 0.083));
   float r = 2.3 - band * 0.7 * uSens - uBeat * 0.12;
-  float wob = sin(atan(p.y, p.x) * 6.0 + cell * 0.7 + uTime) * 0.09 * (0.3 + uMid);
+  float wob = sin(atan2s(p.y, p.x) * 6.0 + cell * 0.7 + uTime) * 0.09 * (0.3 + uMid);
   float ring = length(vec2(length(p.xy) - r + wob, lz)) - (0.045 + band * 0.09);
   float d = ring;
   g_id = 4.0; g_aux = fract(cell * 0.083);
@@ -252,7 +259,7 @@ float scPlasma(vec3 p) {
     q.xz *= rot(uTime * (0.15 + fi * 0.09) + fi);
     q.yz *= rot(uTime * (0.11 - fi * 0.04));
     float s = sdTorus(q, vec2(0.7 + fi * 0.72 + e * 0.18, 0.03 + e * 0.07 + uBeat * 0.02));
-    if (s < d) { d = s; g_id = 4.0; g_aux = fi / 4.0; }
+    if (s < d) { d = s; g_id = 4.0; g_aux = (fi + 0.5) / 4.0; }
   }
   float core = sdSphere(p, 0.24 + uBass * 0.14 + uBeat * 0.08);
   if (core < d) { d = core; g_id = 4.0; g_aux = 0.95; }
@@ -409,7 +416,7 @@ float scFractal(vec3 p) {
     trap = min(trap, r);
     if (r > 2.2) break;
     float th = acos(clamp(z.z / r, -1.0, 1.0));
-    float ph = atan(z.y, z.x);
+    float ph = atan2s(z.y, z.x);
     dr = pow(r, power - 1.0) * power * dr + 1.0;
     float zr = pow(r, power);
     th *= power; ph *= power;
@@ -425,12 +432,12 @@ float scRadar(vec3 p) {
   float d = abs(sdTorus(p - vec3(0.0, 0.02, 0.0), vec2(2.2, 0.035))) - 0.01;
   g_id = 6.0; g_aux = 0.2;
   vec3 rq = p;
-  rq.xz *= rot(floor(atan(p.z, p.x) / (PI / 3.0) + 0.5) * (PI / 3.0));
+  rq.xz *= rot(floor(atan2s(p.z, p.x) / (PI / 3.0) + 0.5) * (PI / 3.0));
   float rib = abs(length(rq) - 2.2) - 0.012;   // meridian arc
   rib = max(rib, abs(rq.z) - 0.03);
   rib = max(rib, -p.y);
   if (rib < d) { d = rib; g_id = 6.0; g_aux = 0.2; }
-  float disc = sdCyl(p - vec3(0.0, -0.05, 0.0), 0.03, 2.15);
+  float disc = sdCyl(p, 0.06, 2.1);
   if (disc < d) { d = disc; g_id = 15.0; g_aux = 0.0; }
   for (int i = 0; i < 6; i++) {
     float fi = float(i);
@@ -501,23 +508,23 @@ Mat matOf(float id, float aux, vec3 p) {
   m.alb = vec3(0.5); m.rough = 0.4; m.metal = 0.0; m.emis = vec3(0.0); m.trans = 0.0;
   vec3 c = palf(aux);
   if (id < 0.5) {                       // mirror floor
-    m.alb = vec3(0.035); m.rough = 0.08 + 0.12 * uIdle; m.metal = 1.0;
+    m.alb = vec3(0.035); m.rough = 0.16 + 0.12 * uIdle; m.metal = 1.0;
   } else if (id < 1.5) {                // lit metal slab
-    m.alb = c * 0.55; m.rough = 0.18; m.metal = 1.0;
+    m.alb = c * 0.55; m.rough = 0.22; m.metal = 1.0;
     m.emis = c * (0.14 + 1.0 * spec(aux) * uSens + uBeat * 0.3);
   } else if (id < 2.5) {                // silk ribbon
     m.alb = c * 0.3; m.rough = 0.25; m.metal = 0.6;
     m.emis = c * (0.5 + uLevel * 1.1 + uBeat * 0.45);
   } else if (id < 3.5) {                // glass
-    m.alb = vec3(0.92); m.rough = 0.03; m.metal = 0.0; m.trans = 1.0;
+    m.alb = vec3(0.92); m.rough = 0.06; m.metal = 0.0; m.trans = 1.0;
     m.emis = c * (0.06 + uLevel * 0.16);
   } else if (id < 4.5) {                // pure emissive
     m.alb = c * 0.1; m.rough = 0.3; m.metal = 0.0;
     m.emis = c * (1.1 + 2.2 * spec(aux) + uBeat * 1.1);
   } else if (id < 5.5) {                // spectrogram terrace
-    vec3 cc = palf(pow(aux, 0.7));
-    m.alb = cc * 0.25; m.rough = 0.35; m.metal = 0.3;
-    m.emis = cc * (0.12 + pow(aux, 2.2) * 3.2);
+    vec3 cc = palf(pow(clamp(aux, 0.0, 1.0), 0.55));
+    m.alb = cc * 0.5; m.rough = 0.5; m.metal = 0.15;
+    m.emis = cc * (0.25 + pow(aux, 1.7) * 2.2);
   } else if (id < 6.5) {                // structural strut / bezel
     m.alb = palf(0.3) * 0.25; m.rough = 0.3; m.metal = 0.8;
     m.emis = palf(0.25) * (0.12 + uLevel * 0.25);
@@ -537,36 +544,41 @@ Mat matOf(float id, float aux, vec3 p) {
     m.alb = vec3(0.02); m.rough = 0.22; m.metal = 0.5;
     m.emis = palf(aux) * win * (0.7 + aux * 1.6 + uBeat * 0.5);
   } else if (id < 9.5) {                // wet asphalt
-    m.alb = vec3(0.012); m.rough = 0.06; m.metal = 0.9;
+    m.alb = vec3(0.012); m.rough = 0.14; m.metal = 0.9;
   } else if (id < 10.5) {               // liquid chrome
-    m.alb = palf(0.35) * 0.75 + 0.25; m.rough = 0.04; m.metal = 1.0;
-    m.emis = palf(uLevel) * uBeat * 0.5;
+    m.alb = palf(0.35) * 0.55 + 0.45; m.rough = 0.09; m.metal = 1.0;
+    m.emis = palf(uLevel) * uBeat * 0.35;
   } else if (id < 11.5) {               // dispersive glass
     m.alb = vec3(0.98); m.rough = 0.0; m.metal = 0.0; m.trans = 1.0;
   } else if (id < 12.5) {               // event horizon — swallows everything
     m.alb = vec3(0.0); m.rough = 1.0; m.metal = 0.0; m.emis = vec3(0.0);
   } else if (id < 13.5) {               // fractal shell
-    vec3 cc = palf(fract(aux * 1.7 + uTime * 0.03));
-    m.alb = cc * 0.5; m.rough = 0.34; m.metal = 0.7;
-    m.emis = cc * (0.12 + uBeat * 0.4);
+    vec3 cc = palf(fract(aux * 2.4 + uTime * 0.03));
+    m.alb = cc * (0.35 + 0.5 * (1.0 - aux));
+    m.rough = 0.22 + aux * 0.2; m.metal = 0.8;
+    m.emis = cc * (0.15 + pow(1.0 - aux, 2.0) * 0.9 + uBeat * 0.35);
   } else if (id < 14.5) {               // radar dome glass
     m.alb = vec3(0.9); m.rough = 0.06; m.metal = 0.0; m.trans = 1.0;
     m.emis = palf(0.3) * 0.08;
   } else if (id < 15.5) {               // radar disc
-    float a = atan(p.z, p.x);
+    float a = atan2s(p.z, p.x);
     float sweep = fract((a / TAU) - uTime * 0.22);
     float wedge = pow(1.0 - sweep, 3.0);          // longer phosphor tail
     float rings = smoothstep(0.035, 0.0, abs(fract(length(p.xz) * 1.6) - 0.5) - 0.44);
     float spokes = smoothstep(0.04, 0.0, abs(fract(a / TAU * 8.0) - 0.5) - 0.47);
     m.alb = vec3(0.02); m.rough = 0.35; m.metal = 0.4;
-    m.emis = palf(0.4) * (wedge * 6.0 + rings * 4.0 + spokes * 2.0 + 1.0)
-           + palf(0.85) * pow(wedge, 6.0) * 4.0;
+    m.emis = palf(0.4) * (wedge * 1.6 + rings * 1.1 + spokes * 0.5 + 0.18)
+           + palf(0.85) * pow(wedge, 6.0) * 2.0;
   } else if (id < 16.5) {               // gpu voxel
     m.alb = vec3(0.03); m.rough = 0.25; m.metal = 0.6;
     m.emis = palf(aux) * (0.18 + aux * 3.0 + uBeat * 0.6);
-  } else if (id < 17.5) {               // soft backlight bar (prism beam)
+  } else if (id < 17.5) {               // prism beam / dispersion fan
     m.alb = vec3(0.0); m.rough = 1.0;
-    m.emis = palf(aux) * (0.9 + spec(aux) * 1.6 + uBeat * 0.4);
+    // saturate the palette walk so the fan reads as a spectrum, not a white wedge
+    vec3 cc = palf(aux);
+    float l = dot(cc, vec3(0.2126, 0.7152, 0.0722));
+    cc = mix(vec3(l), cc, 1.6);
+    m.emis = max(cc, vec3(0.0)) * (0.5 + spec(aux) * 0.9 + uBeat * 0.25);
   } else if (id < 18.5) {               // orb core — warm, never clipped
     vec3 cc = palf(0.25 + aux * 0.5);
     m.alb = cc * 0.2; m.rough = 0.4;
@@ -580,7 +592,7 @@ Mat matOf(float id, float aux, vec3 p) {
   // otherwise bloom into a flat white sheet
   float gain = 1.0;
   if (uMode == 3)  gain = 0.45;   // particles
-  if (uMode == 5)  gain = 0.45;   // spectro terrace
+  if (uMode == 5)  gain = 0.55;   // spectro terrace
   if (uMode == 6)  gain = 0.55;   // tunnel
   if (uMode == 14) gain = 0.22;   // tensor lattice
   if (uMode == 17) gain = 0.35;   // bloom field
@@ -617,6 +629,14 @@ vec3 envBase(vec3 rd) {
   vec3 rim = normalize(vec3(-0.7, 0.2, 0.5));
   sky += palf(0.9) * pow(clamp(dot(rd, rim), 0.0, 1.0), 48.0) * 0.25;
   if (uMode == 10 || uMode == 11 || uMode == 16 || uMode == 17 || uMode == 3) sky += starField(rd);
+  if (uMode == 8) {
+    // dusk wash + aurora ribbon over the ridges
+    sky += palf(0.2) * 0.05 * pow(clamp(rd.y * 1.6 + 0.2, 0.0, 1.0), 1.5);
+    float band = exp(-pow((rd.y - 0.14) * 7.0, 2.0));
+    float ripple = 0.45 + 0.55 * sin(rd.x * 7.0 + uTime * 0.5) * sin(rd.x * 3.0 - uTime * 0.3);
+    sky += palf(0.7) * band * ripple * (0.3 + uLevel * 0.55);
+    sky += starField(rd) * 0.5;
+  }
   return sky;
 }
 
@@ -626,7 +646,7 @@ vec3 envBase(vec3 rd) {
    across the sky. So primary misses use envBase, everything else envColor. */
 vec3 envColor(vec3 rd) {
   vec3 sky = envBase(rd);
-  float az = atan(rd.z, rd.x);
+  float az = atan2s(rd.z, rd.x);
   float b1 = exp(-pow((rd.y - 0.55) * 6.0, 2.0)) * (0.5 + 0.5 * cos(az));
   float b2 = exp(-pow((rd.y - 0.16) * 14.0, 2.0)) * (0.5 + 0.5 * cos(az * 2.0 + 2.2));
   return sky + palf(0.35) * b1 * 0.55 + palf(0.85) * b2 * 0.3;
@@ -677,15 +697,18 @@ vec3 brdf(vec3 n, vec3 v, vec3 l, Mat m, vec3 lc) {
   float ndv = max(dot(n, v), 1e-4);
   float ndh = max(dot(n, h), 0.0);
   float vdh = max(dot(v, h), 0.0);
-  float a = max(m.rough * m.rough, 0.002);
+  // Punctual lights need a roughness floor: a mirror-smooth surface makes D
+  // blow up. Clamping the *result* instead would flatten the narrow peak into
+  // a broad saturated plateau, which is what washed whole scenes to white.
+  float a = max(m.rough * m.rough, 0.012);
   float a2 = a * a;
   float dn = ndh * ndh * (a2 - 1.0) + 1.0;
   float D = a2 / (PI * dn * dn);
   float k = a * 0.5;
   float G = (ndl / (ndl * (1.0 - k) + k)) * (ndv / (ndv * (1.0 - k) + k));
   vec3 F0 = mix(vec3(0.04), m.alb, m.metal);
-  vec3 F = F0 + (1.0 - F0) * pow(1.0 - vdh, 5.0);
-  vec3 spe = min(D * G * F / (4.0 * ndl * ndv + 1e-4), vec3(6.0));
+  vec3 F = F0 + (1.0 - F0) * pow(max(1.0 - vdh, 0.0), 5.0);   // base must never go negative
+  vec3 spe = D * G * F / (4.0 * ndl * ndv + 1e-4);
   vec3 dif = (1.0 - F) * (1.0 - m.metal) * m.alb / PI;
   return (dif + spe) * lc * ndl;
 }
@@ -702,7 +725,7 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, Mat m, float shadows) {
   col += brdf(n, v, fill, m, palf(0.85) * 0.45);
   float occ = ao(p, n);
   col += m.alb * (1.0 - m.metal) * envColor(n) * 0.7 * occ;
-  float fres = pow(1.0 - max(dot(n, v), 0.0), 4.0);
+  float fres = pow(max(1.0 - max(dot(n, v), 0.0), 0.0), 4.0);
   col += palf(0.7) * fres * 0.18 * occ * (0.4 + uLevel);
   return col;
 }
@@ -715,7 +738,7 @@ float volDensity(vec3 p) {
     q.xz *= rot(uTime * 0.05);
     float disc = exp(-abs(q.y * 1.9) * 1.6);
     float f = fbm(q * 0.55 + vec3(0.0, uTime * 0.03, uTime * 0.02));
-    float arms = 0.55 + 0.45 * sin(atan(q.z, q.x) * 2.0 + length(q.xz) * 1.4);
+    float arms = 0.55 + 0.45 * sin(atan2s(q.z, q.x) * 2.0 + length(q.xz) * 1.4);
     float d = disc * f * arms;
     d *= smoothstep(4.2, 1.2, length(q));
     return max(0.0, d - 0.06) * (3.4 + uLevel * 3.0);
@@ -724,7 +747,7 @@ float volDensity(vec3 p) {
     vec3 q = p;
     q.xz *= rot(uTime * 0.07);
     float r = length(q.xz);
-    float a = atan(q.z, q.x);
+    float a = atan2s(q.z, q.x);
     float arm = cos(a * 2.0 - r * 2.3 + uTime * 0.2) * 0.5 + 0.5;
     float d = pow(arm, 2.6) * exp(-r * 0.55) * exp(-abs(q.y) * 5.0);
     d += exp(-r * 3.2 - abs(q.y) * 6.0) * (1.2 + uBass);
@@ -852,7 +875,15 @@ vec3 trace(vec3 ro, vec3 rd) {
 
   float id, aux;
   float t = march(ro, rd, 40.0, id, aux);
-  if (t < 0.0) return envBase(rd);
+  if (t < 0.0) {
+    vec3 bg = envBase(rd);
+    if (uMode == 16) {
+      // photon ring: glow for rays that pass just outside the horizon
+      float b = length(ro - dot(ro, rd) * rd);          // closest approach to the singularity
+      bg += palf(0.75) * smoothstep(1.9, 1.06, b) * (1.2 + uBeat * 0.6);
+    }
+    return bg;
+  }
 
   vec3 p = ro + rd * t;
   vec3 n = normalAt(p);
@@ -872,7 +903,7 @@ vec3 trace(vec3 ro, vec3 rd) {
     } else {
       sum = glassPath(p, rd, n, 1.45);
     }
-    float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, -rd), 0.0), 5.0);
+    float fres = 0.04 + 0.96 * pow(max(1.0 - max(dot(n, -rd), 0.0), 0.0), 5.0);
     vec3 refl = envColor(reflect(rd, n));
     col = mix(sum, refl, clamp(fres, 0.0, 1.0)) + m.emis;
   } else if (uRefl == 1 && m.metal > 0.35 && m.rough < 0.34) {
@@ -887,12 +918,9 @@ vec3 trace(vec3 ro, vec3 rd) {
       Mat m2 = matOf(id2, aux2, p2);
       rc = shade(p2, rr, n2, m2, 0.0);
     }
-    float fres = 0.06 + 0.94 * pow(1.0 - max(dot(n, -rd), 0.0), 5.0);
+    float fres = 0.06 + 0.94 * pow(max(1.0 - max(dot(n, -rd), 0.0), 0.0), 5.0);
     col += rc * mix(m.alb, vec3(1.0), 0.5) * mix(0.35, 1.0, fres) * (1.0 - m.rough * 2.0);
   }
-
-  // black-hole halo
-  if (uMode == 16) col += palf(0.6) * pow(clamp(1.0 - abs(length(p) - 1.0), 0.0, 1.0), 6.0) * 1.4;
 
   // distance haze
   col = mix(col, envBase(rd) * 0.9, pow(clamp(t / 42.0, 0.0, 1.0), 1.4) * 0.7);
@@ -914,7 +942,14 @@ void main() {
     vec2 lens = vec2(cos(ga), sin(ga)) * gr;
     vec3 ro, rd;
     camera(uTime, uv, lens, ro, rd);
-    acc += trace(ro, rd);
+    vec3 c = trace(ro, rd);
+    // NaN scrub: comparisons against NaN are false, so this catches both NaN
+    // and negatives. min(NaN, x) returns x on some drivers, which would paint
+    // the clamp ceiling across the frame.
+    if (!(c.r >= 0.0)) c.r = 0.0;
+    if (!(c.g >= 0.0)) c.g = 0.0;
+    if (!(c.b >= 0.0)) c.b = 0.0;
+    acc += min(c, vec3(40.0));   // firefly clamp, high enough to keep real glints
   }
   acc /= float(max(uSpp, 1));
   fragColor = vec4(max(acc, 0.0), 1.0);
@@ -966,7 +1001,9 @@ void main() {
     vec3 c = texture(uScene, uv + o * tx).rgb;
     lo = min(lo, c); hi = max(hi, c);
   }
-  his = clamp(his, lo * 0.85, hi * 1.15 + 0.02);
+  // strict neighbourhood clamp — any headroom here compounds through the
+  // feedback loop and blows the whole frame out to white within a second
+  his = clamp(his, lo, hi);
   fragColor = vec4(mix(cur, his, uBlend), 1.0);
 }`;
 

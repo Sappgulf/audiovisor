@@ -22,8 +22,8 @@ import { MODES } from './themes.js';
 const QUALITY = {
   low:    { scale: 0.5,  spp: 1, steps: 64,  refl: 0, blend: 0.62, maxPx: 0.35e6 },
   medium: { scale: 0.7,  spp: 1, steps: 96,  refl: 1, blend: 0.5,  maxPx: 0.7e6 },
-  high:   { scale: 0.85, spp: 1, steps: 128, refl: 1, blend: 0.4,  maxPx: 1.2e6 },
-  ultra:  { scale: 1.0,  spp: 3, steps: 200, refl: 1, blend: 0.25, maxPx: 2.2e6 },
+  high:   { scale: 0.8,  spp: 2, steps: 128, refl: 1, blend: 0.45, maxPx: 1.1e6 },
+  ultra:  { scale: 1.0,  spp: 4, steps: 200, refl: 1, blend: 0.3,  maxPx: 2.0e6 },
 };
 
 const HIST_W = 256;
@@ -271,7 +271,7 @@ export class RayStage {
       const n = freq.length;
       for (let i = 0; i < 256; i++) {
         const u = i / 256;
-        const idx = Math.min(n - 1, Math.floor(Math.pow(u, 1.9) * n * 0.72));
+        const idx = Math.min(n - 1, Math.floor(Math.pow(u, 1.65) * n * 0.72));
         const idx2 = Math.min(n - 1, idx + 2);
         s[i] = Math.max(freq[idx], freq[idx2]);
       }
@@ -379,7 +379,9 @@ export class RayStage {
     const key = `${this.mode}|${this.quality}|${this.rw}`;
     const stable = key === this._lastKey && this.frames > 1;
     this._lastKey = key;
-    const blend = stable ? q.blend * (1 - Math.min(this.beat, 0.85)) : 0;
+    // a beat softens the blend so hits stay crisp, but killing it entirely
+    // left every beat frame full of sampling noise
+    const blend = stable ? q.blend * (1 - Math.min(this.beat, 0.6) * 0.5) : 0;
 
     gl.useProgram(this.pAccum);
     gl.bindFramebuffer(gl.FRAMEBUFFER, next.fbo);
