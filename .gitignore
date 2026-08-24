@@ -5,3 +5,8 @@ dist
 .DS_Store
 .vercel
 .playwright-mcp
+
+# scratch / working files
+sheet*.png
+sheet*.b64.txt
+/tmp-*
