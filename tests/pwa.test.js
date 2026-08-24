@@ -93,3 +93,52 @@ describe('stylesheet', () => {
     expect(seek).toContain('touch-action: none');
   });
 });
+
+describe('responsive layout rules', () => {
+  let css;
+  beforeAll(() => { css = readFileSync('src/style.css', 'utf8'); });
+
+  /** Grab the body of the first @media block whose query contains `needle`. */
+  const mediaBlock = (needle) => {
+    const at = css.indexOf(`@media ${needle}`);
+    if (at < 0) return '';
+    let depth = 0;
+    for (let i = css.indexOf('{', at); i < css.length; i++) {
+      if (css[i] === '{') depth++;
+      else if (css[i] === '}' && --depth === 0) return css.slice(at, i + 1);
+    }
+    return '';
+  };
+
+  it('wraps the transport in the band where one row does not fit', () => {
+    // the single-row transport needs ~1133px; below that the scrubber has
+    // to take its own row or it collapses to 0px and controls get clipped
+    const band = mediaBlock('(min-width: 641px) and (max-width: 1179px)');
+    expect(band, 'mid-width transport block missing').not.toBe('');
+    expect(band).toContain('flex-wrap: wrap');
+    expect(band).toContain('.seek-console');
+  });
+
+  it('raises the transport cap where it does lay out in one row', () => {
+    const wide = mediaBlock('(min-width: 1180px)');
+    expect(wide).toContain('1180px');
+  });
+
+  it('has a short-viewport layout for phone landscape', () => {
+    const land = mediaBlock('(max-height: 500px) and (orientation: landscape)');
+    expect(land, 'landscape block missing').not.toBe('');
+    expect(land).toContain('.seek-console');
+  });
+
+  it('keeps the narrow-phone tier that stops the topbar clipping', () => {
+    const narrow = mediaBlock('(max-width: 360px)');
+    expect(narrow).toContain('.wordmark');
+  });
+
+  it('leaves no gap between the phone and mid-width transport rules', () => {
+    // 640 is the phone ceiling and 641 the mid-width floor; a gap here is
+    // how 768 ended up with the wide desktop transport in the first place
+    expect(css).toContain('@media (max-width: 640px)');
+    expect(css).toContain('@media (min-width: 641px) and (max-width: 1179px)');
+  });
+});

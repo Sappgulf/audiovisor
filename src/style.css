@@ -2262,3 +2262,76 @@ html, body {
     padding-right: max(14px, var(--sar));
   }
 }
+
+/* ==========================================================================
+   Narrow phones (<=360px: iPhone SE, Galaxy S-mini and friends)
+   ==========================================================================
+   At 320px the topbar overflowed by 35px and pushed the settings toggle —
+   the only way into every setting — off the right edge, and the transport
+   grew taller (248px) than the stage it was controlling (216px).
+   ========================================================================== */
+
+@media (max-width: 360px) {
+  /* The wordmark costs ~90px and the diamond already identifies the app.
+     Dropping it is what buys the toolbar back. */
+  .brand .wordmark { display: none; }
+  .topbar { padding: 0 8px; }
+  .topbar-right { gap: 6px; }
+
+  /* 44px is the target everywhere there is room; at this width the choice
+     is 40px or a clipped control, and a reachable button wins. */
+  .ghost-btn,
+  .mic-btn,
+  .lime-btn,
+  .add-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  /* keep Add on the utility row instead of letting it claim one of its own */
+  .utility-controls { gap: 2px; }
+  .add-btn { width: 40px; }
+  .util-sep { margin-inline: 2px; }
+
+  .transport { padding: 8px 10px 6px; gap: 6px; }
+  .play-btn { width: 50px; height: 50px; }
+  .transport-controls { gap: 22px; }
+  .track-art { width: 34px; height: 34px; }
+}
+
+/* ==========================================================================
+   Tablet portrait through narrow desktop (641px - 1179px)
+   ==========================================================================
+   The single-row transport needs ~1133px to lay out with a usable scrubber,
+   but it was capped at 960px — so it overflowed at every width above the
+   phone breakpoint, desktop included. At 768x1024 that clipped Queue,
+   Library, More and Fullscreen off the right edge; at 1280x800 it clipped
+   More and Fullscreen. In both cases the seek console collapsed to 0px,
+   leaving the scrubber unusable with a mouse as well as a finger. Verified
+   against the pre-existing build, so this is not fallout from the mobile
+   work.
+
+   Below 1180px the scrubber takes its own row, the same answer as on a
+   phone. At and above it, the cap is raised so one row genuinely fits.
+   ========================================================================== */
+
+@media (min-width: 641px) and (max-width: 1179px) {
+  .transport {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 0;
+    padding: 10px 16px;
+    gap: 8px 14px;
+    margin-bottom: calc(14px + var(--sab));
+  }
+  .track-info { width: auto; flex: 1 1 200px; }
+  .transport-controls { flex: 0 0 auto; }
+  .utility-controls { flex: 0 1 auto; }
+  .seek-console { order: 9; flex: 1 1 100%; }
+}
+
+@media (min-width: 1180px) {
+  /* 960px was never enough for one row; this is the width the contents
+     actually need, and it still leaves the transport inset from the edges */
+  .transport { width: min(1180px, calc(100vw - 32px)); }
+}
