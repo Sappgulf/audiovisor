@@ -99,6 +99,19 @@ button:focus-visible, input:focus-visible {
 
 /* ---------- App frame ---------- */
 
+/* Safe-area insets. The page paints edge to edge (viewport-fit=cover), so
+   every element that hugs a screen edge adds the matching inset — without
+   these the topbar sits under the notch and the transport under the home
+   indicator. env() resolves to 0 everywhere that has no cutout, so the
+   desktop layout is unaffected. */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+
+
 .app-root {
   position: relative;
   min-height: 100vh;
@@ -1993,4 +2006,166 @@ label.add-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 
   .seek-console { order: 3; }
   .add-btn { order: 2; }
   #vu-meter { display: none; }
+}
+
+/* ==========================================================================
+   Mobile — consolidated
+   ==========================================================================
+   The rules above grew as a series of patches across three separate 640px
+   blocks. These come last so they win the cascade, and they are grouped by
+   the problem they solve rather than by selector.
+   ========================================================================== */
+
+/* Applies at every size: a tap should not flash a blue box, and pull-to-
+   refresh must not fire mid-scrub. */
+.shell,
+.topbar,
+.transport,
+.drawer,
+.queue-panel {
+  -webkit-tap-highlight-color: transparent;
+}
+html, body {
+  overscroll-behavior: none;
+}
+
+@media (max-width: 640px) {
+  /* ---- safe areas -------------------------------------------------------
+     The page paints edge to edge, so anything hugging a screen edge needs
+     the inset or it lands under the notch or the home indicator. */
+  .topbar {
+    margin-top: calc(10px + var(--sat));
+    width: calc(100vw - 16px - var(--sal) - var(--sar));
+  }
+  .transport {
+    margin-bottom: calc(10px + var(--sab));
+    width: calc(100vw - 16px - var(--sal) - var(--sar));
+  }
+  .drawer {
+    padding-bottom: var(--sab);
+    max-height: calc(68dvh + var(--sab));
+  }
+  .drawer-scroll { padding-bottom: calc(132px + var(--sab)); }
+  .queue-panel, .library-panel { bottom: calc(96px + var(--sab)); }
+  .toasts { bottom: calc(96px + var(--sab)); }
+
+  /* ---- give the stage the room it was wasting ---------------------------
+     .workspace is a flex row, so `flex: 1` on the stage grew it sideways
+     while ~195px of vertical space sat empty above and below. As a column
+     with stretch alignment the stage fills what is actually there. */
+  .workspace {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 8px 8px 4px;
+    gap: 0;
+  }
+  .stage {
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+    max-height: none;
+    height: auto;
+    aspect-ratio: auto;
+  }
+
+  /* ---- touch targets ----------------------------------------------------
+     Everything interactive clears 44px, the point below which taps start
+     landing on neighbours. Visual size is unchanged where a control would
+     look wrong at 44px — the tappable box is grown with padding instead. */
+  .ghost-btn,
+  .mic-btn,
+  .lime-btn,
+  .icon-x,
+  .add-btn,
+  .drawer-tab,
+  .nav-link {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .play-btn { width: 56px; height: 56px; }
+  .fx-chip { min-height: 38px; padding-inline: 12px; }
+  .preset-btn, .queue-row { min-height: 44px; }
+  .connect-input, .mode-filter, #lib-search { min-height: 40px; font-size: 16px; }
+
+  /* a 16px-tall bar is a hard target for a thumb; the hit area grows
+     without the bar itself getting heavier */
+  .seek-track {
+    height: 20px;
+    padding-block: 12px;
+    background-clip: content-box;
+    margin-block: -12px;
+  }
+  .seek-console { gap: 10px; }
+
+  /* ---- transport: stack it like a phone player ---------------------------
+     The row wrapped in source order, which left the play button off-centre
+     next to a stray Add button. Each band now takes a full row in a
+     deliberate order: title, scrubber, transport, then utilities. */
+  .transport {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px 8px;
+    border-radius: 26px;
+  }
+  .track-info {
+    order: 1;
+    flex: 1 1 100%;
+    width: auto;
+    gap: 12px;
+  }
+  /* the save-to-library button is absolutely placed and sat on the title */
+  .track-meta { padding-right: 34px; }
+
+  .seek-console { order: 2; flex: 1 1 100%; }
+
+  .transport-controls {
+    order: 3;
+    flex: 1 1 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+  }
+
+  .add-btn { order: 4; }
+  .utility-controls {
+    order: 5;
+    /* an earlier 640px block pins this to width:100%, which pushed Add onto
+       a row of its own — they belong on one line */
+    width: auto;
+    flex: 1 1 auto;
+    justify-content: center;
+    gap: 6px;
+  }
+  /* Add sits with the utilities rather than orphaned on the control row */
+  .add-btn .add-label { display: none; }
+  .add-btn { width: 44px; padding: 0; justify-content: center; }
+
+  /* ---- misc ------------------------------------------------------------- */
+  /* iOS zooms the page when a focused input is under 16px */
+  input, select, textarea { font-size: 16px; }
+
+  /* ---- dense grids: grow the hit area, keep the look ---------------------
+     Theme dots and mode cards are packed deliberately tight; sizing them to
+     44px would wreck the grid. An invisible centred pseudo-element gives
+     the thumb a 44px target over a 30px dot instead. */
+  .theme-dot { position: relative; }
+  .theme-dot::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  .theme-row { gap: 10px; }
+
+  .fx-chip, .rt-chip, .preset-btn { min-height: 44px; }
+  .browse-btn { min-height: 44px; padding-inline: 20px; }
+
+  /* the mode grid is the main browsing surface on a phone — two columns of
+     comfortably tappable cards beats three cramped ones */
+  .mode-card { min-height: 64px; }
 }
