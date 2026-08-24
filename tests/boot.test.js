@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { JSDOM, VirtualConsole } from 'jsdom';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { build } from 'vite';
 
 function fakeCtx() {
   const grad = () => ({ addColorStop: () => {} });
@@ -30,8 +31,27 @@ describe('App boot smoke (jsdom)', () => {
     errors = [];
     frames = 0;
     let html = readFileSync('dist/index.html', 'utf8');
-    const asset = readdirSync('dist/assets').find((f) => f.startsWith('index-') && f.endsWith('.js'));
-    const bundle = readFileSync('dist/assets/' + asset, 'utf8');
+    /* jsdom cannot execute ESM, and since the app gained dynamic imports the
+       shipped entry chunk is a real module (it exports bindings for the lazy
+       chunks). So build a dedicated single-file IIFE for this smoke test:
+       same sources, dynamic imports inlined, no module syntax. That keeps
+       the question this test asks — "does the whole app boot in a DOM
+       without throwing?" — and now covers the lazy code paths too, which
+       the shipped-chunk approach never did. */
+    const [{ output }] = [await build({
+      logLevel: 'silent',
+      configFile: false,
+      build: {
+        write: false,
+        target: 'es2020',
+        minify: false,
+        rollupOptions: {
+          input: 'src/main.js',
+          output: { format: 'iife' },   // implies no code splitting
+        },
+      },
+    })].flat();
+    const bundle = output.find((c) => c.type === 'chunk').code;
     // eslint-disable-next-line no-useless-escape
     const inline = '<script>' + bundle.replace(/<\/script>/g, '<\\/script>') + '<\/script>';
     html = html.replace(/<script type="module"[^>]*>\s*<\/script>/s, '');

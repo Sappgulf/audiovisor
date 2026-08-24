@@ -1,9 +1,7 @@
 import { setIcon } from './icons.js';
 import { MODES, THEMES } from './themes.js';
 import { AudioEngine } from './audio.js';
-import { RayStage } from './raystage.js';
 import { Renderer } from './visualizers.js';
-import { ConnectPanel } from './connect.js';
 import { fmtTime, pickRandom, fmtStamp, computePeaks } from './utils.js';
 import { filterCommands, clampActive } from './palette.js';
 import {
@@ -25,8 +23,35 @@ const esc = (s) =>
 
 const engine = new AudioEngine();
 const renderer = new Renderer($('viz-canvas'));
-const ray = new RayStage($('ray-canvas'));
-if (!ray.ok && ray.error) console.warn('raytrace stage unavailable:', ray.error);
+/* RayStage carries the whole GLSL scene library (raystage + rayshader), by
+   far the largest thing in the bundle, and every mode already has a working
+   Canvas2D path. Start on a no-op stub that reports `ok: false` — which the
+   render loop already treats as "use the 2D renderer" — and swap the real
+   stage in once its chunk lands. */
+let ray = {
+  ok: false, lost: false, loading: true, error: null,
+  canvas: $('ray-canvas'), beat: 0, w: 0, h: 0, quality: 'high',
+  setMode() {}, setTheme() {}, setQuality() {}, setSensitivity() {},
+  setBassFocus() {}, setColorPop() {}, setBloom() {}, resize() {}, render() {},
+};
+
+import('./raystage.js')
+  .then(({ RayStage }) => {
+    const stage = new RayStage($('ray-canvas'));
+    ray = stage;
+    if (!stage.ok && stage.error) console.warn('raytrace stage unavailable:', stage.error);
+    // replay everything the stub swallowed while the chunk was in flight
+    stage.setTheme(THEMES.find((t) => t.id === state.themeId));
+    stage.setMode(state.modeId);
+    stage.setQuality(state.rayQuality);
+    for (const [id, el] of Object.entries(sliderEls)) applySlider(id, parseFloat(el.value));
+    if (renderer.w) stage.resize(renderer.w, renderer.h);
+  })
+  .catch((err) => {
+    ray.loading = false;
+    ray.error = err;
+    console.warn('raytrace stage failed to load:', err);
+  });
 renderer.setTheme(THEMES.find((t) => t.id === 'brass'));
 ray.setTheme(THEMES.find((t) => t.id === 'brass'));
 
@@ -707,7 +732,7 @@ const trackArtEl = $('track-art');
 function updateTrackUI() {
   const input = engine.activeInput;
 
-  if ((input === 'spotify' || input === 'apple') && connect.currentTrack) {
+  if ((input === 'spotify' || input === 'apple') && connect?.currentTrack) {
     const t = connect.currentTrack;
     $('track-name').textContent = t.name;
     $('track-spec').textContent = `${t.artists} · ${t.kind}`;
@@ -802,14 +827,38 @@ engine.onQueueChange = () => {
 
 /* ---------- music account connect panel ---------- */
 
-const connect = new ConnectPanel($('connect-root'), {
-  engine,
-  toast,
-  onExternalTrack: async () => {
-    updateTrackUI();
-  },
-});
-connect.boot();
+/* ConnectPanel pulls in the Spotify and Apple Music SDK clients, which a
+   guest playing local files never touches. Load it on demand: when the user
+   opens the Source tab, or immediately if we are returning from a provider
+   OAuth redirect and there is a code to exchange. */
+let connect = null;
+let _connectLoad = null;
+function connectPending() {
+  const q = new URLSearchParams(window.location.search);
+  return q.has('code') || q.has('error');
+}
+function ensureConnect() {
+  if (_connectLoad) return _connectLoad;
+  _connectLoad = import('./connect.js')
+    .then(({ ConnectPanel }) => {
+      connect = new ConnectPanel($('connect-root'), {
+        engine,
+        toast,
+        onExternalTrack: async () => { updateTrackUI(); },
+      });
+      return connect.boot().then(() => connect);
+    })
+    .catch((err) => {
+      console.error('connect panel failed to load:', err);
+      _connectLoad = null;   // let a later Source-tab visit retry
+      toast('<b>Music accounts unavailable</b> — could not load the panel', { duration: 3600 });
+      return null;
+    });
+  return _connectLoad;
+}
+// an OAuth redirect carries a code that expires; exchange it without waiting
+// for the user to find the Source tab
+if (connectPending()) ensureConnect();
 
 /* ---------- capture (topbar shortcut) ---------- */
 
@@ -979,7 +1028,7 @@ async function updateMediaSession() {
   if (!('mediaSession' in navigator)) return;
   try {
     const input = engine.activeInput;
-    if ((input === 'spotify' || input === 'apple') && connect.currentTrack) {
+    if ((input === 'spotify' || input === 'apple') && connect?.currentTrack) {
       const t = connect.currentTrack;
       const artwork = t.artwork ? [{ src: t.artwork, sizes: '640x640', type: 'image/jpeg' }] : [];
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -1559,7 +1608,7 @@ function frameStep(now) {
 
   const rtOn = state.raytraceWanted && ray.ok && !raySuspended;
   // surface a GPU context loss instead of silently swapping renderers
-  if (state.raytraceWanted && !ray.ok && !rayDropped) {
+  if (state.raytraceWanted && !ray.ok && !ray.loading && !rayDropped) {
     rayDropped = true;
     toast(ray.lost
       ? 'GPU context lost — <b>Canvas2D stage</b> until it recovers'
@@ -1918,6 +1967,7 @@ function setRayQuality(q, { quiet = false } = {}) {
   }
 }
 $('rt-chip')?.addEventListener('click', () => {
+  if (ray.loading) { toast('Raytrace stage <b>still loading</b>…', { duration: 1600 }); return; }
   if (!ray.ok && !ray.lost) { toast('<b>Raytrace unavailable</b> — WebGL2 required', { duration: 2400 }); return; }
   setRaytrace(!state.raytraceWanted);
 });
@@ -1957,6 +2007,7 @@ function setDrawerTab(id, { persist = true } = {}) {
     b.tabIndex = on ? 0 : -1;
   });
   drawerPanels.forEach((p) => p.classList.toggle('is-active', p.dataset.panel === btn.dataset.tab));
+  if (btn.dataset.tab === 'source') ensureConnect();
   if (drawerScroll) drawerScroll.scrollTop = 0;
   moveInk(btn);
   if (persist) localStorage.setItem(TAB_KEY, btn.dataset.tab);
@@ -2061,7 +2112,11 @@ window.addEventListener('keydown', (e) => {
 
 
 /* debug/testing hook */
-window.__av = { engine, renderer, connect, ray, state };
+window.__av = {
+  engine, renderer, state,
+  get ray() { return ray; },
+  get connect() { return connect; },
+};
 
 /* Dev-only: drive the ray stage with a synthetic track so scenes can be
    inspected (and screenshotted) without loading audio. */

@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "size": "node scripts/check-size.mjs",
+    "shots": "node scripts/render-screens.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

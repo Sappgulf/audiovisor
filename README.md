@@ -160,12 +160,33 @@ Requires Node 20.19+ / 22.12+ (Vite 8).
 ## Tests & lint
 
 ```bash
-npm test        # vitest — engine, beat tracker, synth feed, PKCE, utils
+npm test        # vitest — engine, beat tracker, synth feed, PKCE, utils,
+                #          settings schema, palette, per-mode stage render
 npm run lint    # eslint
+npm run size    # bundle budget (needs a build first)
+npm run shots   # render every stage mode to /tmp/audiovisor-shots for eyeballing
 ```
+
+`tests/stage-render.test.js` rasterizes every mode to a real canvas and
+asserts per-mode invariants — finite pixels, a frame that is neither flat
+nor washed white, and stability under digital silence. These are invariants,
+not golden images: an intentional visual tweak stays green, but the class of
+bug that shipped as v8.8.3 (`atan(0,0)` → NaN whiting out flat surfaces)
+turns it red.
+
+CI runs lint, tests, build, and the bundle budget on every push and PR.
 
 ## Build
 
 ```bash
 npm run build   # output in dist/
+npm run size    # fail if the bundle grew past budget
 ```
+
+The music providers (`connect.js` → Spotify + Apple Music) and the raytraced
+stage (`raystage.js` + `rayshader.js`) are split into their own chunks and
+loaded on demand — the provider panel when the Source tab is opened or an
+OAuth redirect comes back, the stage right after first paint. A guest
+playing a local file never downloads the provider SDK clients. Budgets live
+in `scripts/check-size.mjs`; raise one deliberately, in the commit that
+needs the room.
