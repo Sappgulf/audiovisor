@@ -13,8 +13,32 @@ export function fmtTime(s) {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
+/*
+ * Screen position -> spectrum bin, on a log frequency scale.
+ *
+ * This was `pow(t, 2) * bins`, which is quadratic, not logarithmic. At a
+ * 48kHz rate that put 6kHz at the centre of the display: nearly all musical
+ * content sits below 2kHz, so more than half the width stayed empty while
+ * everything interesting bunched into the left quarter. A log mapping gives
+ * every octave equal width, which is how a spectrum is meant to read and
+ * what spreads real material across the whole picture.
+ *
+ * Bounds are in bin space rather than Hz, since callers do not pass a
+ * sample rate: bin 1.4 is roughly 33Hz and 0.67 of the bins is roughly
+ * 16kHz at 48kHz, above which there is nothing worth the pixels.
+ */
+const LOG_LO_BIN = 1.4;
+const LOG_HI_FRAC = 0.67;
+
+function logBin(t01, bins) {
+  const hi = Math.max(LOG_LO_BIN + 1, bins * LOG_HI_FRAC);
+  // clamp() passes NaN straight through, which would poison the exponent
+  const t = Number.isFinite(t01) ? clamp(t01, 0, 1) : 0;
+  return LOG_LO_BIN * Math.pow(hi / LOG_LO_BIN, t);
+}
+
 export function logFreqIndex(i, count, bins) {
-  return Math.min(bins - 1, Math.floor(Math.pow(i / count, 2) * bins));
+  return Math.min(bins - 1, Math.max(0, Math.round(logBin(i / count, bins))));
 }
 
 /**
@@ -24,8 +48,7 @@ export function logFreqIndex(i, count, bins) {
  */
 export function logSample(freq, t01) {
   const max = freq.length - 1;
-  const t = clamp(t01, 0, 1);
-  const x = Math.pow(t, 2) * max;
+  const x = Math.min(max, logBin(t01, freq.length));
   const i = x | 0;
   const f = x - i;
   return (freq[i] + (freq[i + 1 > max ? max : i + 1] - freq[i]) * f) / 255;

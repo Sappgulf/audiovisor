@@ -158,6 +158,16 @@ describe.each(MODES.map((m) => [m.id, m.name]))('stage mode %s (%s)', (id) => {
     expect(mean).toBeLessThan(230);
   });
 
+  it('keeps highlights off the clipping ceiling', () => {
+    /* Distinct from the white-out check above: this catches a mode that
+       renders correctly but drives its highlights past white, which throws
+       away colour and detail exactly where the signal is loudest. Bloom
+       Field summed ~20 overlapping additive sprites per point and clipped
+       half the frame before this was bounded. */
+    const { white } = stats(renderMode(id));
+    expect(white).toBeLessThan(0.25);
+  });
+
   it('survives digital silence without going non-finite or white', () => {
     const { white, max } = stats(renderMode(id, { silent: true }));
     expect(white).toBeLessThan(0.5);

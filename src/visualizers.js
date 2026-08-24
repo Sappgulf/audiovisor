@@ -213,6 +213,21 @@ export class Renderer {
     this._floorGrads = null;
   }
 
+  /**
+   * A near-black tinted toward a theme colour.
+   *
+   * Neon City drew its skyline in a hardcoded navy, so the mode ignored the
+   * theme completely and read cold against every warm palette. Silhouettes
+   * still need to be dark enough for the windows to pop, so this keeps the
+   * value low and only carries the hue.
+   */
+  _shadow(hex, tint = 0.09, floor = 6) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const mix = (v) => Math.round(floor + v * tint);
+    return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+  }
+
   _dot(c) { return this._dotSprites.get(c); }
   _soft(c) { return this._softSprites.get(c); }
   _barS(c) { return this._barSprites.get(c); }
@@ -1140,7 +1155,16 @@ export class Renderer {
       ]);
     }
     stops.push(...boosted);
-    stops.push([255, 253, 248]);
+    /* Top of the ramp keeps the theme's hue rather than going achromatic —
+       a pure-white cap threw away the colour exactly where the signal is
+       most interesting. True white is left to the very last entries via the
+       gamma curve, so peaks still read as hot. */
+    const top = stops[stops.length - 1];
+    stops.push([
+      Math.min(255, Math.round(top[0] * 0.35 + 255 * 0.65)),
+      Math.min(255, Math.round(top[1] * 0.35 + 252 * 0.65)),
+      Math.min(255, Math.round(top[2] * 0.35 + 242 * 0.65)),
+    ]);
     const lut = this.specLut = new Uint8Array(256 * 3);
     for (let i = 0; i < 256; i++) {
       /* steep gamma: low+mid values stay near-black, only peaks climb */
@@ -1184,8 +1208,16 @@ export class Renderer {
       for (let y = 0; y < H; y++) {
         const t = 1 - y / H;
         const bin = Math.min(freq.length - 1, 2 + Math.floor(Math.pow(t, 1.7) * freq.length * 0.72));
-        let v = (freq[bin] / 255) * this.sensitivity;
-        v = v > 1 ? 1 : v < 0.04 ? 0 : v;
+        /* Soft shoulder instead of a hard clamp. Sensitivity defaults to
+           1.4, so `min(1, raw * sens)` sent everything above 71% of full
+           scale to the same top LUT entry — on busy material that flattened
+           a fifth of the waterfall to a single flat white, which is why
+           this mode read as blown out and colourless. This compresses
+           toward 1 without reaching it, so hot bins keep climbing through
+           the colour ramp and stay distinguishable. */
+        const g = (freq[bin] / 255) * this.sensitivity;
+        let v = g > 0 ? 1 - Math.exp(-g * 1.15) : 0;
+        v = v < 0.04 ? 0 : v;
         const o = ((v * 255) | 0) * 3;
         const lut = this.specLut;
         for (let x = 0; x < colW; x++) {
@@ -1518,7 +1550,7 @@ export class Renderer {
       c.v += (target - c.v) * (target > c.v ? Math.min(1, dt60 * 0.55) : fall);
       c.peak = Math.max(c.peak * fallPeak, c.v);
     }
-    ctx.fillStyle = 'rgba(8, 11, 20, 0.85)';
+    ctx.fillStyle = this._shadow(this._color(0), 0.07, 5);
     for (let i = 0; i < N; i += 2) {
       const src = this.cityCols[(i * 7 + 3) % N];
       const bh = maxH * 0.16 + src.v * maxH * 0.5;
@@ -1538,7 +1570,7 @@ export class Renderer {
       const x = i * bw + (bw - bodyW) / 2;
       const y = baseline - bh;
       const c = colors[i % colors.length];
-      ctx.fillStyle = '#070a12';
+      ctx.fillStyle = this._shadow(this._color(0));
       ctx.fillRect(x, y, bodyW, bh);
       ctx.globalAlpha = 0.1;
       ctx.fillStyle = c;
@@ -2147,10 +2179,10 @@ export class Renderer {
     if (this.quality !== 'low') {
       ctx.globalCompositeOperation = 'lighter';
       const meshA = 0.03 + this.sm.level * 0.05;
-      const dotAt = (x, y) => {
-        const idx = (y * cols + x) % 64;
-        return freq ? logSample(freq, idx / 64) : 0.5;
-      };
+      /* Spread the grid across the whole spectrum instead of cycling the
+         same 64 positions every few cells: the field then shows real
+         spectral structure rather than 144 cells all lit the same. */
+      const dotAt = (x, y) => (freq ? logSample(freq, (y * cols + x) / (cols * rows - 1)) : 0.5);
       for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
           const a1 = dotAt(x, y);
@@ -2180,20 +2212,31 @@ export class Renderer {
     }
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        const idx = (y * cols + x) % 64;
-        const amp = freq ? logSample(freq, (idx / 64)) : 0.5;
+        const idx = y * cols + x;
+        const amp = freq ? logSample(freq, idx / (cols * rows - 1)) : 0.5;
         const px = x * cw + cw / 2 + Math.sin(this.t * 0.6 + idx) * 4;
         const py = y * rh + rh / 2 + Math.cos(this.t * 0.5 + idx * 1.3) * 4;
-        const s = 10 + amp * 22 * this.sensitivity + this.beat * 6;
+        /* Bound the bloom to its cell. Radius scaled with amplitude and
+           sensitivity unbounded, so at full energy one sprite spanned most
+           of the frame; 144 of them in additive mode then merged into a
+           flat sheet of white. The old quadratic frequency mapping hid this
+           by keeping most cells near silent — with a real log mapping every
+           cell carries signal and the field blew out. */
+        const cell = Math.min(cw, rh);
+        const s = Math.min(cell * 1.25, 10 + amp * 22 * this.sensitivity + this.beat * 6);
         const c = this._color((x + y) % this.theme.colors.length);
         /* soft bokeh pool under every bloom */
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = 0.10 + amp * 0.16;
-        ctx.drawImage(this._soft(c), px - s * 1.9, py - s * 1.9, s * 3.8, s * 3.8);
+        /* Each pool sprite spanned 3.8x its radius, so on a 16x9 grid every
+           point overlapped roughly twenty neighbours; additively that summed
+           several times past white and the field read as a flat sheet. Alpha
+           is now budgeted against how much a sprite actually overlaps. */
+        ctx.globalAlpha = 0.035 + amp * 0.055;
+        ctx.drawImage(this._soft(c), px - s * 1.1, py - s * 1.1, s * 2.2, s * 2.2);
         ctx.globalCompositeOperation = 'source-over';
         /* crisp core with alpha falloff */
-        ctx.globalAlpha = 0.20 + amp * 0.5;
-        ctx.drawImage(this._dot(c), px - s, py - s, s * 2, s * 2);
+        ctx.globalAlpha = 0.20 + amp * 0.45;
+        ctx.drawImage(this._dot(c), px - s * 0.85, py - s * 0.85, s * 1.7, s * 1.7);
         /* bright center popper on loud cells */
         if (amp > 0.6) {
           const hr = s * 0.3;

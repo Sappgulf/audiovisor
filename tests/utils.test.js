@@ -30,9 +30,36 @@ describe('fmtTime', () => {
 });
 
 describe('logFreqIndex', () => {
-  it('starts at 0 and ends at bins-1', () => {
-    expect(logFreqIndex(0, 64, 1024)).toBe(0);
-    expect(logFreqIndex(64, 64, 1024)).toBe(1023);
+  /* The mapping deliberately spans the *useful* spectrum rather than every
+     bin: it starts above DC and stops around 16kHz, since the top third of
+     the bins carries nothing worth the screen width. */
+  it('starts above DC and ends near the top of the audible range', () => {
+    expect(logFreqIndex(0, 64, 1024)).toBeGreaterThanOrEqual(1);
+    expect(logFreqIndex(0, 64, 1024)).toBeLessThan(4);
+    const top = logFreqIndex(64, 64, 1024);
+    expect(top).toBeGreaterThan(1024 * 0.6);
+    expect(top).toBeLessThan(1024);
+  });
+
+  it('gives every octave equal width — the point of a log scale', () => {
+    /* Equal steps across the display must multiply the bin by a constant.
+       Measured in the upper half, where the integer rounding this function
+       applies is a small fraction of the bin index; down at bin 5 rounding
+       alone is worth several percent. */
+    const at = (t) => logFreqIndex(t * 64, 64, 4096);
+    const r1 = at(0.70) / at(0.50);
+    const r2 = at(0.90) / at(0.70);
+    expect(r1).toBeGreaterThan(1);
+    expect(Math.abs(r1 - r2) / r1).toBeLessThan(0.02);
+  });
+
+  it('puts the musical midrange near the middle of the display', () => {
+    // the old quadratic mapping put ~6kHz at centre and left half the
+    // picture empty; centre should now land in the low hundreds of Hz
+    const binHz = 24000 / 1024;
+    const centreHz = logFreqIndex(32, 64, 1024) * binHz;
+    expect(centreHz).toBeGreaterThan(200);
+    expect(centreHz).toBeLessThan(1500);
   });
   it('is monotonic and within bounds', () => {
     let prev = -1;
@@ -49,14 +76,22 @@ describe('logFreqIndex', () => {
 });
 
 describe('logSample', () => {
-  it('samples within 0..1 and matches endpoints', () => {
-    const freq = new Uint8Array(1024);
-    freq[0] = 255;
-    freq[1023] = 255;
-    expect(logSample(freq, 0)).toBeCloseTo(1, 5);
-    expect(logSample(freq, 1)).toBeCloseTo(1, 5);
+  it('returns a normalized 0..1 amplitude', () => {
     const mid = logSample(new Uint8Array(1024).fill(128), 0.5);
     expect(mid).toBeCloseTo(128 / 255, 5);
+    expect(logSample(new Uint8Array(1024).fill(255), 0.3)).toBeCloseTo(1, 5);
+    expect(logSample(new Uint8Array(1024), 0.7)).toBe(0);
+  });
+
+  it('reads the low end at t=0 and the high end at t=1', () => {
+    const freq = new Uint8Array(1024);
+    freq.fill(0);
+    freq[1] = 255; freq[2] = 255;
+    expect(logSample(freq, 0)).toBeGreaterThan(0.9);
+    const hi = new Uint8Array(1024);
+    hi.fill(0);
+    for (let i = 600; i < 700; i++) hi[i] = 255;
+    expect(logSample(hi, 1)).toBeGreaterThan(0.9);
   });
   it('is monotonic for ramp spectrum and interpolates smoothly', () => {
     const freq = new Uint8Array(256);
@@ -78,9 +113,10 @@ describe('logSample', () => {
     expect(f).toBeLessThan(1);
   });
   it('handles t01 outside 0..1 via clamp', () => {
-    const freq = new Uint8Array([100, 200, 50]);
-    expect(logSample(freq, -0.5)).toBeCloseTo(freq[0] / 255, 5);
-    expect(logSample(freq, 1.5)).toBeCloseTo(freq[2] / 255, 5);
+    const freq = new Uint8Array(64).fill(120);
+    expect(logSample(freq, -0.5)).toBeCloseTo(logSample(freq, 0), 5);
+    expect(logSample(freq, 1.5)).toBeCloseTo(logSample(freq, 1), 5);
+    expect(Number.isFinite(logSample(freq, NaN))).toBe(true);
   });
 });
 
