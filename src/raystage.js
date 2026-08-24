@@ -1,7 +1,7 @@
 import { VERT, SCENE_FRAG, BLUR_FRAG, ACCUM_FRAG, POST_FRAG } from './rayshader.js';
 import { MODES } from './themes.js';
 import { beatEnergy } from './beatenergy.js';
-import { sanitizeLevels, usableSpectrum } from './levels.js';
+import { sanitizeLevels, usableSpectrum, safeDimension } from './levels.js';
 import { motionScale } from './motion.js';
 
 /**
@@ -19,9 +19,20 @@ import { motionScale } from './motion.js';
 
 /* scale = fraction of the CSS-pixel * dpr resolution the tracer runs at;
    maxPx caps the total ray count so a 4K panel doesn't melt the GPU */
-/* Sample budget per tier. spp stays at 1 below ultra — the jittered camera
-   plus temporal accumulation already resolves edges, and a second sample
-   costs a full extra trace. */
+/* Sample budget per tier.
+ *
+ * The second sample at `high` is not free, despite what this comment used
+ * to claim. Measured on an Apple M1 at 1246x494, dropping high to spp 1
+ * roughly halves the frame cost — terrain 98 -> 51ms, nebula 69 -> 36ms,
+ * city 65 -> 32ms — but compared at a fixed animation time it also changes
+ * the picture: the sky is identical, while the terrain body differs by a
+ * mean of ~12/255 per tile. The jitter plus temporal accumulation does not
+ * fully stand in for it on high-frequency geometry.
+ *
+ * So spp 2 here is a deliberate quality choice, not an oversight, and the
+ * adaptive tier stepping in main.js is what protects slower GPUs. Anyone
+ * retuning this should know it is the single biggest lever on frame cost.
+ */
 const QUALITY = {
   low:    { scale: 0.5,  spp: 1, steps: 64,  refl: 0, blend: 0.62, maxPx: 0.35e6 },
   medium: { scale: 0.7,  spp: 1, steps: 96,  refl: 1, blend: 0.5,  maxPx: 0.7e6 },
@@ -246,8 +257,9 @@ export class RayStage {
 
   resize(w, h) {
     if (!this.ok) return;
-    this.w = Math.max(1, Math.round(w));
-    this.h = Math.max(1, Math.round(h));
+    // a non-finite size builds a zero-size framebuffer; see src/levels.js
+    this.w = safeDimension(w);
+    this.h = safeDimension(h);
     const q = QUALITY[this.quality];
     let scale = this.dpr * q.scale;
     const px = this.w * this.h * scale * scale;

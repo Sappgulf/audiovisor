@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeLevels, usableSpectrum, SILENT_LEVELS } from '../src/levels.js';
+import { sanitizeLevels, usableSpectrum, safeDimension, SILENT_LEVELS } from '../src/levels.js';
 
 describe('sanitizeLevels', () => {
   it('passes a normal frame through unchanged', () => {
@@ -81,5 +81,40 @@ describe('usableSpectrum', () => {
     expect(usableSpectrum(new Uint8Array(0))).toBe(false);
     expect(usableSpectrum(null)).toBe(false);
     expect(usableSpectrum(undefined)).toBe(false);
+  });
+});
+
+describe('safeDimension', () => {
+  /* Math.max propagates NaN, so `Math.max(1, Math.round(NaN))` is NaN, not
+     1. That NaN reached canvas.width, which coerces to 0, and every later
+     draw targeted a zero-size framebuffer — on the raytraced stage it
+     showed up only as a persistent GL_INVALID_FRAMEBUFFER_OPERATION.
+     Verified against a real GPU. */
+  it('replaces non-finite input with the minimum instead of propagating it', () => {
+    for (const bad of [NaN, Infinity, -Infinity, undefined, null, '800', {}]) {
+      const v = safeDimension(bad);
+      expect(Number.isFinite(v), String(bad)).toBe(true);
+      expect(v).toBe(1);
+    }
+  });
+
+  it('clamps to at least the minimum', () => {
+    expect(safeDimension(0)).toBe(1);
+    expect(safeDimension(-500)).toBe(1);
+    expect(safeDimension(0, 2)).toBe(2);
+  });
+
+  it('caps absurd sizes below the usual texture limit', () => {
+    expect(safeDimension(1e9)).toBe(16384);
+  });
+
+  it('rounds to whole pixels', () => {
+    expect(safeDimension(800.4)).toBe(800);
+    expect(safeDimension(800.6)).toBe(801);
+  });
+
+  it('passes normal sizes through', () => {
+    expect(safeDimension(1246)).toBe(1246);
+    expect(safeDimension(494)).toBe(494);
   });
 });

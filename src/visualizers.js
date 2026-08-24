@@ -1,7 +1,7 @@
 import { THEMES } from './themes.js';
 import { lerp, logFreqIndex, logSample, hexRgba, clamp } from './utils.js';
 import { beatEnergy } from './beatenergy.js';
-import { sanitizeLevels, usableSpectrum } from './levels.js';
+import { sanitizeLevels, usableSpectrum, safeDimension } from './levels.js';
 import { motionScale } from './motion.js';
 
 /**
@@ -101,11 +101,13 @@ export class Renderer {
   resize() {
     if (this._dead) return;
     const rect = this.canvas.getBoundingClientRect();
-    this.w = Math.max(1, Math.round(rect.width));
-    this.h = Math.max(1, Math.round(rect.height));
+    // Math.max propagates NaN, so a non-finite rect used to produce a
+    // NaN width that coerces to a zero-size canvas; see src/levels.js
+    this.w = safeDimension(rect.width);
+    this.h = safeDimension(rect.height);
     const scale = this.quality === 'low' ? 1 : this.dpr;
-    this.canvas.width = Math.round(this.w * scale);
-    this.canvas.height = Math.round(this.h * scale);
+    this.canvas.width = safeDimension(this.w * scale);
+    this.canvas.height = safeDimension(this.h * scale);
     this._floorGrads = null;
   }
 

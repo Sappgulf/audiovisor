@@ -57,3 +57,18 @@ export function sanitizeLevels(levels) {
 export function usableSpectrum(freq) {
   return !!freq && freq.length > 0;
 }
+
+/**
+ * A canvas dimension that is safe to build a framebuffer from.
+ *
+ * Math.max propagates NaN, so `Math.max(1, Math.round(NaN))` is NaN, not 1.
+ * That NaN reached canvas.width, which coerces to 0, and every later draw
+ * targeted a zero-size framebuffer — on the raytraced stage that surfaced
+ * as a persistent GL_INVALID_FRAMEBUFFER_OPERATION rather than anything
+ * visible. Same trap as the beat accumulator.
+ */
+export function safeDimension(v, min = 1, max = 16384) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return min;
+  const n = Math.round(v);
+  return n < min ? min : n > max ? max : n;
+}
