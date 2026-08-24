@@ -229,6 +229,19 @@ export class Renderer {
     return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
   }
 
+  /**
+   * A hex colour lifted toward white without going achromatic.
+   *
+   * The counterpart to _shadow(): highlights that cap at pure white throw
+   * the hue away exactly where the image is brightest, which is what made
+   * several modes read as grey rather than lit.
+   */
+  _tint(hex, amount = 0.55) {
+    const n = parseInt(hex.slice(1), 16);
+    const mix = (v, target) => Math.round(v + (target - v) * amount);
+    return `rgb(${mix((n >> 16) & 255, 255)}, ${mix((n >> 8) & 255, 252)}, ${mix(n & 255, 243)})`;
+  }
+
   _dot(c) { return this._dotSprites.get(c); }
   _soft(c) { return this._softSprites.get(c); }
   _barS(c) { return this._barSprites.get(c); }
@@ -2553,15 +2566,19 @@ export class Renderer {
       ctx.globalAlpha = clamp(0.62 + amp * 0.26, 0, 0.86);
       ctx.fillStyle = col;
       ctx.fillRect(c.px - c.s / 2, c.py - c.s / 2, c.s, c.s);
-      /* hot top face (fake isometric) */
+      /* Hot top face (fake isometric). This was painted in near-white on
+         every one of the 64 cells, so a loud frame turned the whole stack
+         achromatic — the cell bodies were carefully kept off 'lighter' to
+         avoid exactly that, and then the top face did it anyway. Lifting
+         the slice colour instead keeps the lit read and the hue. */
       ctx.globalAlpha = clamp((0.4 + amp * 0.2) * bright, 0, 0.62);
-      ctx.fillStyle = 'rgba(255,252,243,0.9)';
+      ctx.fillStyle = this._tint(col, 0.45 + amp * 0.25);
       ctx.fillRect(c.px - c.s / 2, c.py - c.s / 2, c.s, c.s * 0.30);
       /* soft halo on loud cells */
       if (amp > 0.55) {
         ctx.globalCompositeOperation = 'lighter';
         const hr = c.s * (1.1 + amp * 0.5);
-        ctx.globalAlpha = (amp - 0.55) * 0.6;
+        ctx.globalAlpha = (amp - 0.55) * 0.45;
         ctx.drawImage(this._soft(this._color(ci)), c.px - hr, c.py - hr, hr * 2, hr * 2);
       }
     }
