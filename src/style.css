@@ -568,14 +568,25 @@ button:focus-visible, input:focus-visible {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(255,250,243,0.02);
+  /* This was rgba(255,250,243,0.02) — two percent white — and leaned
+     entirely on backdrop-filter for legibility. fa0b583 then disabled every
+     backdrop-filter on coarse pointers for a real perf reason, which left
+     the first thing a new visitor ever reads sitting directly on top of an
+     animating canvas. A surface has to carry its own contrast; the blur is
+     an enhancement on top, not the thing holding the text up.
+
+     Worst case is a fully white frame behind it: at 0.82 the ground still
+     resolves to ~rgb(61,60,58), which puts the title at ~9.4:1 and the
+     subtitle at ~5.9:1. Both clear AA. */
+  background: rgba(18, 16, 14, 0.82);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   transition: all 0.24s var(--ease);
   text-align: center;
   pointer-events: auto;
 }
 .dropzone:hover, .dropzone.drag-over {
-  background: rgba(255,250,243,0.04);
+  background: rgba(26, 23, 20, 0.88);
   border-color: rgba(217,176,137,0.38);
   box-shadow: 0 0 0 4px var(--accent-dim), 0 12px 40px rgba(0,0,0,0.2);
   transform: translateY(-1px);
@@ -597,8 +608,11 @@ button:focus-visible, input:focus-visible {
 }
 .dropzone:hover .drop-icon-circle { color: var(--accent); border-color: var(--accent-line); background: var(--accent-dim); }
 
-.drop-title { font-size: 11px; color: var(--text); letter-spacing: 0.14em; font-weight: 600; margin-bottom: 8px; }
-.drop-sub { font-size: 11px; line-height: 1.5; color: var(--text-40); max-width: 32ch; }
+/* The primary call to action was set at the same 11px as its own footnote,
+   and the footnote at 54% opacity, which does not clear AA over anything
+   bright. Sized and weighted so the two read as heading and detail. */
+.drop-title { font-size: 13px; color: var(--text-strong); letter-spacing: 0.14em; font-weight: 600; margin-bottom: 9px; }
+.drop-sub { font-size: 12px; line-height: 1.55; color: var(--text-60); max-width: 34ch; }
 
 /* ---------- Drawer ---------- */
 

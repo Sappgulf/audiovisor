@@ -287,6 +287,79 @@ describe('touch-device compositing', () => {
     expect(uncovered, `still blurring over the animating stage on touch: ${uncovered.join(', ')}`).toEqual([]);
   });
 
+  /* A surface that only looks solid because of its blur is a surface that
+     stops being readable the moment the blur is switched off — which is
+     exactly what the rule above does on every touch device. The drop panel
+     shipped like that: rgba(255,250,243,0.02), two percent white, holding
+     the first sentence a new visitor ever reads, directly over an animating
+     canvas. Nothing caught it because the blur made it look fine on the
+     desktop where it was written. */
+  const TOKENS = () => {
+    const out = {};
+    const root = css.slice(css.indexOf(':root'), css.indexOf('}', css.indexOf(':root')));
+    for (const m of root.matchAll(/(--[\w-]+):\s*([^;]+);/g)) out[m[1]] = m[2].trim();
+    return out;
+  };
+
+  /** Resolve a background value to {alpha, luminance}, or null if unknown. */
+  const groundOf = (value, tokens, depth = 0) => {
+    if (!value || depth > 3) return null;
+    const v = value.trim();
+    const varM = v.match(/^var\((--[\w-]+)\)$/);
+    if (varM) return groundOf(tokens[varM[1]], tokens, depth + 1);
+    const rgba = v.match(/^rgba?\(([^)]+)\)$/);
+    if (rgba) {
+      const parts = rgba[1].split(',').map((n) => parseFloat(n));
+      const [r, g, b] = parts;
+      const a = parts.length > 3 ? parts[3] : 1;
+      return { alpha: a, lum: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 };
+    }
+    const hex = v.match(/^#([0-9a-f]{6})$/i);
+    if (hex) {
+      const n = parseInt(hex[1], 16);
+      const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+      return { alpha: 1, lum: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 };
+    }
+    return null;
+  };
+
+  /* These sit inside another surface that is already opaque, so they are not
+     carrying any text over the stage themselves and do not need a ground of
+     their own. Anything added here needs a reason next to it. */
+  const NESTED_IN_OPAQUE_PARENT = {
+    '.pill-nav': 'inside .topbar, which is rgba(26,24,22,0.72)',
+    '.status-pill': 'inside .topbar, which is rgba(26,24,22,0.72)',
+    '.mic-btn': 'inside .topbar, which is rgba(26,24,22,0.72)',
+    '.data-chip': 'has its own rgba(26,24,22,0.72)',
+    '.sheet-scrim': 'a scrim is meant to be see-through; it holds no text',
+  };
+
+  it('every surface that loses its blur on touch carries its own ground', () => {
+    const tokens = TOKENS();
+    const byselector = new Map();
+    for (const { sel, body } of rules()) {
+      const bg = body.match(/(?:^|[;{\s])background(?:-color)?:\s*([^;]+)/);
+      if (!bg) continue;
+      for (const one of sel.split(',')) {
+        const s = one.trim();
+        if (!byselector.has(s)) byselector.set(s, bg[1].trim());
+      }
+    }
+
+    const thin = [];
+    for (const s of blurDisabledSelectors()) {
+      if (s in NESTED_IN_OPAQUE_PARENT) continue;
+      const ground = groundOf(byselector.get(s), tokens);
+      if (!ground) continue;                       // unresolvable: not this test's job
+      // opaque enough to hold text, and dark enough that it darkens a bright
+      // frame rather than washing out against it
+      if (ground.alpha < 0.5 || ground.lum > 0.3) {
+        thin.push(`${s} (alpha ${ground.alpha}, lum ${ground.lum.toFixed(2)})`);
+      }
+    }
+    expect(thin, `relies on a blur it does not get on touch: ${thin.join(', ')}`).toEqual([]);
+  });
+
   it('disables both the prefixed and unprefixed property in the built CSS', () => {
     /* The blur ships as both -webkit-backdrop-filter and backdrop-filter.
        Written standard-first, the minifier collapsed the override pair and
