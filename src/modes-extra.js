@@ -1414,8 +1414,12 @@ class ExtraModes {
     const colX = w / 2;
     if (!this.lavaBlobs || this.lavaBlobs.length !== N) {
       this.lavaBlobs = Array.from({ length: N }, (_, i) => ({
-        u: (((i * 61) % 100) / 100 - 0.5) * 0.54,   // -0.27..0.27 across the column
-        r: 0.105 + ((i * 37) % 40) / 340,
+        /* Spread has to beat the blob radius or the lumps overlap into one
+           column-wide mass at every size and every signal — which on a pale
+           palette then saturates to a white slab. Wider spread, smaller
+           lumps: they still meet and merge, they just stop being one shape. */
+        u: (((i * 61) % 100) / 100 - 0.5) * 0.86,   // -0.43..0.43 across the column
+        r: 0.095 + ((i * 37) % 40) / 430,
         ph: (i * 2.399) % 6.283,
         wob: 0.4 + ((i * 29) % 30) / 50,
         /* One lamp, one wax. Cycling four theme colours through the blobs
@@ -1470,7 +1474,13 @@ class ExtraModes {
       const px = colX + (b.u + sway) * colW;
       const py = b.y * h;
       const v = freq ? logSample(freq, (b.ph % 1)) : 0.4;
-      const pr = Math.min(w, h) * b.r * (0.95 + v * 0.5 * this.sensitivity + this.beat * 0.14);
+      /* Sized off min(w, h) this fell apart on wide, short frames: the
+         column width scales with both axes but the blobs scaled with the
+         short one, so on a 16:9 stage — or a 176x108 thumbnail — seven
+         lumps were each half the column wide and the whole thing overlapped
+         into one mass. Scaling off the column keeps the composition
+         self-consistent at any aspect ratio. */
+      const pr = colW * b.r * (0.95 + v * 0.5 * this.sensitivity + this.beat * 0.14);
       /* viscous deformation: wax stretches along its direction of travel and
          squashes as it hangs at the turn, which is most of what makes it
          read as molten rather than as a drifting dot */
@@ -1488,6 +1498,7 @@ class ExtraModes {
        hides that a polygon has edges while everything around it does not.
        Bridging with the same soft sprite the bodies use cannot produce an
        edge at all, and it merges because it is the identical falloff. */
+    ctx.globalCompositeOperation = 'source-over';
     for (let i = 0; i < pts.length; i++) {
       for (let j = i + 1; j < pts.length; j++) {
         const a = pts[i], b = pts[j];
@@ -1500,7 +1511,7 @@ class ExtraModes {
         for (let k = 1; k <= steps; k++) {
           const f = k / (steps + 1);
           const br = Math.min(a.pr, b.pr) * (0.34 + pull * 0.42);
-          ctx.globalAlpha = clamp(pull * 0.30, 0, 0.26);
+          ctx.globalAlpha = clamp(pull * 0.20, 0, 0.17);
           ctx.drawImage(
             this._soft(this._color(f < 0.5 ? a.c : b.c)),
             a.px + dx * f - br, a.py + dy * f - br, br * 2, br * 2,
@@ -1510,7 +1521,16 @@ class ExtraModes {
     }
     ctx.globalAlpha = 1;
 
-    /* --- the wax itself: soft body, hot core, no hard sprite edge --- */
+    /* --- the wax itself: soft body, hot core, no hard sprite edge ---
+       The bodies were additive, which is wrong for the material and broke on
+       bright themes: wax is opaque, so two overlapping lumps should merge at
+       the same brightness, not sum. On Monolith, Arctic and Cotton — palettes
+       that are already near white — three overlapping bodies plus a core
+       summed straight past white and the column became one flat blob with no
+       lumps in it at all. I had only tested this against mid-brightness
+       saturated themes. source-over merges instead of stacking, so the shape
+       survives whatever the palette. */
+    ctx.globalCompositeOperation = 'source-over';
     for (const p of pts) {
       const base = this._color(p.c);
       const soft = this._soft(base);
@@ -1518,7 +1538,14 @@ class ExtraModes {
       ctx.save();
       ctx.translate(p.px, p.py);
       ctx.scale(p.squash, p.stretch);
-      ctx.globalAlpha = clamp(0.26 + p.v * 0.30 + this.sm.bass * 0.14, 0.10, 0.60);
+      /* source-over stacking converges on the source colour rather than
+         exceeding it, which is the point — but at 0.6 a piece of wax three
+         lumps deep is already 94% of the way there, and on a white palette
+         that is white, which the bloom pass then blows into a slab. Capping
+         lower keeps the column a mid-tone mass with the core supplying the
+         brightness, which is also how wax actually looks: dark material lit
+         from inside, not a glowing shape. */
+      ctx.globalAlpha = clamp(0.16 + p.v * 0.20 + this.sm.bass * 0.10, 0.07, 0.34);
       ctx.drawImage(soft, -bodyR, -bodyR, bodyR * 2, bodyR * 2);
       /* the core carries the heat, so a rising blob glows and a sinking one
          has gone dull — the colour tells you which way it is going */
@@ -1526,12 +1553,14 @@ class ExtraModes {
          clipped the whole blob to a white disc and threw the wax colour
          away. Small and only modestly lifted: the body carries the hue, the
          core says which blobs are on the way up. */
+      ctx.globalCompositeOperation = 'lighter';   // the core is light, not wax
       const coreR = p.pr * (0.24 + p.heat * 0.13);
       ctx.globalAlpha = clamp(0.10 + p.heat * 0.24 + p.v * 0.12, 0.04, 0.40);
       ctx.fillStyle = this._tint(base, 0.06 + p.heat * 0.24);
       ctx.beginPath();
       ctx.ellipse(0, 0, coreR, coreR, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
       ctx.restore();
     }
 

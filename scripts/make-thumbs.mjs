@@ -21,12 +21,21 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 
 const W = 176;               // 2x the ~88px the tile occupies in the drawer
 const H = 108;
+/* Render at stage scale and downsample, rather than rendering straight to
+   176x108. Several passes are resolution-dependent — the bloom buffers are
+   a quarter of the canvas, so at 108px tall they work on a 27px image and
+   smear the whole frame into one glowing slab. Lava Lamp came out as a
+   white blob with no lumps in it while the same mode at stage size was
+   perfectly legible. Rendering big and scaling down gives a thumbnail of
+   what the mode actually looks like. */
+const RW = W * 3;
+const RH = H * 3;
 const OUT = 'public/modes';
 const WARMUP = 420;          // let waterfalls, trails and particle pools fill
 
 const makeCanvas = () => {
   const c = createCanvas(1, 1);
-  c.getBoundingClientRect = () => ({ width: W, height: H });
+  c.getBoundingClientRect = () => ({ width: RW, height: RH });
   return c;
 };
 globalThis.document = { createElement: (t) => (t === 'canvas' ? makeCanvas() : {}) };
@@ -106,6 +115,7 @@ for (const m of MODES) {
     const cx = out.getContext('2d');
     cx.fillStyle = '#0f0e0d';                 // matches .mode-preview's ground
     cx.fillRect(0, 0, W, H);
+    cx.imageSmoothingEnabled = true;
     cx.drawImage(renderer.canvas, 0, 0, W, H);
     const buf = await out.encode('webp', 78);
     writeFileSync(`${OUT}/${m.id}.webp`, buf);
