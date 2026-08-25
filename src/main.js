@@ -109,9 +109,27 @@ const modeList = $('mode-list');
 MODES.forEach((m) => {
   const btn = document.createElement('button');
   btn.className = 'mode-card' + (m.id === state.modeId ? ' is-active' : '');
+  /* The tile shows the mode. Every card used to carry a small line icon and
+     nothing else, so the picker was 22 near-identical rectangles for a
+     decision that is entirely visual — and two of the icons were reused
+     across different modes. The icon stays underneath as the fallback: if
+     the thumbnail is missing or fails to decode, the card looks exactly as
+     it did before rather than showing a broken image. */
   btn.innerHTML = `
-    <div class="mode-preview"><span class="ic" data-icon="${m.icon}"></span></div>
+    <div class="mode-preview">
+      <span class="ic" data-icon="${m.icon}"></span>
+      <img class="mode-thumb" src="/modes/${m.id}.webp" alt="" aria-hidden="true"
+           loading="lazy" decoding="async" width="176" height="108">
+    </div>
     <span class="mode-name">${m.name}</span>`;
+  const thumb = btn.querySelector('.mode-thumb');
+  thumb.addEventListener('load', () => btn.classList.add('has-thumb'));
+  thumb.addEventListener('error', () => {
+    /* drop the class too, or the card keeps hiding the fallback icon and
+       renders an empty box where the thumbnail used to be */
+    btn.classList.remove('has-thumb');
+    thumb.remove();
+  });
   btn.addEventListener('click', () => setMode(m.id));
   modeList.appendChild(btn);
 });

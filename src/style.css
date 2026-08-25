@@ -680,7 +680,14 @@ button:focus-visible, input:focus-visible {
 
 .mode-preview {
   width: 100%;
-  height: 34px;
+  /* Was a fixed pixel height, which is fine for a centred glyph and wrong
+     for an image: the card is ~72px wide in the desktop drawer and ~150px
+     in the mobile sheet, so one height cropped the thumbnail to a 6:1
+     sliver at one of them. An aspect ratio tracks the card at every width. */
+  aspect-ratio: 16 / 10;
+  height: auto;
+  min-height: 30px;
+  position: relative;
   border-radius: 8px;
   background: #0f0e0d;
   border: 1px solid var(--border-soft);
@@ -695,6 +702,33 @@ button:focus-visible, input:focus-visible {
 }
 .mode-card.is-active .mode-preview { color: var(--accent); border-color: var(--accent-line); background: rgba(217,176,137,0.06); }
 .mode-card:hover .mode-preview { color: var(--text-60); }
+
+/* Thumbnail of the mode itself. Rendered monochrome, because colour here
+   belongs to the theme and a thumbnail baked in one theme is wrong in the
+   other twenty-four — form is what tells the modes apart. It sits over the
+   fallback icon and only covers it once it has actually decoded. */
+.mode-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.24s var(--ease), filter 0.2s var(--ease);
+  filter: grayscale(1) brightness(0.72) contrast(1.05);
+}
+.mode-card.has-thumb .mode-thumb { opacity: 0.62; }
+.mode-card.has-thumb .ic { opacity: 0; }
+.mode-card.has-thumb:hover .mode-thumb { opacity: 0.85; filter: grayscale(1) brightness(0.9) contrast(1.05); }
+/* the selected mode is the one you are looking at, so it gets the accent */
+.mode-card.is-active.has-thumb .mode-thumb {
+  opacity: 1;
+  filter: grayscale(1) brightness(0.95) sepia(0.45) saturate(1.6) hue-rotate(-12deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mode-thumb { transition: none; }
+}
 
 .mode-name {
   font-family: var(--font-mono);
@@ -1935,7 +1969,7 @@ input:focus-visible,
 
 /* denser mode grid — 22 cards in two columns meant endless scrolling */
 .mode-list { grid-template-columns: repeat(3, 1fr); gap: 5px; }
-.mode-preview { height: 26px; font-size: 13px; }
+.mode-preview { font-size: 13px; }
 .mode-card { padding: 6px 4px; gap: 4px; }
 .mode-name { font-size: 8px; letter-spacing: 0.03em; }
 
