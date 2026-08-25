@@ -85,6 +85,12 @@ beforeAll(async () => {
   globalThis.document = { createElement: (tag) => (tag === 'canvas' ? makeCanvas() : {}) };
   globalThis.window = { devicePixelRatio: 1 };
   ({ Renderer } = await import('../src/visualizers.js'));
+  /* Non-core modes now live in a lazily-fetched chunk. Without this the
+     renderer would silently fall back to bars and every per-mode assertion
+     below would be checking the same four modes over and over. */
+  const vis = await import('../src/visualizers.js');
+  await vis.loadExtraModes(Renderer);
+  if (!vis.extraModesLoaded()) throw new Error('extra visualizer modes failed to install');
 });
 
 /* Rasterizing is the expensive part, so each distinct scenario is rendered

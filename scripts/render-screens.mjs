@@ -1,5 +1,5 @@
 import { createCanvas } from '@napi-rs/canvas';
-import { Renderer } from '../src/visualizers.js';
+import { Renderer, loadExtraModes, extraModesLoaded } from '../src/visualizers.js';
 import { MODES, THEMES } from '../src/themes.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
@@ -14,6 +14,12 @@ const makeCanvas = () => {
 };
 globalThis.document = { createElement: (tag) => (tag === 'canvas' ? makeCanvas() : {}) };
 globalThis.window = { devicePixelRatio: 1 };
+
+/* The eighteen heavier modes ship in a lazily-fetched chunk now. Without this
+   every one of them would silently render as bars and the exposure report
+   would be measuring the same picture 18 times. */
+await loadExtraModes(Renderer);
+if (!extraModesLoaded()) throw new Error('extra visualizer modes failed to install');
 
 function synthData(t) {
   /* band-limited synth-music: kick + funky mids + sparse highs, beats at

@@ -1,74 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MODES, THEMES } from '../src/themes.js';
-
-function makeFakeCtx() {
-  const grad = () => ({ addColorStop: () => {} });
-  return {
-    fillRect: () => {},
-    clearRect: () => {},
-    drawImage: () => {},
-    beginPath: () => {},
-    moveTo: () => {},
-    lineTo: () => {},
-    quadraticCurveTo: () => {},
-    closePath: () => {},
-    fill: () => {},
-    stroke: () => {},
-    save: () => {},
-    restore: () => {},
-    translate: () => {},
-    scale: () => {},
-    rotate: () => {},
-    setTransform: () => {},
-    clip: () => {},
-    rect: () => {},
-    arc: () => {},
-    ellipse: () => {},
-    roundRect: () => {},
-    createLinearGradient: grad,
-    createRadialGradient: grad,
-    createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
-    putImageData: () => {},
-    getImageData: () => ({ data: new Uint8ClampedArray(4) }),
-    fillStyle: '',
-    strokeStyle: '',
-    globalAlpha: 1,
-    globalCompositeOperation: 'source-over',
-    imageSmoothingEnabled: true,
-    lineWidth: 1,
-    lineJoin: 'miter',
-  };
-}
-
-function makeFakeCanvas(w = 800, h = 600) {
-  const ctx = makeFakeCtx();
-  return {
-    getContext: (type) => (type === '2d' ? ctx : null),
-    getBoundingClientRect: () => ({ width: w, height: h }),
-    width: w,
-    height: h,
-    _ctx: ctx,
-    captureStream: undefined,
-  };
-}
-
-function ensureGlobals() {
-  if (typeof globalThis.document === 'undefined') {
-    globalThis.document = {
-      createElement: (tag) => (tag === 'canvas' ? makeFakeCanvas(100, 100) : {}),
-    };
-  } else if (!globalThis.document.createElement) {
-    globalThis.document.createElement = (tag) => (tag === 'canvas' ? makeFakeCanvas(100, 100) : {});
-  } else {
-    const orig = globalThis.document.createElement.bind(globalThis.document);
-    globalThis.document.createElement = (tag) => {
-      if (tag === 'canvas') return makeFakeCanvas(100, 100);
-      try { return orig(tag); } catch { return {}; }
-    };
-  }
-  if (typeof globalThis.window === 'undefined') globalThis.window = {};
-  globalThis.window.devicePixelRatio = 1;
-}
+import { makeFakeCanvas, ensureGlobals } from './helpers/canvas.js';
 
 describe('themes', () => {
   it('has 22 stage modes including Pulse Orb', () => {
@@ -99,6 +31,7 @@ describe('Renderer', () => {
     // fresh import to avoid state leakage
     const mod = await import('../src/visualizers.js');
     Renderer = mod.Renderer;
+    await mod.loadExtraModes(Renderer);
     canvas = makeFakeCanvas(800, 600);
     renderer = new Renderer(canvas);
   });
@@ -185,7 +118,9 @@ describe('band envelope shape', () => {
   let Renderer;
   beforeEach(async () => {
     ensureGlobals();
-    ({ Renderer } = await import('../src/visualizers.js'));
+    const mod = await import('../src/visualizers.js');
+    ({ Renderer } = mod);
+    await mod.loadExtraModes(Renderer);
   });
 
   /* A transient should arrive fast and leave slowly. The old symmetric
