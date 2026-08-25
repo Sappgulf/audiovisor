@@ -12,7 +12,8 @@
     "size": "node scripts/check-size.mjs",
     "shots": "node scripts/render-screens.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "analyze": "node scripts/analyze-shots.mjs"
+    "analyze": "node scripts/analyze-shots.mjs",
+    "thumbs": "node scripts/make-thumbs.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

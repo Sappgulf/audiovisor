@@ -187,7 +187,23 @@ npm run size    # bundle budget (needs a build first)
 npm run shots   # render every stage mode to /tmp/audiovisor-shots for eyeballing
 npm run analyze # exposure report per mode: mean luminance, clipping, saturation
 npm run icons   # regenerate the PWA / home-screen icons
+npm run thumbs  # regenerate the stage-mode thumbnails in public/modes/
 ```
+
+`npm run thumbs` renders each mode to `public/modes/<id>.webp` for the stage
+picker, which used to be 22 near-identical tiles distinguished only by a
+small line icon — two of which were reused across different modes — for a
+choice that is entirely visual. They are deliberately monochrome: colour
+here belongs to the theme, so a thumbnail baked in one of the twenty-five
+would be wrong in the other twenty-four, and form is what tells the modes
+apart anyway.
+
+They are committed artifacts, so **re-run it after changing how a mode
+looks** — nothing detects a stale thumbnail automatically, since that would
+mean re-rendering all 22 on every test run. `tests/mode-thumbs.test.js`
+covers the failures that can be caught cheaply: a mode with no thumbnail, a
+thumbnail left behind by a removed mode, and files that are empty or large
+enough to hurt the mobile sheet's first paint.
 
 `tests/stage-render.test.js` rasterizes every mode to a real canvas and
 asserts per-mode invariants — finite pixels, a frame that is neither flat
