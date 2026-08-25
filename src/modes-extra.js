@@ -804,72 +804,110 @@ class ExtraModes {
 
   _fluid(freq) {
     const { ctx, w, h } = this;
-    const cx = w / 2, cy = h / 2;
-    const n = this.quality === 'low' ? 5 : 9;
+    /* Was nine blobs orbiting the centre of the frame, linked by straight
+       strokes and ringed by an ellipse — a wireframe network, and the tenth
+       mode in this file to put a symmetric cluster in the middle. Metal does
+       not read by glow, it reads by a specular highlight running along a
+       surface, so this is a molten pour: a liquid mass with a wave-driven
+       surface, a hot crest, and droplets thrown off on beats. */
+    const surfaceY = h * 0.62;
+    const amp = Math.min(h * 0.16, h * (0.045 + this.sm.bass * 0.11 + this.beat * 0.05));
+    const cols = this.quality === 'low' ? 48 : 128;
+    const step = w / cols;
+
+    /* the surface: three drifting waves, each scaled by its own band, so the
+       shape of the metal follows the shape of the music */
+    const surf = new Float32Array(cols + 1);
+    for (let i = 0; i <= cols; i++) {
+      const u = i / cols;
+      const v = freq ? logSample(freq, u) : 0.4;
+      /* Subtracting the spectrum per column cut sharp V notches into the
+         surface and the high harmonic added spikes, which together read as
+         a mountain range — and Aurora Terrain is already that mode. A liquid
+         has no corners: the bands drive broad, rounded swells instead, and
+         the per-column energy is smoothed across neighbours. */
+      surf[i] = surfaceY
+        + Math.sin(u * 3.4 + this.t * 0.62) * amp
+        + Math.sin(u * 7.9 - this.t * 0.95) * amp * 0.46 * (0.4 + this.sm.mid)
+        + Math.sin(u * 12.6 + this.t * 1.35) * amp * 0.20 * (0.3 + this.sm.high)
+        - v * amp * 0.34 * this.sensitivity;
+    }
+
+    /* one box-blur pass along the surface: a single loud bin should bulge
+       the metal, never crease it */
+    const smoothed = new Float32Array(cols + 1);
+    for (let i = 0; i <= cols; i++) {
+      const a = surf[Math.max(0, i - 1)], b = surf[i], c = surf[Math.min(cols, i + 1)];
+      smoothed[i] = (a + b * 2 + c) / 4;
+    }
+    surf.set(smoothed);
+
+    /* the mass below the surface — source-over, so it is an opaque body with
+       real value contrast rather than one more additive glow */
+    ctx.globalCompositeOperation = 'source-over';
+    const body = ctx.createLinearGradient(0, surfaceY - amp * 1.6, 0, h);
+    body.addColorStop(0, hexRgba(this._color(0), 0.62));
+    body.addColorStop(0.35, hexRgba(this._color(1), 0.34));
+    body.addColorStop(1, this._shadow(this._color(1), 0.16, 4));
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    ctx.lineTo(0, surf[0]);
+    for (let i = 1; i <= cols; i++) ctx.lineTo(i * step, surf[i]);
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.fill();
+
     ctx.globalCompositeOperation = 'lighter';
 
-    /* blob positions computed up front so the membrane can link them */
-    const blobs = [];
-    for (let i = 0; i < n; i++) {
-      const ang = (i / n) * Math.PI * 2 + this.t * (0.18 + i * 0.02);
-      const rad = Math.min(w, h) * 0.22 * (0.7 + this.sm.bass * 0.6 + this.beat * 0.25);
-      const x = cx + Math.cos(ang) * rad * 0.7;
-      const y = cy + Math.sin(ang) * rad * 0.5;
-      const v = freq ? logSample(freq, i / n) : 0.5;
-      blobs.push({ x, y, v });
-    }
-
-    /* metaball membrane — connective tissue between close blobs */
-    const linkD = Math.min(w, h) * 0.30;
-    for (let i = 0; i < blobs.length; i++) {
-      for (let j = i + 1; j < blobs.length; j++) {
-        const a = blobs[i], b = blobs[j];
-        const dx = a.x - b.x, dy = a.y - b.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 > linkD * linkD) continue;
-        const t = 1 - Math.sqrt(d2) / linkD;
-        ctx.strokeStyle = hexRgba(this._color(i % this.theme.colors.length), t * (0.14 + this.sm.level * 0.22));
-        ctx.lineWidth = 1 + t * 5;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      }
-    }
-
-    /* beat ripple rings */
-    if (this.beat > 0.55) {
-      const rr = Math.min(w, h) * (0.3 + this.beat * 0.2);
-      ctx.strokeStyle = hexRgba(this._color(0), this.beat * 0.4);
-      ctx.lineWidth = 1.6;
+    /* specular crest: brightest where the surface is flattest, which is what
+       makes a liquid read as metal rather than as a coloured shape */
+    for (let i = 1; i < cols; i++) {
+      const slope = Math.abs(surf[i + 1] - surf[i - 1]) / (step * 2);
+      const flat = clamp(1 - slope * 2.4, 0, 1);
+      if (flat <= 0.02) continue;
+      ctx.strokeStyle = hexRgba(this._color(2), clamp(flat * (0.32 + this.sm.level * 0.34), 0, 0.72));
+      ctx.lineWidth = 1 + flat * 2.2;
       ctx.beginPath();
-      ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+      ctx.moveTo((i - 1) * step, surf[i - 1]);
+      ctx.lineTo((i + 1) * step, surf[i + 1]);
       ctx.stroke();
     }
 
-    /* precessing orbit ring around the cluster */
-    const orbR = Math.min(w, h) * (0.34 + this.sm.bass * 0.06);
-    ctx.strokeStyle = hexRgba(this._color(2), 0.10 + this.sm.level * 0.12);
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, orbR, orbR * 0.62, Math.sin(this.t * 0.23) * 0.7, 0, Math.PI * 2);
-    ctx.stroke();
+    /* a soft sheen sitting on the metal, drifting out of step with the waves */
+    const sheenX = w * (0.5 + 0.34 * Math.sin(this.t * 0.21));
+    const sheenR = Math.min(w, h) * (0.26 + this.sm.level * 0.10);
+    ctx.globalAlpha = 0.10 + this.sm.level * 0.10;
+    ctx.drawImage(this._soft(this._color(2)), sheenX - sheenR, surfaceY - sheenR * 0.7, sheenR * 2, sheenR * 1.05);
 
-    /* blobs */
-    for (let i = 0; i < blobs.length; i++) {
-      const { x, y, v } = blobs[i];
-      const r = Math.min(w, h) * 0.11 * (0.6 + v * 0.85) * (0.7 + this.sm.bass * 0.5 + this.beat * 0.15);
-      const c = this._color(i + Math.floor(this.t * 0.7));
-      /* Nine blobs orbit a tight centre and are drawn additively, so the
-         middle of the frame stacked three or four deep at up to 0.62 each
-         and flattened to white. Budgeted against that overlap: the core
-         still reads hot, it just stops being a flat disc of paper. */
-      ctx.globalAlpha = clamp(0.20 + v * 0.18, 0, 0.38);
-      ctx.drawImage(this._dot(c), x - r, y - r, r * 2, r * 2);
+    /* droplets thrown off the crest on beats, falling back under gravity */
+    this.fluidDrops ||= [];
+    if (this.beat > 0.5 && this.fluidDrops.length < 30) {
+      const n = 1 + Math.round(this.beat * 2);
+      for (let k = 0; k < n; k++) {
+        const i = Math.floor(Math.random() * cols);
+        this.fluidDrops.push({
+          x: i * step,
+          y: surf[i],
+          vx: (Math.random() - 0.5) * w * 0.06,
+          vy: -h * (0.20 + Math.random() * 0.28) * (0.6 + this.beat * 0.6),
+          r: Math.min(w, h) * (0.008 + Math.random() * 0.014),
+          c: Math.random() < 0.5 ? 0 : 2,
+        });
+      }
     }
-    const cr = Math.min(w, h) * 0.075 * (1 + this.sm.level * 0.5);
-    ctx.globalAlpha = 0.5;
-    ctx.drawImage(this._dot(this._color(0)), cx - cr, cy - cr, cr * 2, cr * 2);
+    const g = h * 1.15;
+    for (let k = this.fluidDrops.length - 1; k >= 0; k--) {
+      const d = this.fluidDrops[k];
+      d.vy += g * 0.016;
+      d.x += d.vx * 0.016;
+      d.y += d.vy * 0.016;
+      const si = clamp(Math.round(d.x / step), 0, cols);
+      if (d.y >= surf[si] || d.x < -20 || d.x > w + 20) { this.fluidDrops.splice(k, 1); continue; }
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(this._dot(this._color(d.c)), d.x - d.r, d.y - d.r, d.r * 2, d.r * 2);
+    }
+
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -1365,49 +1403,138 @@ class ExtraModes {
 
   /* ---------------- LAVA LAMP ---------------- */
 
-  _lava(freq, dt, dt60) {
+  _lava(freq, dt, _dt60) {
     const { ctx, w, h } = this;
-    const N = this.quality === 'low' ? 6 : 10;
+    const N = this.quality === 'low' ? 5 : 7;
+    /* A lava lamp is a tall column, not a field. Blobs were scattered across
+       the full width and only ever rose — which reads as drifting bokeh, not
+       as convection. They now live in a centre column and carry a heat value
+       that drives a real rise-and-fall cycle. */
+    const colW = Math.min(w * 0.52, h * 0.72);
+    const colX = w / 2;
     if (!this.lavaBlobs || this.lavaBlobs.length !== N) {
       this.lavaBlobs = Array.from({ length: N }, (_, i) => ({
-        x: ((i * 61) % 100) / 100,
-        y: Math.random(),
-        r: 0.06 + ((i * 37) % 40) / 400,
-        v: 0.008 + ((i * 17) % 20) / 1400,
+        u: (((i * 61) % 100) / 100 - 0.5) * 0.54,   // -0.27..0.27 across the column
+        r: 0.105 + ((i * 37) % 40) / 340,
         ph: (i * 2.399) % 6.283,
         wob: 0.4 + ((i * 29) % 30) / 50,
-        c: i % 4,
+        /* One lamp, one wax. Cycling four theme colours through the blobs
+           made every frame look like a bag of marbles; the heat of the blob
+           carries the variation instead. */
+        c: i % 2,
+        /* spread the starting phases so the column is populated top to
+           bottom from the first frame, and vary the periods so the blobs
+           never fall into step with each other */
+        phase: (i * 0.3819) % 1,
+        speed: 0.055 + ((i * 23) % 17) / 260,
+        y: 0,
+        heat: 0.5,
       }));
     }
-    const heat = 0.5 + this.sm.bass * 1.1 + this.beat * 0.35;
+
+    const warmth = 0.5 + this.sm.bass * 1.1 + this.beat * 0.35;
     ctx.globalCompositeOperation = 'lighter';
 
-    /* bottom heat pool */
-    const pool = ctx.createLinearGradient(0, h * 0.72, 0, h);
+    /* the lamp's heat source: a pool at the base, brightest on bass */
+    const pool = ctx.createLinearGradient(0, h * 0.70, 0, h);
     pool.addColorStop(0, 'rgba(0,0,0,0)');
-    pool.addColorStop(1, hexRgba(this._color(0), 0.10 + this.sm.bass * 0.16));
+    pool.addColorStop(1, hexRgba(this._color(0), 0.10 + this.sm.bass * 0.18));
     ctx.fillStyle = pool;
-    ctx.fillRect(0, h * 0.72, w, h * 0.28);
+    ctx.fillRect(colX - colW * 0.72, h * 0.70, colW * 1.44, h * 0.30);
 
+    /* --- convection ---
+       Modelling this as emergent heat exchange looked right on paper and
+       piled every blob against the top and bottom in practice, because the
+       thermal time constant and the rise speed have to be tuned against each
+       other to keep the column populated. An explicit cycle per blob is the
+       controllable version: each one climbs and sinks on its own period, and
+       easing the ends gives the hang-and-turn that reads as viscous. */
+    const pts = [];
     for (const b of this.lavaBlobs) {
-      /* buoyancy scales with bass — the lamp "heats up" */
-      b.y -= b.v * heat * dt60 * 0.55;
-      if (b.y < -b.r - 0.05) {
-        b.y = 1 + b.r + 0.04;
-        b.x = Math.random();
-      }
-      const px = (b.x + Math.sin(this.t * b.wob + b.ph) * 0.045) * w;
+      b.phase += dt * b.speed * (0.55 + warmth * 0.5);
+      const cyc = b.phase % 1;
+      // triangle wave, eased at both turns: slow at the top and bottom
+      const tri = cyc < 0.5 ? cyc * 2 : (1 - cyc) * 2;
+      /* Full smoothstep is what a real lamp does and it looks wrong here:
+         easing slows the blob at both turns, so it spends most of its cycle
+         parked at the top or the bottom and the middle of the column empties
+         out. Mostly linear travel with a touch of ease keeps the column
+         populated and still gives the hang at the turn. */
+      const smooth = tri * tri * (3 - 2 * tri);
+      const eased = tri * 0.72 + smooth * 0.28;
+      b.y = 0.92 - eased * 0.82;
+      const rising = cyc < 0.5;
+      b.heat = rising ? 0.45 + eased * 0.55 : 0.45 - (1 - eased) * 0.30;
+
+      const sway = Math.sin(this.t * b.wob * 0.5 + b.ph) * 0.10;
+      const px = colX + (b.u + sway) * colW;
       const py = b.y * h;
       const v = freq ? logSample(freq, (b.ph % 1)) : 0.4;
-      const pr = Math.min(w, h) * b.r * (0.85 + v * 0.7 * this.sensitivity + this.beat * 0.18);
-      const sprite = this._dot(this._color(b.c));
-      ctx.globalAlpha = clamp(0.34 + v * 0.4 + this.sm.bass * 0.18, 0.12, 0.8);
-      ctx.drawImage(sprite, px - pr, py - pr, pr * 2, pr * 2);
-      /* inner highlight blob */
-      const hr = pr * 0.45;
-      ctx.globalAlpha *= 0.8;
-      ctx.drawImage(sprite, px - pr * 0.3 - hr, py - pr * 0.3 - hr, hr * 2, hr * 2);
+      const pr = Math.min(w, h) * b.r * (0.95 + v * 0.5 * this.sensitivity + this.beat * 0.14);
+      /* viscous deformation: wax stretches along its direction of travel and
+         squashes as it hangs at the turn, which is most of what makes it
+         read as molten rather than as a drifting dot */
+      const speed = Math.abs(tri - 0.5) * 2;
+      const stretch = 1 + speed * 0.34;
+      const squash = 1 / stretch;
+      pts.push({ px, py, pr, v, c: b.c, stretch, squash, heat: b.heat, rising });
     }
+
+    /* --- surface tension between lumps that are close ---
+       A true metaball threshold needs a blur+contrast pass every frame,
+       which is too expensive here. A tapered polygon was the first attempt
+       and it was worse than nothing: it spans centre to centre, so it juts
+       out past the blob body as a hard shard, and no amount of waist tuning
+       hides that a polygon has edges while everything around it does not.
+       Bridging with the same soft sprite the bodies use cannot produce an
+       edge at all, and it merges because it is the identical falloff. */
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const a = pts[i], b = pts[j];
+        const dx = b.px - a.px, dy = b.py - a.py;
+        const d = Math.hypot(dx, dy);
+        const reach = (a.pr + b.pr) * 1.05;
+        if (d > reach || d < 1) continue;
+        const pull = 1 - d / reach;            // 0 at reach, 1 when concentric
+        const steps = 2;
+        for (let k = 1; k <= steps; k++) {
+          const f = k / (steps + 1);
+          const br = Math.min(a.pr, b.pr) * (0.34 + pull * 0.42);
+          ctx.globalAlpha = clamp(pull * 0.30, 0, 0.26);
+          ctx.drawImage(
+            this._soft(this._color(f < 0.5 ? a.c : b.c)),
+            a.px + dx * f - br, a.py + dy * f - br, br * 2, br * 2,
+          );
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    /* --- the wax itself: soft body, hot core, no hard sprite edge --- */
+    for (const p of pts) {
+      const base = this._color(p.c);
+      const soft = this._soft(base);
+      const bodyR = p.pr * 1.02;
+      ctx.save();
+      ctx.translate(p.px, p.py);
+      ctx.scale(p.squash, p.stretch);
+      ctx.globalAlpha = clamp(0.26 + p.v * 0.30 + this.sm.bass * 0.14, 0.10, 0.60);
+      ctx.drawImage(soft, -bodyR, -bodyR, bodyR * 2, bodyR * 2);
+      /* the core carries the heat, so a rising blob glows and a sinking one
+         has gone dull — the colour tells you which way it is going */
+      /* Additive over an already-bright body, a large white-hot core just
+         clipped the whole blob to a white disc and threw the wax colour
+         away. Small and only modestly lifted: the body carries the hue, the
+         core says which blobs are on the way up. */
+      const coreR = p.pr * (0.24 + p.heat * 0.13);
+      ctx.globalAlpha = clamp(0.10 + p.heat * 0.24 + p.v * 0.12, 0.04, 0.40);
+      ctx.fillStyle = this._tint(base, 0.06 + p.heat * 0.24);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, coreR, coreR, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     void dt;
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
