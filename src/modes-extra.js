@@ -119,9 +119,14 @@ class ExtraModes {
 
   _spectro(freq, dt) {
     const { ctx, w, h } = this;
-    const sig = `${w}x${h}|${this.theme.colors.join(',')}|${this.quality}`;
-    if (!this.specCv || this.specSig !== sig) {
-      this.specSig = sig;
+    /* rebuilt when size, quality or palette actually change — the joined
+       signature string this compared used to be built every frame */
+    if (!this.specCv || this._specW !== w || this._specH !== h
+        || this._specTheme !== this.theme || this._specQ !== this.quality) {
+      this._specW = w;
+      this._specH = h;
+      this._specTheme = this.theme;
+      this._specQ = this.quality;
       this.specCv = document.createElement('canvas');
       this.specCv.width = Math.max(2, Math.round(w));
       this.specCv.height = Math.max(2, Math.round(h));

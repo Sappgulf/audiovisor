@@ -33,23 +33,26 @@ export const SILENT_LEVELS = Object.freeze({
 
 /**
  * @param {object|null|undefined} levels raw analysis frame
+ * @param {object} [out] optional scratch object to write into — the render
+ *   loop calls this 60+ times a second and per-caller reuse keeps that
+ *   allocation-free; omit it (tests, one-off callers) to get a fresh object
  * @returns {object} every field finite and in range
  */
-export function sanitizeLevels(levels) {
+export function sanitizeLevels(levels, out) {
   if (!levels || typeof levels !== 'object') return SILENT_LEVELS;
-  return {
-    bass: num(levels.bass),
-    mid: num(levels.mid),
-    high: num(levels.high),
-    level: num(levels.level),
-    beatPulse: num(levels.beatPulse),
-    beatPhase: num(levels.beatPhase),
-    // a tempo outside the tracker's own range is not a tempo
-    bpm: num(levels.bpm, 400),
-    beatConfidence: num(levels.beatConfidence),
-    drop: num(levels.drop),
-    chop: !!levels.chop,
-  };
+  const o = out || {};
+  o.bass = num(levels.bass);
+  o.mid = num(levels.mid);
+  o.high = num(levels.high);
+  o.level = num(levels.level);
+  o.beatPulse = num(levels.beatPulse);
+  o.beatPhase = num(levels.beatPhase);
+  // a tempo outside the tracker's own range is not a tempo
+  o.bpm = num(levels.bpm, 400);
+  o.beatConfidence = num(levels.beatConfidence);
+  o.drop = num(levels.drop);
+  o.chop = !!levels.chop;
+  return o;
 }
 
 /**

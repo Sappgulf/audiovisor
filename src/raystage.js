@@ -182,7 +182,9 @@ export class RayStage {
       this.histRow = 0;
       this._histScratch = new Uint8Array(HIST_W);
 
-      this._lastKey = '';
+      this._lastKeyMode = -1;
+      this._lastKeyQ = '';
+      this._lastKeyW = 0;
       this.frames = 0;
       this.targets = {};
       this.error = null;
@@ -349,7 +351,12 @@ export class RayStage {
        uniform without complaint, so a bad analysis frame does not throw
        here — it just pushes NaN into the shader and the whole stage renders
        as garbage. See src/levels.js. */
-    const lv = sanitizeLevels(levels);
+    /* Same boundary guard as the Canvas2D renderer. WebGL accepts a NaN
+       uniform without complaint, so a bad analysis frame does not throw
+       here — it just pushes NaN into the shader and the whole stage renders
+       as garbage. See src/levels.js. The scratch object is this stage's own;
+       nothing outside reads it before the next frame overwrites it. */
+    const lv = sanitizeLevels(levels, this._lvScratch || (this._lvScratch = {}));
     this._drop = lv.drop;
     this.beat = beatEnergy(this.beat, lv, dt);
     if (usableSpectrum(freq)) {
@@ -436,10 +443,13 @@ export class RayStage {
     const prev = this.frames % 2 === 0 ? histA : histB;
     const next = this.frames % 2 === 0 ? histB : histA;
     // a look change or resize invalidates history; the beat also cuts it so
-    // hits stay crisp instead of ghosting
-    const key = `${this.mode}|${this.quality}|${this.rw}`;
-    const stable = key === this._lastKey && this.frames > 1;
-    this._lastKey = key;
+    // hits stay crisp instead of ghosting. Three field compares instead of
+    // the template string this used to build every frame.
+    const stable = this._lastKeyMode === this.mode && this._lastKeyQ === this.quality
+      && this._lastKeyW === this.rw && this.frames > 1;
+    this._lastKeyMode = this.mode;
+    this._lastKeyQ = this.quality;
+    this._lastKeyW = this.rw;
     // a beat softens the blend so hits stay crisp, but killing it entirely
     // left every beat frame full of sampling noise
     const blend = stable ? q.blend * (1 - Math.min(this.beat, 0.6) * 0.5) : 0;

@@ -95,11 +95,15 @@ export class Renderer {
     /* vectorscope / spectrogram / city / orb state */
     this.scopeCv = null;
     this.scopeCtx = null;
-    this.scopeSig = '';
+    this._scopeW = 0;
+    this._scopeQ = '';
     this.specCv = null;
     this.specCtx = null;
+    this._specW = 0;
+    this._specH = 0;
+    this._specTheme = null;
+    this._specQ = '';
     this.specLut = null;
-    this.specSig = '';
     this._specAcc = 0;
     this.cityCols = [];
     this.stars = [];
@@ -118,9 +122,12 @@ export class Renderer {
     this._softSprites = null;
     this._barSprites = null;
     this._floorGrads = null;
-    this._cacheSig = '';
+    this._cacheTheme = null;
+    this._cacheQ = '';
     this._bgGrad = null;
-    this._bgSig = '';
+    this._bgTheme = null;
+    this._bgW = 0;
+    this._bgH = 0;
 
     this.trailCv = null;
     this.trailCtx = null;
@@ -162,8 +169,7 @@ export class Renderer {
     this.echo = null;
     this.terrainRows = [];
     this.cityCols = [];
-    this.specSig = '';
-    this.scopeSig = '';
+    this._scopeW = 0;
     this.scopeCv = null;
     this.scopeCtx = null;
     this.orbSat = [];
@@ -173,21 +179,24 @@ export class Renderer {
   }
   setTheme(t) {
     this.theme = t;
-    this._cacheSig = '';
-    this._bgSig = '';
-    this.specSig = '';
+    this._cacheTheme = null;
+    this._bgTheme = null;
+    /* the spectro buffer bakes palette-tinted pixels; force a rebuild */
+    this.specCv = null;
   }
   setSensitivity(v) { this.sensitivity = v; }
   setBassFocus(v) { this.bassFocus = v; }
-  setColorPop(v) { this.colorPop = v; this._cacheSig = ''; }
+  setColorPop(v) { this.colorPop = v; this._cacheTheme = null; }
   setBloom(v) { this.bloomAmount = v; }
 
   /* ---------------- caches ---------------- */
 
   _buildCache() {
-    const sig = `${this.theme.colors.join(',')}|${this.quality}`;
-    if (this._cacheSig === sig && this._dotSprites) return;
-    this._cacheSig = sig;
+    /* runs every frame; compare references instead of joining the palette
+       into a signature string each time */
+    if (this._cacheTheme === this.theme && this._cacheQ === this.quality && this._dotSprites) return;
+    this._cacheTheme = this.theme;
+    this._cacheQ = this.quality;
 
     this._dotSprites = new Map();
     this._barSprites = new Map();
@@ -333,8 +342,10 @@ export class Renderer {
     const dt = clamp((dtMs || 16.7) / 1000, 0.001, 0.06);
     this.t += dt;
     /* Everything downstream assumes finite, in-range numbers; one NaN here
-       latches into the smoothed bands permanently. See src/levels.js. */
-    const levels = sanitizeLevels(rawLevels);
+       latches into the smoothed bands permanently. See src/levels.js. The
+       scratch is this renderer's own — beatInfo always mirrors the latest
+       frame, which is the only thing its readers want. */
+    const levels = sanitizeLevels(rawLevels, this._lvScratch || (this._lvScratch = {}));
     this.beatInfo = levels;
     this.beat = beatEnergy(this.beat, levels, dt);
     this._updateLevels(levels, dt);
@@ -363,10 +374,13 @@ export class Renderer {
     ctx.clearRect(0, 0, w, h);
 
     /* ambient base — theme-tinted deep gradient, so scenes never float on
-       transparency or the page background */
-    const bgSig = `${w}x${h}|${this.theme.id}`;
-    if (!this._bgGrad || this._bgSig !== bgSig) {
-      this._bgSig = bgSig;
+       transparency or the page background. Rebuilt only when a real input
+       changes; the signature string this used to build every frame was pure
+       per-frame garbage. */
+    if (!this._bgGrad || this._bgW !== w || this._bgH !== h || this._bgTheme !== this.theme.id) {
+      this._bgW = w;
+      this._bgH = h;
+      this._bgTheme = this.theme.id;
       const bg = ctx.createLinearGradient(0, 0, 0, h);
       bg.addColorStop(0, '#080807');
       bg.addColorStop(0.55, '#0a0908');
@@ -1015,9 +1029,9 @@ export class Renderer {
     ctx.globalCompositeOperation = 'source-over';
 
     /* phosphor buffer */
-    const sig = `${w}x${h}|${this.quality}`;
-    if (!this.scopeCv || this.scopeSig !== sig) {
-      this.scopeSig = sig;
+    if (!this.scopeCv || this._scopeW !== w || this._scopeQ !== this.quality) {
+      this._scopeW = w;
+      this._scopeQ = this.quality;
       this.scopeCv = document.createElement('canvas');
       this.scopeCv.width = Math.max(2, Math.round(w));
       this.scopeCv.height = Math.max(2, Math.round(h));

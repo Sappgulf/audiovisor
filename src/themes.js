@@ -17,10 +17,10 @@ export const MODES = [
   { id: 'prism', name: 'Prism Ray', icon: 'prism' },
   { id: 'void', name: 'Void Core', icon: 'void' },
   { id: 'bloomfield', name: 'Bloom Field', icon: 'flower' },
-  { id: 'fractal', name: 'Fractal Bloom', icon: 'snowflake' },
+  { id: 'fractal', name: 'Fractal Bloom', icon: 'fractal' },
   { id: 'radar', name: 'Beat Radar', icon: 'radar' },
   { id: 'lava', name: 'Lava Lamp', icon: 'lava' },
-  { id: 'gpu', name: 'GPU Core', icon: 'void' },
+  { id: 'gpu', name: 'GPU Core', icon: 'chip' },
 ];
 
 export const THEMES = [

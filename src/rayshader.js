@@ -850,7 +850,11 @@ vec3 volColor(float dens, vec3 p) {
   // cool at the rim, hot in the core, blowing out to white at peak density
   vec3 c = mix(palf(0.12), palf(0.8), clamp(r * 0.24, 0.0, 1.0));
   c = mix(c, vec3(1.0, 0.94, 0.88), pow(t, 3.4) * 0.45);   // keep hue in the dense core
-  return c * (0.6 + uBeat * 0.5);
+  /* the lamp wax sits behind glass and loses half its light to the wall
+     march — it measured a third of the nebula's brightness. Base it hotter
+     so the lamp actually glows between beats. */
+  float base = (uMode == 20) ? 0.95 : 0.6;
+  return c * (base + uBeat * 0.5);
 }
 
 /* Volume march with an optional far limit, so a surface can occlude it. */
@@ -860,13 +864,16 @@ vec3 marchVolume(vec3 ro, vec3 rd, float tmax) {
   float t = 0.4;
   int steps = min(uSteps / 3, 72);
   float stepSize = 0.16;
+  /* the wax is enclosed in glass and read as murk against the bright
+     vessel highlights — the lamp gets a gain the open volumes don't need */
+  float gain = (uMode == 20) ? 1.5 : 1.0;
   for (int i = 0; i < 72; i++) {
     if (i >= steps || trans < 0.02 || t > min(14.0, tmax)) break;
     vec3 p = ro + rd * t;
     float d = volDensity(p);
     if (d > 0.001) {
       float a = 1.0 - exp(-d * stepSize * 3.2);
-      acc += trans * a * volColor(d, p) * (0.6 + uLevel * 0.5);
+      acc += trans * a * volColor(d, p) * (0.6 + uLevel * 0.5) * gain;
       trans *= 1.0 - a;
     }
     t += stepSize * (1.0 + t * 0.09);

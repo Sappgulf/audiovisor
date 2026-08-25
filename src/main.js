@@ -1842,6 +1842,7 @@ let rayDropped = false;
 let raySuspended = false;   // runtime-only kill switch, never persisted
 let _lastSecs = -1;
 let _vuAcc = 0;
+let _lastBeatWritten = -1;
 let _uiAcc = 0;
 const seekFillEl = $('seek-fill');
 const timeCurrentEl = $('time-current');
@@ -1925,7 +1926,16 @@ function frameStep(now) {
     rayDropped = false;
     toast('RAYTRACE <b>recovered</b>', { duration: 1800 });
   }
-  shellEl.style.setProperty('--beat', (rtOn ? ray.beat : renderer.beat).toFixed(3));
+  /* A custom-property write invalidates every rule that reads --beat (logo,
+     BPM chip). The value moves in tiny increments 60+ times a second, so
+     only touch the style when it has moved enough to see. */
+  {
+    const beatVal = rtOn ? ray.beat : renderer.beat;
+    if (Math.abs(beatVal - _lastBeatWritten) > 0.004) {
+      _lastBeatWritten = beatVal;
+      shellEl.style.setProperty('--beat', beatVal.toFixed(3));
+    }
+  }
 
   if (rtOn) {
     // raytraced stage owns every mode; the 2D renderer still advances its
