@@ -1,10 +1,15 @@
 :root {
+  /* Channels only, so every rgba() built from the accent can be re-tinted by
+     setting one property. Twenty-five call sites had the brass literal baked
+     in, which meant --accent could be changed and most of the interface would
+     stay brass regardless. */
+  --accent-rgb: 217, 176, 137;
   --accent: #d9b089;
   --accent-hover: #e8c9a8;
   --accent-strong: #c49a6e;
-  --accent-dim: rgba(217, 176, 137, 0.16);
-  --accent-glow: rgba(217, 176, 137, 0.32);
-  --accent-line: rgba(217, 176, 137, 0.22);
+  --accent-dim: rgba(var(--accent-rgb), 0.16);
+  --accent-glow: rgba(var(--accent-rgb), 0.32);
+  --accent-line: rgba(var(--accent-rgb), 0.22);
   --bg: #0f0e0d;
   --bg-warm: #12100e;
   --surface: #1a1816;
@@ -127,7 +132,7 @@ button:focus-visible, input:focus-visible {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(1200px 700px at 50% 38%, rgba(217,176,137,0.055), transparent 62%),
+    radial-gradient(1200px 700px at 50% 38%, rgba(var(--accent-rgb), 0.055), transparent 62%),
     radial-gradient(900px 900px at 12% 92%, rgba(196,154,110,0.035), transparent 55%),
     linear-gradient(to bottom, rgba(0,0,0,0.18), transparent 22%, transparent 78%, rgba(0,0,0,0.42));
   pointer-events: none;
@@ -245,7 +250,7 @@ button:focus-visible, input:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 10px rgba(217, 176, 137, 0.28), 0 0 0 1px rgba(255,250,243,0.06) inset;
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.28), 0 0 0 1px rgba(255,250,243,0.06) inset;
 }
 .logo-diamond {
   width: 11px;
@@ -293,7 +298,7 @@ button:focus-visible, input:focus-visible {
 .nav-link.is-active {
   color: #1a1816;
   background: var(--accent);
-  box-shadow: 0 1px 8px rgba(217,176,137,0.24), 0 0 0 1px rgba(255,250,243,0.06) inset;
+  box-shadow: 0 1px 8px rgba(var(--accent-rgb), 0.24), 0 0 0 1px rgba(255,250,243,0.06) inset;
   font-weight: 650;
 }
 
@@ -342,13 +347,13 @@ button:focus-visible, input:focus-visible {
   align-items: center;
   justify-content: center;
   font-size: 14px;
-  box-shadow: 0 2px 12px rgba(217, 176, 137, 0.26);
+  box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.26);
   transition: transform 0.16s var(--ease), background 0.16s var(--ease), box-shadow 0.16s var(--ease);
 }
 .lime-btn:hover {
   transform: scale(1.04);
   background: var(--accent-hover);
-  box-shadow: 0 4px 18px rgba(217, 176, 137, 0.32);
+  box-shadow: 0 4px 18px rgba(var(--accent-rgb), 0.32);
 }
 .lime-btn:active { transform: scale(0.98); }
 
@@ -444,7 +449,7 @@ button:focus-visible, input:focus-visible {
   content: '';
   position: absolute;
   inset: -12%;
-  background: radial-gradient(60% 52% at 50% 46%, rgba(217,176,137,0.075), transparent 68%);
+  background: radial-gradient(60% 52% at 50% 46%, rgba(var(--accent-rgb), 0.075), transparent 68%);
   opacity: 0.6;
   animation: stage-breathe 7s ease-in-out infinite;
   pointer-events: none;
@@ -478,8 +483,8 @@ button:focus-visible, input:focus-visible {
   right: 0;
   bottom: 35%;
   height: 1px;
-  background: linear-gradient(to right, transparent, rgba(217,176,137,0.14), transparent);
-  box-shadow: 0 0 80px 20px rgba(217, 176, 137, 0.04);
+  background: linear-gradient(to right, transparent, rgba(var(--accent-rgb), 0.14), transparent);
+  box-shadow: 0 0 80px 20px rgba(var(--accent-rgb), 0.04);
   pointer-events: none;
 }
 
@@ -514,11 +519,11 @@ button:focus-visible, input:focus-visible {
 #shell { --beat: 0; }
 .logo-mark {
   transform: scale(calc(1 + var(--beat, 0) * 0.14));
-  box-shadow: 0 2px 10px rgba(217, 176, 137, calc(0.28 + var(--beat, 0) * 0.30)), 0 0 0 1px rgba(255,250,243,0.06) inset;
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), calc(0.28 + var(--beat, 0) * 0.30)), 0 0 0 1px rgba(255,250,243,0.06) inset;
 }
 #bpm-chip {
   transform: scale(calc(1 + var(--beat, 0) * 0.09));
-  border-color: rgba(217, 176, 137, calc(0.25 + var(--beat, 0) * 0.55));
+  border-color: rgba(var(--accent-rgb), calc(0.25 + var(--beat, 0) * 0.55));
 }
 
 /* look-change transition — quick zoom + saturate pulse */
@@ -587,7 +592,7 @@ button:focus-visible, input:focus-visible {
 }
 .dropzone:hover, .dropzone.drag-over {
   background: rgba(26, 23, 20, 0.88);
-  border-color: rgba(217,176,137,0.38);
+  border-color: rgba(var(--accent-rgb), 0.38);
   box-shadow: 0 0 0 4px var(--accent-dim), 0 12px 40px rgba(0,0,0,0.2);
   transform: translateY(-1px);
 }
@@ -714,7 +719,7 @@ button:focus-visible, input:focus-visible {
   font-size: 15px;
   transition: all 0.2s var(--ease);
 }
-.mode-card.is-active .mode-preview { color: var(--accent); border-color: var(--accent-line); background: rgba(217,176,137,0.06); }
+.mode-card.is-active .mode-preview { color: var(--accent); border-color: var(--accent-line); background: rgba(var(--accent-rgb), 0.06); }
 .mode-card:hover .mode-preview { color: var(--text-60); }
 
 /* Thumbnail of the mode itself. Rendered monochrome, because colour here
@@ -734,10 +739,15 @@ button:focus-visible, input:focus-visible {
 .mode-card.has-thumb .mode-thumb { opacity: 0.62; }
 .mode-card.has-thumb .ic { opacity: 0; }
 .mode-card.has-thumb:hover .mode-thumb { opacity: 0.85; filter: grayscale(1) brightness(0.9) contrast(1.05); }
-/* the selected mode is the one you are looking at, so it gets the accent */
+/* The selected card reads as selected through its accent border and ground.
+   This used to tint the thumbnail itself with sepia + hue-rotate, which was a
+   filter chain hand-tuned to brass — it produced the wrong hue for all 24
+   other themes the moment the chrome started following the stage, and it
+   half-undid the reason these are monochrome in the first place. Brightness
+   alone marks the selection; the colour around it carries the theme. */
 .mode-card.is-active.has-thumb .mode-thumb {
   opacity: 1;
-  filter: grayscale(1) brightness(0.95) sepia(0.45) saturate(1.6) hue-rotate(-12deg);
+  filter: grayscale(1) brightness(1.06) contrast(1.05);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -938,8 +948,8 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   animation: art-breathe 3.2s ease-in-out infinite;
 }
 @keyframes art-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(217,176,137,0.12), 0 2px 12px rgba(0,0,0,0.2); }
-  50% { box-shadow: 0 0 0 5px rgba(217,176,137,0.05), 0 2px 12px rgba(0,0,0,0.2); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.12), 0 2px 12px rgba(0,0,0,0.2); }
+  50% { box-shadow: 0 0 0 5px rgba(var(--accent-rgb), 0.05), 0 2px 12px rgba(0,0,0,0.2); }
 }
 
 .track-meta {
@@ -1052,7 +1062,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   top: 0;
   height: 100%;
   width: 0%;
-  background: rgba(217, 176, 137, 0.16);
+  background: rgba(var(--accent-rgb), 0.16);
   border-radius: 99px;
   pointer-events: none;
   transition: width 0.08s linear;
@@ -1072,7 +1082,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 .seek-track:hover .seek-fill::after {
   width: 5px;
   height: 24px;
-  box-shadow: 0 0 14px var(--accent-glow), 0 0 0 3px rgba(217,176,137,0.08);
+  box-shadow: 0 0 14px var(--accent-glow), 0 0 0 3px rgba(var(--accent-rgb), 0.08);
 }
 
 .utility-controls {
@@ -1511,7 +1521,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 .mini-btn:hover { color: var(--text); border-color: var(--border-strong); background: var(--glass-hover); transform: translateY(-1px); }
 
 .spotify-block { display: flex; flex-direction: column; gap: 12px; background: var(--glass); border: 1px solid var(--border-soft); border-radius: 12px; padding: 14px; }
-.apple-block { border-color: rgba(217, 176, 137, 0.16); }
+.apple-block { border-color: rgba(var(--accent-rgb), 0.16); }
 
 .sp-head {
   display: flex;

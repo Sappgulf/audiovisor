@@ -1,4 +1,5 @@
 import { setIcon } from './icons.js';
+import { applyAccent } from './chrome.js';
 import { MODES, THEMES } from './themes.js';
 import { AudioEngine } from './audio.js';
 import { Renderer, loadExtraModes } from './visualizers.js';
@@ -512,8 +513,12 @@ function setMode(id) {
 
 function setTheme(id) {
   state.themeId = id;
-  renderer.setTheme(THEMES.find((t) => t.id === id));
-  ray.setTheme(THEMES.find((t) => t.id === id));
+  const theme = THEMES.find((t) => t.id === id);
+  renderer.setTheme(theme);
+  ray.setTheme(theme);
+  /* the interface follows the stage: without this, choosing Neon Cyber
+     recoloured the visualiser and left every chip, tab and slider brass */
+  applyAccent(theme);
   [...themeRow.children].forEach((c, i) => setToggle(c, THEMES[i].id === id, 'is-active'));
   updateFavicon();
   if (engine.track && !engine.isExternalMode()) {
@@ -1869,6 +1874,11 @@ function frameStep(now) {
 }
 
 loadSettings();
+/* The CSS ships the brass tokens and state defaults to the brass theme, so
+   first run happens to line up — but that is a coincidence between two files,
+   and it breaks silently the day the default theme changes. Derive the accent
+   from whatever theme is actually active once settings have been restored. */
+applyAccent(THEMES.find((t) => t.id === state.themeId));
 
 /* Seed every toggle's reported state from the class it is already wearing.
    Without this a control announces nothing at all until the first time it
