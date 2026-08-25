@@ -314,11 +314,17 @@ describe('touch-device compositing', () => {
       const a = parts.length > 3 ? parts[3] : 1;
       return { alpha: a, lum: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 };
     }
-    const hex = v.match(/^#([0-9a-f]{6})$/i);
+    /* #rrggbb and #rrggbbaa both. The alpha form matters: the minifier
+       rewrites rgba(18,16,14,0.82) to #12100ed1, so anyone copying a value
+       back out of the built CSS writes it that way, and a parser that only
+       knew the 6-digit form would silently skip the rule instead of
+       checking it. */
+    const hex = v.match(/^#([0-9a-f]{6})([0-9a-f]{2})?$/i);
     if (hex) {
       const n = parseInt(hex[1], 16);
       const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-      return { alpha: 1, lum: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 };
+      const alpha = hex[2] === undefined ? 1 : parseInt(hex[2], 16) / 255;
+      return { alpha, lum: (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 };
     }
     return null;
   };
