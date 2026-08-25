@@ -365,9 +365,18 @@ export class Renderer {
     if (!this._bgGrad || this._bgSig !== bgSig) {
       this._bgSig = bgSig;
       const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, '#0b0a09');
-      bg.addColorStop(0.55, '#0e0c0a');
-      bg.addColorStop(1, hexRgba(this.theme.colors[this.theme.colors.length - 1], 0.14));
+      bg.addColorStop(0, '#080807');
+      bg.addColorStop(0.55, '#0a0908');
+      /* This ended on hexRgba(themeColour, 0.14) — an almost transparent
+         bright stop after two opaque dark ones. A canvas gradient
+         interpolates colour and alpha together, so between them it passes
+         through an *opaque mid-bright* olive: a hard, full-width band across
+         the lower third of every frame, in every mode, on every theme. It
+         was the single most damaging thing on the stage and it read as
+         haze rather than as the bug it was.
+         Ending on an opaque dark tint keeps the intended hint of theme
+         underfoot with no band, and lets the frame reach near-black. */
+      bg.addColorStop(1, this._shadow(this.theme.colors[this.theme.colors.length - 1], 0.11, 8));
       this._bgGrad = bg;
       this._bgCtx = ctx;
     }
@@ -441,8 +450,18 @@ export class Renderer {
       // flip vertically around sy
       ctx.translate(0, sy * 2 + fh);
       ctx.scale(1, -1);
-      // draw only the upper region that reflects
-      ctx.drawImage(this.canvas, 0, 0, w, fh, 0, 0, w, fh);
+      /* Two bugs lived in this one call. It sampled (0, 0, w, fh) — the top
+         of the frame — and mirrored that into the bottom, so what appeared
+         under the "floor" was never what stood on it. And the source rect is
+         in canvas device pixels while w/h are CSS pixels, so above 1x it
+         also read the wrong sub-rect. Mirror the band directly above the
+         floor line, measured on the backing store. */
+      const px = this.canvas.height / h;
+      ctx.drawImage(
+        this.canvas,
+        0, Math.max(0, sy - fh) * px, this.canvas.width, fh * px,
+        0, 0, w, fh,
+      );
       ctx.restore();
       // fade the reflection
       const fade = ctx.createLinearGradient(0, sy, 0, h);
@@ -621,11 +640,16 @@ export class Renderer {
     const { ctx, w, h } = this;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
+    /* Three sprites at 0.55x the min dimension cover the entire frame, so an
+       additive draw at 0.035 each was a permanent haze over every pixel —
+       the dominant reason the stage looked washed out and the reason every
+       theme collapsed toward one tint. Smaller and fainter keeps the slow
+       drift of colour behind the scene without raising the floor. */
     for (let i = 0; i < 3; i++) {
       const x = w * (0.5 + 0.33 * Math.sin(this.t * 0.043 + i * 2.1));
       const y = h * (0.45 + 0.30 * Math.cos(this.t * 0.037 + i * 1.7));
-      const r = Math.min(w, h) * (0.55 + 0.10 * Math.sin(this.t * 0.05 + i));
-      ctx.globalAlpha = 0.035 + this.sm.level * 0.025 + this.beat * 0.015;
+      const r = Math.min(w, h) * (0.34 + 0.07 * Math.sin(this.t * 0.05 + i));
+      ctx.globalAlpha = 0.012 + this.sm.level * 0.016 + this.beat * 0.012;
       ctx.drawImage(this._soft(this._color(i)), x - r, y - r, r * 2, r * 2);
     }
     ctx.restore();
@@ -731,8 +755,13 @@ export class Renderer {
   _bars(freq, dt60, dt) {
     const { ctx, w, h } = this;
     const horizon = h * 0.66;
-    const N = Math.min(88, Math.max(44, Math.round(w / (this.quality === 'low' ? 24 : 14))));
-    const gap = Math.max(2, w / N / 6);
+    /* Density and duty cycle both ran too high: up to 88 bars, each filling
+       5/6 of its slot, so the spectrum rendered as an edge-to-edge slab of
+       colour rather than as bars. A bar chart reads by its gaps — the dark
+       between the bars is what makes them countable — so fewer columns and
+       a third of each slot given back to the background. */
+    const N = Math.min(56, Math.max(28, Math.round(w / (this.quality === 'low' ? 38 : 24))));
+    const gap = Math.max(3, w / N / 3);
     const bw = (w - gap * (N - 1) - 24) / N;
 
     if (this.peaks.length !== N) {
