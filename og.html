@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<!--
+  OG image harness — NOT part of the app build.
+
+  Mounts the real WebGL2 raytraced stage full-bleed at 1200x630, pumps a
+  synthetic track through it until the temporal accumulator converges, then
+  overlays the brand lockup. scripts/make-og.mjs screenshots this page with
+  headless Chrome to produce public/og.png.
+
+  Query params: ?mode=lava&theme=cyber&frames=150&t0=4
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>OG</title>
+  <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
+  <link href="https://api.fontshare.com/v2/css?f[]=space-grotesk@300,400,500,600,700&f[]=jet-brains-mono@400,500&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 1200px; height: 630px; overflow: hidden; background: #000; }
+    :root {
+      --accent: #00f0ff;
+      --mono: 'JetBrains Mono', ui-monospace, monospace;
+      --grot: 'Space Grotesk', system-ui, sans-serif;
+    }
+    #og-stage { position: fixed; inset: 0; width: 1200px; height: 630px; display: block; }
+
+    .scrim { position: fixed; inset: 0; pointer-events: none; }
+    .scrim-bottom { background: linear-gradient(180deg, rgba(0,0,0,0) 42%, rgba(0,0,0,.42) 74%, rgba(0,0,0,.74) 100%); }
+    .scrim-left   { background: linear-gradient(90deg, rgba(0,0,0,.52) 0%, rgba(0,0,0,.18) 34%, rgba(0,0,0,0) 55%); }
+
+    .lockup { position: fixed; left: 56px; bottom: 52px; display: flex; flex-direction: column; gap: 18px; }
+    .brand-row { display: flex; align-items: center; gap: 22px; }
+    .mark {
+      width: 74px; height: 74px; border-radius: 18px; flex: none;
+      background: rgba(10,10,10,.55);
+      border: 1px solid rgba(255,255,255,.16);
+      box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 18px 50px rgba(0,0,0,.55), 0 0 42px color-mix(in srgb, var(--accent) 26%, transparent);
+      display: grid; place-items: center;
+    }
+    .wordmark {
+      font-family: var(--grot); font-weight: 700; font-size: 66px;
+      letter-spacing: -0.045em; color: #fff; line-height: 1;
+      text-shadow: 0 2px 30px rgba(0,0,0,.65);
+    }
+    .tagline {
+      font-family: var(--mono); font-weight: 500; font-size: 14px;
+      letter-spacing: .34em; color: var(--accent); text-transform: uppercase;
+      text-shadow: 0 0 18px color-mix(in srgb, var(--accent) 60%, transparent), 0 2px 12px rgba(0,0,0,.8);
+      padding-left: 2px;
+    }
+    .chips { display: flex; gap: 10px; }
+    .chip {
+      font-family: var(--mono); font-weight: 500; font-size: 11px;
+      letter-spacing: .16em; color: rgba(255,255,255,.88);
+      padding: 8px 14px; border-radius: 999px;
+      background: rgba(8,8,8,.5); border: 1px solid rgba(255,255,255,.17);
+      backdrop-filter: blur(6px);
+      text-transform: uppercase; white-space: nowrap;
+    }
+    .chip b { color: var(--accent); font-weight: 500; }
+    #og-error {
+      position: fixed; inset: 0; display: grid; place-items: center;
+      font-family: var(--mono); font-size: 13px; color: #ff5a5a; white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="og-stage" aria-hidden="true"></canvas>
+  <div class="scrim scrim-bottom"></div>
+  <div class="scrim scrim-left"></div>
+
+  <div class="lockup">
+    <div class="brand-row">
+      <div class="mark">
+        <svg width="46" height="46" viewBox="0 0 46 46" aria-hidden="true">
+          <circle cx="23" cy="23" r="15.5" fill="none" stroke="rgba(255,255,255,.34)" stroke-width="1.6"/>
+          <rect x="14.6" y="14.6" width="16.8" height="16.8" fill="var(--accent)" transform="rotate(45 23 23)"/>
+          <rect x="17.25" y="18.25" width="2.7" height="9.5" rx="1.35" fill="#0b0b0b"/>
+          <rect x="21.65" y="15" width="2.7" height="16" rx="1.35" fill="#0b0b0b"/>
+          <rect x="26.05" y="16.8" width="2.7" height="12.4" rx="1.35" fill="#0b0b0b"/>
+        </svg>
+      </div>
+      <div class="wordmark">AUDIOVISOR</div>
+    </div>
+    <div class="tagline">Real-time audio visualizer</div>
+    <div class="chips">
+      <span class="chip"><b>Raytraced</b> stage</span>
+      <span class="chip"><b>22</b> modes</span>
+      <span class="chip"><b>25</b> themes</span>
+    </div>
+  </div>
+
+  <div id="og-error" hidden></div>
+
+  <script type="module">
+    import { RayStage } from './src/raystage.js';
+    import { THEMES } from './src/themes.js';
+
+    const q = new URLSearchParams(location.search);
+    const modeId = q.get('mode') || 'city';
+    const themeId = q.get('theme') || 'cyber';
+    const FRAMES = parseInt(q.get('frames') || '90', 10);
+    const T0 = parseFloat(q.get('t0') || '8');
+
+    const theme = THEMES.find((t) => t.id === themeId) || THEMES[1];
+    document.documentElement.style.setProperty('--accent', theme.colors[0]);
+
+    const fail = (msg) => {
+      const el = document.getElementById('og-error');
+      el.hidden = false;
+      el.textContent = 'OG HARNESS FAILED\n' + msg;
+      document.title = 'OG ERROR';
+    };
+
+    try {
+      const stage = new RayStage(document.getElementById('og-stage'));
+      if (!stage.ok) { fail('raystage: ' + stage.error); }
+      else {
+        stage.setTheme(theme);
+        stage.setMode(modeId);
+        stage.setQuality('ultra');
+        stage.resize(1200, 630);
+
+        /* same band-limited synth as the dev pump in main.js — kick + funky
+           mids + sparse highs, beat every 0.55s — so the scene is caught
+           mid-performance rather than idle-breathing */
+        const freq = new Uint8Array(1024);
+        const wave = new Uint8Array(2048);
+        for (let f = 0; f < FRAMES; f++) {
+          const t = T0 + f * 0.033;
+          for (let i = 0; i < 1024; i++) {
+            const u = i / 1024;
+            const v = 0.06
+              + 0.7 * Math.exp(-Math.pow((u - 0.02) * 16, 2))
+              + 0.45 * Math.abs(Math.sin(u * 26 + t)) * Math.exp(-u * 2.4)
+              + 0.25 * Math.exp(-Math.pow((u - 0.3) * 10, 2))
+              + 0.12 * Math.abs(Math.sin(u * 90 + t * 3.7)) * Math.exp(-u * 4.2);
+            freq[i] = Math.max(0, Math.min(255, v * 255));
+          }
+          for (let i = 0; i < 2048; i++) {
+            wave[i] = 128 + 90 * Math.sin(i * 0.017 + t * 2.2) + 20 * Math.sin(i * 0.0053 - t);
+          }
+          const beat = (t % 0.55) < 0.12 ? 0.85 : 0;
+          stage.render(false, freq, wave, {
+            bass: 0.72, mid: 0.45, high: 0.3, level: 0.58,
+            beatPulse: beat, beatPhase: (t % 0.55) / 0.55, bpm: 109, beatConfidence: 0.9,
+          }, 33, t);
+        }
+        document.title = 'OG READY';
+      }
+    } catch (err) {
+      fail(String(err && err.stack || err));
+    }
+  </script>
+</body>
+</html>

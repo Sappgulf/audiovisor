@@ -12,7 +12,11 @@
  * the neutral Monolith palette keeps the grid calm and truthful, and means
  * one asset set stays correct whatever theme is selected.
  *
- * Usage: npm run thumbs   (writes public/modes/<id>.webp)
+ * Usage: npm run thumbs   (writes public/modes/<id>.webp + <id>-anim.webp)
+ *
+ * The `-anim` files are 10-frame horizontal sprite strips: the picker swaps
+ * one in on hover and walks it with a CSS steps() animation. They are baked
+ * from the same warmup state as the still, so the loop starts mid-scene.
  */
 import { createCanvas } from '@napi-rs/canvas';
 import { Renderer, loadExtraModes, extraModesLoaded } from '../src/visualizers.js';
@@ -32,6 +36,13 @@ const RW = W * 3;
 const RH = H * 3;
 const OUT = 'public/modes';
 const WARMUP = 420;          // let waterfalls, trails and particle pools fill
+/* Hover animation: 10 frames captured 4 sim-frames apart (~15.6fps, a 0.64s
+   loop) baked into one horizontal strip per mode. The picker swaps the strip
+   in on hover and animates it with a CSS steps() walk — no runtime renderer,
+   no video codecs, and nothing loads until the user actually points at a
+   tile. */
+const STRIP_FRAMES = 10;
+const STRIP_STEP = 4;
 
 const makeCanvas = () => {
   const c = createCanvas(1, 1);
@@ -121,6 +132,27 @@ for (const m of MODES) {
     writeFileSync(`${OUT}/${m.id}.webp`, buf);
     total += buf.length;
     process.stdout.write(`${m.id} ${(buf.length / 1024).toFixed(1)}kB  `);
+
+    /* sprite strip for the hover animation — the simulation keeps running
+       from where the still left off, so the loop starts mid-performance */
+    const strip = createCanvas(W * STRIP_FRAMES, H);
+    const sx = strip.getContext('2d');
+    sx.fillStyle = '#0f0e0d';
+    sx.fillRect(0, 0, strip.width, H);
+    sx.imageSmoothingEnabled = true;
+    let t = WARMUP * 0.016;
+    for (let k = 0; k < STRIP_FRAMES; k++) {
+      for (let f = 0; f < STRIP_STEP; f++) {
+        const d2 = synthData(t);
+        renderer.render(false, d2.freq, d2.wave, d2.levels, 16.7);
+        t += 0.016;
+      }
+      sx.drawImage(renderer.canvas, k * W, 0, W, H);
+    }
+    const sbuf = await strip.encode('webp', 72);
+    writeFileSync(`${OUT}/${m.id}-anim.webp`, sbuf);
+    total += sbuf.length;
+    process.stdout.write(`+anim ${(sbuf.length / 1024).toFixed(1)}kB `);
   } finally {
     Math.random = realRandom;
   }

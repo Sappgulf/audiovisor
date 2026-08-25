@@ -750,8 +750,33 @@ button:focus-visible, input:focus-visible {
   filter: grayscale(1) brightness(1.06) contrast(1.05);
 }
 
+/* Hover animation layer. Sits over the still; the strip (10 frames baked by
+   make-thumbs.mjs) is only assigned — and therefore only fetched — when a
+   card is first hovered. background-size: 1000% spreads the strip across 10
+   slots, and steps(10) walks one slot per tick: percentage background
+   positions resolve against (box − image), so 0%→100% lands exactly on
+   frame 0 → frame 9. */
+.mode-thumb-anim {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background-repeat: no-repeat;
+  background-size: 1000% 100%;
+  filter: grayscale(1) brightness(0.9) contrast(1.05);
+  transition: opacity 0.18s var(--ease);
+  pointer-events: none;
+}
+.mode-card.is-anim .mode-thumb-anim {
+  opacity: 1;
+  animation: mode-thumb-strip 0.64s steps(10) infinite;
+}
+@keyframes mode-thumb-strip {
+  to { background-position: 100% 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mode-thumb { transition: none; }
+  .mode-thumb-anim { transition: none; animation: none; }
 }
 
 .mode-name {
@@ -796,6 +821,15 @@ button:focus-visible, input:focus-visible {
   border-color: var(--text-strong);
   box-shadow: 0 0 0 2px var(--accent), 0 0 14px var(--accent-glow);
   transform: scale(1.06);
+}
+/* the Auto swatch is a spectrum (its colour is whatever the track's cover
+   is), so it gets a dark inner ring to read as a control rather than as one
+   more palette in the row */
+.theme-dot-auto {
+  box-shadow: 0 0 0 1px rgba(255,250,243,0.06), inset 0 0 0 3px rgba(10,9,8,0.55), 0 2px 10px rgba(0,0,0,0.22);
+}
+.theme-dot-auto.is-active {
+  box-shadow: 0 0 0 2px var(--accent), inset 0 0 0 3px rgba(10,9,8,0.55), 0 0 14px var(--accent-glow);
 }
 
 /* Sliders */
@@ -925,6 +959,31 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   width: 260px;
   flex-shrink: 0;
   min-width: 0;
+  /* own stacking context so the artwork wash can sit under the content
+     without slipping behind the transport's glass */
+  z-index: 0;
+}
+
+/* Artwork echo — the transport card picks up the cover's two lead colours
+   as a soft wash, so the chrome quietly mirrors the artwork whatever theme
+   is on stage. --art-c1/--art-c2 are set from the cover in main.js. */
+.track-info::before {
+  content: '';
+  position: absolute;
+  inset: -12px -16px;
+  border-radius: 16px;
+  background:
+    radial-gradient(58% 92% at 16% 42%, color-mix(in srgb, var(--art-c1, var(--accent)) 24%, transparent), transparent 70%),
+    radial-gradient(52% 84% at 86% 72%, color-mix(in srgb, var(--art-c2, var(--accent)) 18%, transparent), transparent 72%);
+  opacity: 0;
+  transition: opacity 0.7s var(--ease);
+  pointer-events: none;
+  z-index: -1;
+}
+.track-info.has-art::before { opacity: 1; }
+.track-info.has-art .track-art {
+  border-color: color-mix(in srgb, var(--art-c1, var(--accent)) 45%, var(--border-soft));
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--art-c1, var(--accent)) 30%, transparent);
 }
 
 .track-art {

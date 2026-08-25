@@ -167,17 +167,17 @@ export class RayStage {
       this.uScene = this._locs(this.pScene, [
         'uRes', 'uTime', 'uMode', 'uSpp', 'uSteps', 'uRefl', 'uPalN',
         'uBass', 'uMid', 'uHigh', 'uLevel', 'uBeat', 'uPhase',
-        'uSens', 'uPop', 'uBassFocus', 'uIdle', 'uSpec', 'uWave', 'uHist', 'uHistRow', 'uSeed',
+        'uSens', 'uPop', 'uBassFocus', 'uIdle', 'uDrop', 'uSpec', 'uWave', 'uHist', 'uHistRow', 'uSeed',
       ]);
       this.uPal = [0, 1, 2, 3, 4].map((i) => gl.getUniformLocation(this.pScene, `uPal[${i}]`));
       this.uBlur = this._locs(this.pBlur, ['uTex', 'uTexel', 'uDir', 'uThreshold', 'uPrefilter']);
       this.uAccum = this._locs(this.pAccum, ['uScene', 'uHistory', 'uRes', 'uBlend']);
       this.uPost = this._locs(this.pPost, [
-        'uScene', 'uBloom', 'uRes', 'uBloomAmt', 'uExposure', 'uTime', 'uBeat', 'uPop',
+        'uScene', 'uBloom', 'uRes', 'uBloomAmt', 'uExposure', 'uTime', 'uBeat', 'uPop', 'uDrop',
       ]);
 
       this.specTex = this._dataTex(256, 1);
-      this.waveTex = this._dataTex(256, 1);
+      this.waveTex = this._dataTex(256, 3);
       this.histTex = this._dataTex(HIST_W, HIST_H);
       this.histRow = 0;
       this._histScratch = new Uint8Array(HIST_W);
@@ -287,7 +287,7 @@ export class RayStage {
     this.histRow = (this.histRow + 1) % HIST_H;
   }
 
-  _uploadAudio(freq, wave) {
+  _uploadAudio(freq, wave, stereoL = null, stereoR = null) {
     const gl = this.gl;
     // reused scratch: these ran 60-144x a second and were pure GC churn
     const s = this._specScratch || (this._specScratch = new Uint8Array(256));
@@ -303,22 +303,37 @@ export class RayStage {
     gl.bindTexture(gl.TEXTURE_2D, this.specTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 1, gl.RED, gl.UNSIGNED_BYTE, s);
 
-    const wv = this._waveScratch || (this._waveScratch = new Uint8Array(256));
+    /* three rows: mono / L / R. Without a stereo tap the L and R rows copy
+       the mono trace, so the scope's shear term collapses to zero and the
+       scene matches what it has always drawn. */
+    const wv = this._waveScratch || (this._waveScratch = new Uint8Array(256 * 3));
+    const row = (src, off) => {
+      if (src) {
+        const step = Math.max(1, Math.floor(src.length / 256));
+        for (let i = 0; i < 256; i++) wv[off + i] = src[i * step];
+      } else {
+        wv.copyWithin(off, 0, 256);
+      }
+    };
     if (wave) {
       const step = Math.max(1, Math.floor(wave.length / 256));
       for (let i = 0; i < 256; i++) wv[i] = wave[i * step];
     } else {
-      wv.fill(128);
+      wv.fill(128, 0, 256);
     }
+    row(stereoL, 256);
+    row(stereoR, 512);
     if (!freq) s.fill(0);
     gl.bindTexture(gl.TEXTURE_2D, this.waveTex);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 1, gl.RED, gl.UNSIGNED_BYTE, wv);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 3, gl.RED, gl.UNSIGNED_BYTE, wv);
   }
 
   _fullscreen() { this.gl.drawArrays(this.gl.TRIANGLES, 0, 3); }
 
-  render(idle, freq, wave, levels, dtMs = 16.7, tOverride = null) {
+  render(idle, freq, wave, levels, dtMs = 16.7, tOverride = null, stereoL = null, stereoR = null) {
     if (!this.ok) return;
+    this._stereoL = stereoL;
+    this._stereoR = stereoR;
     // nothing is playing: render at ~30fps instead of burning a full GPU
     // budget on an idle stage
     if (idle && tOverride == null) {
@@ -335,9 +350,10 @@ export class RayStage {
        here — it just pushes NaN into the shader and the whole stage renders
        as garbage. See src/levels.js. */
     const lv = sanitizeLevels(levels);
+    this._drop = lv.drop;
     this.beat = beatEnergy(this.beat, lv, dt);
     if (usableSpectrum(freq)) {
-      this._uploadAudio(freq, wave);
+      this._uploadAudio(freq, wave, this._stereoL, this._stereoR);
       // fixed 45 rows/sec so the spectrogram and terrain scroll at the same
       // speed on a 60Hz and a 144Hz display
       this._histAcc = (this._histAcc || 0) + dt;
@@ -406,6 +422,9 @@ export class RayStage {
     gl.uniform1f(u.uPop, this.colorPop);
     gl.uniform1f(u.uBassFocus, this.bassFocus);
     gl.uniform1f(u.uIdle, idle ? 1 : 0);
+    /* the drop drives whole-frame camera motion, so it scales with the same
+       reduced-motion factor as the beat punch */
+    gl.uniform1f(u.uDrop, (lv.drop || 0) * motionScale());
     gl.uniform1f(u.uHistRow, this.histRow / HIST_H);
     gl.uniform1f(u.uSeed, (this.frames % 64) * 0.618 + 0.13);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.specTex); gl.uniform1i(u.uSpec, 0);
@@ -473,6 +492,7 @@ export class RayStage {
        stops throbbing. See src/motion.js. */
     gl.uniform1f(this.uPost.uBeat, this.beat * motionScale());
     gl.uniform1f(this.uPost.uPop, this.colorPop);
+    gl.uniform1f(this.uPost.uDrop, (this._drop || 0) * motionScale());
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lit.tex); gl.uniform1i(this.uPost.uScene, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blurB.tex); gl.uniform1i(this.uPost.uBloom, 1);
     this._fullscreen();

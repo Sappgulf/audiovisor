@@ -22,6 +22,7 @@ import { AI_PRESETS, suggestPreset } from './ai.js';
 import { detectPitch, freqToMidi, VoiceSynth } from './voice.js';
 import { detectMood } from './mood.js';
 import { generateAlbumArt } from './albumart.js';
+import { extractPalette, paletteToTheme, hashStr } from './artpalette.js';
 import { initWebGL2, renderWebGL2 } from './webgl2.js';
 import { initWebGPU, renderWebGPU } from './webgpu.js';
 import * as Social from './social.js';
@@ -54,7 +55,7 @@ import('./raystage.js')
     ray = stage;
     if (!stage.ok && stage.error) console.warn('raytrace stage unavailable:', stage.error);
     // replay everything the stub swallowed while the chunk was in flight
-    stage.setTheme(THEMES.find((t) => t.id === state.themeId));
+    stage.setTheme(activeTheme());
     stage.setMode(state.modeId);
     stage.setQuality(initialTier(state.rayQuality));
     for (const [id, el] of Object.entries(sliderEls)) applySlider(id, parseFloat(el.value));
@@ -131,15 +132,45 @@ MODES.forEach((m) => {
     btn.classList.remove('has-thumb');
     thumb.remove();
   });
+  /* hover animation: a 10-frame sprite strip baked by make-thumbs.mjs,
+     walked with a CSS steps() animation. The strip is only fetched the
+     first time a card is hovered, so the drawer's first paint still costs
+     just the static thumbnails. */
+  const preview = btn.querySelector('.mode-preview');
+  const anim = document.createElement('div');
+  anim.className = 'mode-thumb-anim';
+  preview.appendChild(anim);
+  let stripRequested = false;
+  btn.addEventListener('pointerenter', () => {
+    if (!btn.classList.contains('has-thumb')) return;
+    if (!stripRequested) {
+      anim.style.backgroundImage = `url('/modes/${m.id}-anim.webp')`;
+      stripRequested = true;
+    }
+    btn.classList.add('is-anim');
+  });
+  btn.addEventListener('pointerleave', () => btn.classList.remove('is-anim'));
   btn.addEventListener('click', () => setMode(m.id));
   modeList.appendChild(btn);
 });
 modeList.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
 
 const themeRow = $('theme-row');
+/* Auto leads the row: its palette comes from the current track's cover art
+   (or, for artless local files, deterministically from the track name), so
+   the swatch is a spectrum rather than any one colour. */
+const autoDot = document.createElement('button');
+autoDot.className = 'theme-dot theme-dot-auto';
+autoDot.dataset.theme = 'auto';
+autoDot.title = 'Auto — from album art';
+autoDot.setAttribute('aria-label', 'Auto theme from album art');
+autoDot.style.background = 'conic-gradient(from 210deg, #ff2bd6, #ff8a00, #ccff00, #00f0ff, #7b2bff, #ff2bd6)';
+autoDot.addEventListener('click', () => setTheme('auto'));
+themeRow.appendChild(autoDot);
 THEMES.forEach((t) => {
   const btn = document.createElement('button');
   btn.className = 'theme-dot' + (t.id === state.themeId ? ' is-active' : '');
+  btn.dataset.theme = t.id;
   btn.style.background = t.css;
   btn.title = t.name;
   btn.addEventListener('click', () => setTheme(t.id));
@@ -321,7 +352,7 @@ async function fireSleep() {
    must not depend on statement order in this file. */
 const presetVocab = () => ({
   modeIds: MODES.map((m) => m.id),
-  themeIds: THEMES.map((t) => t.id),
+  themeIds: ['auto', ...THEMES.map((t) => t.id)],
   fxNames: FX,
 });
 
@@ -511,15 +542,91 @@ function setMode(id) {
   saveSettings();
 }
 
+/* ---------- Auto theme — palette from album art ---------- */
+
+/* The palette built from the current track's cover (null until one has been
+   extracted), plus a cache keyed by artwork URL so revisiting a track in a
+   playlist reuses the palette instead of re-reading the image. */
+let autoTheme = null;
+let currentArtworkUrl = null;
+const autoPaletteCache = new Map();
+
+/**
+ * Resolve state.themeId to a theme object the renderers accept. 'auto' has
+ * no fixed entry in THEMES — it resolves to the last extracted palette, or
+ * to brass until a track provides one.
+ */
+function activeTheme() {
+  if (state.themeId === 'auto') return autoTheme || THEMES.find((t) => t.id === 'brass');
+  return THEMES.find((t) => t.id === state.themeId);
+}
+
+function applyAutoPalette(colors, announce) {
+  autoTheme = paletteToTheme(colors);
+  if (state.themeId !== 'auto') return;
+  renderer.setTheme(autoTheme);
+  ray.setTheme(autoTheme);
+  applyAccent(autoTheme);
+  updateFavicon();
+  /* deliberately no updateTrackUI() here: re-rendering the art element would
+     reload the same cover, fire onArtworkLoaded again, and re-apply the same
+     palette in a loop. The procedural art that updateTrackUI would re-tint
+     only exists for local files, which take the name-derived palette below. */
+  if (announce) toast('AUTO <b>theme</b> — from the album art');
+}
+
+/** Cover art finished loading: read its palette for the Auto theme and the
+    transport card's artwork echo. */
+function onArtworkLoaded(url, img) {
+  try {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 48;
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    cx.drawImage(img, 0, 0, 48, 48);
+    const colors = extractPalette(cx.getImageData(0, 0, 48, 48).data);
+    if (!colors.length) return;
+    autoPaletteCache.set(url, colors);
+    applyArtColors(colors);
+    if (state.themeId === 'auto') applyAutoPalette(colors, true);
+  } catch {
+    /* a cross-origin cover without CORS headers taints the canvas and makes
+       getImageData throw — the art stays decorative, the theme stays put */
+  }
+}
+
+/* Artless local files still get per-track personality: the track name hashes
+   onto one of the 25 built-in palettes, so a given song always lands on the
+   same look without pretending we read colours that were never there. */
+function applyNamePalette(name) {
+  const base = THEMES[hashStr(name || 'audiovisor') % THEMES.length];
+  autoTheme = {
+    id: 'auto',
+    name: `Auto · ${base.name}`,
+    colors: base.colors,
+    css: base.css,
+  };
+  if (state.themeId !== 'auto') return;
+  renderer.setTheme(autoTheme);
+  ray.setTheme(autoTheme);
+  applyAccent(autoTheme);
+  updateFavicon();
+  toast(`AUTO <b>theme</b> — ${base.name}`);
+}
+
 function setTheme(id) {
   state.themeId = id;
-  const theme = THEMES.find((t) => t.id === id);
+  /* switching to Auto with a palette already in hand (art seen earlier this
+     session) applies it immediately instead of waiting for the next load */
+  if (id === 'auto' && !autoTheme && currentArtworkUrl && autoPaletteCache.has(currentArtworkUrl)) {
+    applyAutoPalette(autoPaletteCache.get(currentArtworkUrl), false);
+  }
+  const theme = activeTheme();
   renderer.setTheme(theme);
   ray.setTheme(theme);
   /* the interface follows the stage: without this, choosing Neon Cyber
      recoloured the visualiser and left every chip, tab and slider brass */
   applyAccent(theme);
-  [...themeRow.children].forEach((c, i) => setToggle(c, THEMES[i].id === id, 'is-active'));
+  [...themeRow.children].forEach((c) => setToggle(c, c.dataset.theme === id, 'is-active'));
   updateFavicon();
   if (engine.track && !engine.isExternalMode()) {
     if (trackArtEl) trackArtEl._artName = null;
@@ -577,7 +684,7 @@ function saveSettingsNow() {
 /** The ids this build accepts; anything else in stored/imported JSON is dropped. */
 const SETTINGS_VOCAB = {
   modeIds: MODES.map((m) => m.id),
-  themeIds: THEMES.map((t) => t.id),
+  themeIds: ['auto', ...THEMES.map((t) => t.id)],
   sliderIds: SLIDERS.map((c) => c.id),
   fxNames: FX,
   rayQualities: RAY_QUALITIES,
@@ -818,6 +925,17 @@ async function saveToLibrary() {
 /* ---------- track display ---------- */
 
 const trackArtEl = $('track-art');
+const trackInfoEl = $('track-info');
+
+/* The transport card echoes the cover: its two lead colours become a wash
+   behind the card and a coloured shadow on the art. Runs for every real
+   artwork, independent of the Auto theme. */
+function applyArtColors(colors) {
+  if (!trackInfoEl) return;
+  trackInfoEl.classList.add('has-art');
+  trackInfoEl.style.setProperty('--art-c1', colors[0] || 'var(--accent)');
+  trackInfoEl.style.setProperty('--art-c2', colors[1] || colors[0] || 'var(--accent)');
+}
 
 function updateTrackUI() {
   const input = engine.activeInput;
@@ -831,13 +949,25 @@ function updateTrackUI() {
     trackArtEl.innerHTML = t.artwork
       ? `<img class="track-art-img" src="${t.artwork}" alt="" />`
       : `<span class="ic" data-icon="${icon}"></span>`;
-    if (!t.artwork) setIcon(trackArtEl.querySelector('.ic'), icon);
+    if (!t.artwork) {
+      setIcon(trackArtEl.querySelector('.ic'), icon);
+      trackInfoEl.classList.remove('has-art');
+    }
+    /* the cover doubles as palette source for the Auto theme */
+    currentArtworkUrl = t.artwork || null;
+    const artImg = t.artwork && trackArtEl.querySelector('img');
+    if (artImg) {
+      artImg.crossOrigin = 'anonymous';
+      artImg.addEventListener('load', () => onArtworkLoaded(t.artwork, artImg), { once: true });
+    }
   } else if (input === 'stream' && engine.streamTrack) {
     $('track-name').textContent = engine.streamTrack.name;
     $('track-spec').textContent = `LIVE STREAM · ${engine.streamTrack.ext}`;
     $('time-total').textContent = fmtTime(engine.getDuration());
     trackArtEl.innerHTML = '<span class="ic" data-icon="link"></span>';
     setIcon(trackArtEl.querySelector('.ic'), 'link');
+    currentArtworkUrl = null;
+    trackInfoEl.classList.remove('has-art');
   } else if (engine.track) {
     const t = engine.track;
     const idx = engine.queue.length > 1 ? ` · ${engine.queueIndex + 1}/${engine.queue.length}` : '';
@@ -845,13 +975,17 @@ function updateTrackUI() {
     $('track-spec').textContent = `${(t.sampleRate / 1000).toFixed(1)}kHz / ${t.channels === 1 ? 'MONO' : 'STEREO'} · ${t.ext}`;
     $('time-total').textContent = fmtTime(t.duration);
     drawWaveform(engine.buffer);
+    currentArtworkUrl = null;
+    trackInfoEl.classList.remove('has-art');
     // procedural album art
     if (trackArtEl && (!trackArtEl._artName || trackArtEl._artName !== t.name)) {
       trackArtEl._artName = t.name;
-      const art = generateAlbumArt(t.name, THEMES.find(th => th.id === state.themeId)?.colors || ['#d9b089','#c49a6e','#f5e6d3'], 96);
+      const art = generateAlbumArt(t.name, activeTheme()?.colors || ['#d9b089','#c49a6e','#f5e6d3'], 96);
       trackArtEl.innerHTML = '';
       trackArtEl.appendChild(art);
       trackArtEl.querySelector('canvas')?.classList.add('track-art-img');
+      /* no cover to read, so Auto derives this track's look from its name */
+      if (state.themeId === 'auto') applyNamePalette(t.name);
     }
   }
   updateMediaSession();
@@ -1620,7 +1754,7 @@ function drawVu() {
   const idle = engine.activeInput === 'none';
   c.style.opacity = idle ? 0.3 : 1;
   const bands = [renderer.sm.bass, renderer.sm.mid, renderer.sm.high];
-  const colors = (THEMES.find((t) => t.id === state.themeId)?.colors) || ['#d9b089', '#c49a6e', '#f5e6d3'];
+  const colors = (activeTheme()?.colors) || ['#d9b089', '#c49a6e', '#f5e6d3'];
   const bw = 12, gap = (W - bw * 3) / 2;
   for (let i = 0; i < 3; i++) {
     const v = Math.min(1.2, bands[i] * renderer.sensitivity * 0.85);
@@ -1650,24 +1784,35 @@ function hexRgbaLocal(hex, a) {
 
 let favLinkEl = null;
 function updateFavicon() {
-  const colors = THEMES.find((t) => t.id === state.themeId)?.colors || ['#d9b089', '#8a6a4a'];
+  const colors = activeTheme()?.colors || ['#d9b089', '#8a6a4a'];
   const cv = document.createElement('canvas');
   cv.width = cv.height = 64;
   const c2 = cv.getContext('2d');
-  const g = c2.createLinearGradient(0, 0, 64, 64);
-  g.addColorStop(0, colors[0]);
-  g.addColorStop(1, colors[colors.length - 1]);
-  c2.fillStyle = g;
+  /* the same mark as public/icons: obsidian field, theme-lit ring, theme
+     diamond with the equalizer slots cut back through it */
+  c2.fillStyle = '#14110f';
   c2.beginPath();
   if (c2.roundRect) c2.roundRect(0, 0, 64, 64, 14);
   else c2.rect(0, 0, 64, 64);
   c2.fill();
-  c2.fillStyle = 'rgba(16,14,12,0.82)';
+  c2.strokeStyle = hexRgbaLocal(colors[colors.length - 1] || colors[0], 0.4);
+  c2.lineWidth = 2.8;
+  c2.beginPath();
+  c2.arc(32, 32, 19.6, 0, Math.PI * 2);
+  c2.stroke();
   c2.save();
   c2.translate(32, 32);
   c2.rotate(Math.PI / 4);
-  c2.fillRect(-11, -11, 22, 22);
+  c2.fillStyle = colors[0];
+  c2.fillRect(-9.2, -9.2, 18.4, 18.4);
   c2.restore();
+  c2.fillStyle = '#14110f';
+  for (const [bx, bh] of [[-4.8, 5.2], [0, 8.8], [4.8, 6.8]]) {
+    c2.beginPath();
+    if (c2.roundRect) c2.roundRect(32 + bx - 1.5, 32 - bh, 3, bh * 2, 1.5);
+    else c2.rect(32 + bx - 1.5, 32 - bh, 3, bh * 2);
+    c2.fill();
+  }
   if (!favLinkEl) {
     favLinkEl = document.createElement('link');
     favLinkEl.rel = 'icon';
@@ -1752,6 +1897,8 @@ function frameStep(now) {
   let levels = null;
   let freq = null;
   let wave = null;
+  let stereoL = null;
+  let stereoR = null;
   if (!idle) {
     const d = engine.getData(audioTime);
     if (!d) {
@@ -1759,6 +1906,8 @@ function frameStep(now) {
     } else {
       freq = d.freq;
       wave = d.wave;
+      stereoL = d.stereoL || null;
+      stereoR = d.stereoR || null;
       if (engine.playing || engine.micActive || engine.captureActive) {
         levels = engine.getLevels(d, audioTime);
       }
@@ -1786,7 +1935,12 @@ function frameStep(now) {
     $('viz-canvas').classList.add('is-off');
     if (webgpuCanvas) webgpuCanvas.style.display = 'none';
     renderer.updateAnalysis(levels, dtMs);
-    ray.render(idle, freq, wave, levels, dtMs);
+    /* drop slow-mo: scene time stretches (up to ~45%) while the drop
+       envelope is hot. Analysis smoothing keeps the real dt so reactivity
+       is untouched — only motion slows. */
+    const drop = levels?.drop || 0;
+    const dtMotion = dtMs * (1 - 0.45 * drop);
+    ray.render(idle, freq, wave, levels, dtMotion, null, stereoL, stereoR);
   } else {
     $('ray-canvas').classList.remove('is-live');
     const gpuReady = !!(webgpuState || webgl2State);
@@ -1803,7 +1957,7 @@ function frameStep(now) {
     } else {
       const effMode = state.modeId === 'gpu' ? 'void' : null;
       if (effMode) renderer.setMode(effMode);
-      renderer.render(idle, freq, wave, levels, dtMs);
+      renderer.render(idle, freq, wave, levels, dtMs * (1 - 0.45 * (levels?.drop || 0)), stereoL, stereoR);
       if (effMode) renderer.setMode('gpu');
     }
   }
@@ -1878,7 +2032,7 @@ loadSettings();
    first run happens to line up — but that is a coincidence between two files,
    and it breaks silently the day the default theme changes. Derive the accent
    from whatever theme is actually active once settings have been restored. */
-applyAccent(THEMES.find((t) => t.id === state.themeId));
+applyAccent(activeTheme());
 
 /* Seed every toggle's reported state from the class it is already wearing.
    Without this a control announces nothing at all until the first time it
@@ -2131,7 +2285,7 @@ function setRaytrace(on, { quiet = false } = {}) {
   chip?.setAttribute('aria-pressed', String(on));
   if (on && ray.ok) {
     ray.setMode(state.modeId);
-    ray.setTheme(THEMES.find((t) => t.id === state.themeId));
+    ray.setTheme(activeTheme());
     ray.resize(renderer.w, renderer.h);
   }
   if (!quiet) {

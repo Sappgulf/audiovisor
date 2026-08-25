@@ -21,7 +21,9 @@ export default [
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
-      globals: globals.node,
+      /* the asset scripts drive headless browsers and embed page.evaluate
+         snippets that run in the DOM, not in node */
+      globals: { ...globals.node, ...globals.browser },
     },
     rules: {
       'no-empty': ['warn', { allowEmptyCatch: true }],

@@ -32,8 +32,9 @@ uniform int   uPalN;
 uniform float uBass, uMid, uHigh, uLevel, uBeat, uPhase;
 uniform float uSens, uPop, uBassFocus;
 uniform float uIdle;
+uniform float uDrop;       // 0..1 drop envelope (breakdown → slam)
 uniform sampler2D uSpec;   // 256x1 log-mapped spectrum
-uniform sampler2D uWave;   // 256x1 waveform
+uniform sampler2D uWave;   // 256x3 waveform: mono / L / R
 uniform sampler2D uHist;   // 256x128 rolling spectrum history
 uniform float uHistRow;    // newest row (0..1)
 uniform float uSeed;
@@ -44,7 +45,12 @@ uniform float uSeed;
 /* ---------------- audio taps ---------------- */
 
 float spec(float x) { return texture(uSpec, vec2(clamp(x, 0.0, 1.0), 0.5)).r; }
-float wav(float x)  { return texture(uWave, vec2(fract(x), 0.5)).r * 2.0 - 1.0; }
+/* uWave carries three rows — mono, L, R — so every mode keeps reading the
+   same mono trace while the scope can separate the channels. Row centres of
+   a 3-row texture sit at 1/6, 3/6, 5/6. */
+float wav(float x)  { return texture(uWave, vec2(fract(x), 0.16667)).r * 2.0 - 1.0; }
+float wavL(float x) { return texture(uWave, vec2(fract(x), 0.5)).r * 2.0 - 1.0; }
+float wavR(float x) { return texture(uWave, vec2(fract(x), 0.83333)).r * 2.0 - 1.0; }
 float hist(float x, float age) {
   // age 0 = newest row, 1 = oldest
   float row = fract(uHistRow - age);
@@ -178,7 +184,10 @@ float scWaves(vec3 p) {
   return d;
 }
 
-/* 2 scope — glass Lissajous tube traced from the waveform */
+/* 2 scope — glass Lissajous tube traced from the waveform.
+   The tube shears sideways by the instantaneous L−R difference, so stereo
+   content visibly tears the ring open along its width while a mono source
+   leaves it untouched — the raytraced sibling of the Canvas2D goniometer. */
 float scScope(vec3 p) {
   float d = 1e9;
   for (int i = 0; i < 40; i++) {
@@ -187,8 +196,9 @@ float scScope(vec3 p) {
     float r = 1.5 + wav(u * 0.5 + uTime * 0.02) * (0.55 + uLevel * 0.9);
     float r2 = 1.5 + wav(u * 0.5 + 1.0 / 40.0 * 0.5 + uTime * 0.02) * (0.55 + uLevel * 0.9);
     float a2 = a + TAU / 40.0;
-    vec3 A = vec3(cos(a) * r, sin(a) * r, sin(a * 3.0) * 0.28);
-    vec3 B = vec3(cos(a2) * r2, sin(a2) * r2, sin(a2 * 3.0) * 0.28);
+    float shear = (wavR(u * 0.5 + uTime * 0.02) - wavL(u * 0.5 + uTime * 0.02)) * (0.28 + uLevel * 0.45);
+    vec3 A = vec3(cos(a) * r + shear, sin(a) * r, sin(a * 3.0) * 0.28);
+    vec3 B = vec3(cos(a2) * r2 + shear, sin(a2) * r2, sin(a2 * 3.0) * 0.28);
     float s = sdCapsule(p, A, B, 0.1 + uBeat * 0.03);
     if (s < d) { d = s; g_id = 20.0; g_aux = fract(u + uTime * 0.05); }
   }
@@ -1007,6 +1017,8 @@ void main() {
     // stratified AA jitter + lens sample (golden-angle disc)
     vec2 j = vec2(hash11(fs * 12.9), hash11(fs * 78.2 + 3.1)) - 0.5;
     vec2 uv = ((frag + j) * 2.0 - uRes) / uRes.y;
+    // drop punch-in: the camera flinches toward the action as the slam lands
+    uv *= 1.0 - uDrop * uDrop * 0.07;
     float ga = fs * 2.39996;
     float gr = sqrt(fract(fs * 0.618 + seed));
     vec2 lens = vec2(cos(ga), sin(ga)) * gr;
@@ -1089,6 +1101,7 @@ uniform float uExposure;
 uniform float uTime;
 uniform float uBeat;
 uniform float uPop;
+uniform float uDrop;
 
 vec3 aces(vec3 x) {
   const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
@@ -1107,9 +1120,9 @@ void main() {
     texture(uBloom, uv + d * ca).r,
     texture(uBloom, uv).g,
     texture(uBloom, uv - d * ca).b);
-  col += bl * uBloomAmt * 1.6;
+  col += bl * uBloomAmt * 1.6 * (1.0 + uDrop * 0.9);
 
-  col *= uExposure * (1.0 + uBeat * 0.18);
+  col *= uExposure * (1.0 + uBeat * 0.18 + uDrop * 0.28);
   col = aces(col);
   col = pow(col, vec3(1.0 / 2.2));
   // saturation from the Color Pop control

@@ -1,6 +1,7 @@
 import { safe } from './utils.js';
 import { BeatTracker } from './beattracker.js';
 import { SynthFeed } from './synthfeed.js';
+import { DropDetector } from './drop.js';
 
 /**
  * smoothingTimeConstant for the beat-detection analyser.
@@ -79,10 +80,11 @@ export class AudioEngine {
 
     this.freqData = null;
     this.waveData = null;
-    this._frameData = { freq: null, wave: null };
-    this._levels = { bass: 0, mid: 0, high: 0, level: 0, bpm: 0, beatPhase: 0, beatPulse: 0, beatConfidence: 0, chop: false };
+    this._frameData = { freq: null, wave: null, stereoL: null, stereoR: null };
+    this._levels = { bass: 0, mid: 0, high: 0, level: 0, bpm: 0, beatPhase: 0, beatPulse: 0, beatConfidence: 0, drop: 0, chop: false };
 
     this.beat = new BeatTracker();
+    this.dropDetector = new DropDetector();
 
     this.recDest = null;
 
@@ -242,6 +244,26 @@ export class AudioEngine {
       this.master.connect(this.analyser);
       this.master.connect(this.beatAnalyser);
       this.analyser.connect(this.ctx.destination);
+
+      /* True-stereo tap for the goniometer. The main analyser sums the mix
+         to mono, which is correct for spectrum work but throws away exactly
+         the information a vectorscope exists to show. Two analysers on a
+         channel splitter keep L and R separate; they are analysis-only and
+         never reach the destination. */
+      this.stereoSplit = this.ctx.createChannelSplitter(2);
+      this.master.connect(this.stereoSplit);
+      const mkSide = () => {
+        const a = this.ctx.createAnalyser();
+        a.fftSize = 2048;
+        a.smoothingTimeConstant = 0.5;
+        return a;
+      };
+      this.stereoL = mkSide();
+      this.stereoR = mkSide();
+      this.stereoSplit.connect(this.stereoL, 0);
+      this.stereoSplit.connect(this.stereoR, 1);
+      this.stereoBufL = new Float32Array(this.stereoL.fftSize);
+      this.stereoBufR = new Float32Array(this.stereoR.fftSize);
 
       this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
       this.waveData = new Uint8Array(this.analyser.fftSize);
@@ -1037,6 +1059,8 @@ export class AudioEngine {
       this.tapAnalyser.getByteTimeDomainData(this.tapWave);
       this._frameData.freq = this.tapFreq;
       this._frameData.wave = this.tapWave;
+      this._frameData.stereoL = null;
+      this._frameData.stereoR = null;
       return this._frameData;
     }
     if (this.isExternalMode()) {
@@ -1062,6 +1086,15 @@ export class AudioEngine {
     this.analyser.getByteTimeDomainData(this.waveData);
     this._frameData.freq = this.freqData;
     this._frameData.wave = this.waveData;
+    if (this.stereoL && this.stereoR) {
+      this.stereoL.getFloatTimeDomainData(this.stereoBufL);
+      this.stereoR.getFloatTimeDomainData(this.stereoBufR);
+      this._frameData.stereoL = this.stereoBufL;
+      this._frameData.stereoR = this.stereoBufR;
+    } else {
+      this._frameData.stereoL = null;
+      this._frameData.stereoR = null;
+    }
     return this._frameData;
   }
 
@@ -1092,6 +1125,7 @@ export class AudioEngine {
     if (!d) {
       this._levels.bass = this._levels.mid = this._levels.high = this._levels.level = 0;
       this._levels.bpm = this._levels.beatPhase = this._levels.beatPulse = this._levels.beatConfidence = 0;
+      this._levels.drop = 0;
       this._levels.chop = false;
       return this._levels;
     }
@@ -1126,6 +1160,7 @@ export class AudioEngine {
     this._levels.beatPhase = bi.phase;
     this._levels.beatPulse = bi.pulse;
     this._levels.beatConfidence = bi.confidence;
+    this._levels.drop = this.dropDetector.process(bass, level, beatTime);
     this._levels.chop = !!this.fx.chop;
     return this._levels;
   }

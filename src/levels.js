@@ -28,6 +28,7 @@ const num = (v, max = 1) => {
 export const SILENT_LEVELS = Object.freeze({
   bass: 0, mid: 0, high: 0, level: 0,
   beatPulse: 0, beatPhase: 0, bpm: 0, beatConfidence: 0,
+  drop: 0,
 });
 
 /**
@@ -46,6 +47,7 @@ export function sanitizeLevels(levels) {
     // a tempo outside the tracker's own range is not a tempo
     bpm: num(levels.bpm, 400),
     beatConfidence: num(levels.beatConfidence),
+    drop: num(levels.drop),
     chop: !!levels.chop,
   };
 }

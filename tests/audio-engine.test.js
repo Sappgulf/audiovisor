@@ -67,8 +67,11 @@ class FakeAudioContext {
     this.analyser.frequencyBinCount = 1024;
     this.analyser.getByteFrequencyData = (arr) => arr.fill(0);
     this.analyser.getByteTimeDomainData = (arr) => arr.fill(128);
+    /* the stereo tap reads float samples; silence keeps the goniometer fed */
+    this.analyser.getFloatTimeDomainData = (arr) => arr.fill(0);
     return this.analyser;
   }
+  createChannelSplitter() { return new FakeNode(this); }
   createBiquadFilter() { return new FakeNode(this); }
   createDynamicsCompressor() { return new FakeNode(this); }
   createConvolver() { return new FakeNode(this); }

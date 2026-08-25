@@ -341,9 +341,12 @@ export class Renderer {
     return dt;
   }
 
-  render(idle, freq, wave, levels, dtMs = 16.7) {
+  render(idle, freq, wave, levels, dtMs = 16.7, stereoL = null, stereoR = null) {
     if (this._dead || !this.ctx) return;
     const { ctx, w, h } = this;
+    /* kept for the scope: a true L/R goniometer when the source is stereo */
+    this.stereoL = stereoL;
+    this.stereoR = stereoR;
     /* Four modes indexed straight into the spectrum and produced NaN
        geometry from an empty one. Substitute silence rather than null —
        two modes index freq directly, so a null would only move the crash. */
@@ -419,10 +422,13 @@ export class Renderer {
        to zero under prefers-reduced-motion while the visualisation itself —
        the reason the app exists — carries on. See src/motion.js. */
     const motion = motionScale();
-    const punched = this.beat > 0.02 && motion > 0;
+    /* the drop lands on top of the beat punch: a deeper, slower zoom that
+       reads as the camera flinching rather than the frame throbbing */
+    const drop = levels?.drop || 0;
+    const punched = (this.beat > 0.02 || drop > 0.02) && motion > 0;
     if (punched) {
       ctx.save();
-      const z = 1 + this.beat * 0.012 * motion;
+      const z = 1 + this.beat * 0.012 * motion + drop * drop * 0.05 * motion;
       ctx.translate(w / 2, h / 2);
       ctx.scale(z, z);
       ctx.translate(-w / 2, -h / 2);
@@ -504,7 +510,9 @@ export class Renderer {
        detections. The pulse still drives the scene immediately, but the
        grid waits for a stable lock instead of teaching the eye a wrong bar. */
     if (this.mode !== 'bars' && this.beatInfo?.bpm > 0 && (this.beatInfo.beatConfidence || 0) >= 0.35) this._beatGrid();
-    this._bloom(this.beat);
+    /* the drop rides the bloom's bright-pass: everything hot flares for the
+       ~1s the envelope takes to decay */
+    this._bloom(Math.min(1, this.beat + drop * 0.7));
     // cinematic vignette
     this._vignette();
     // real film grain (cycling noise tiles)
@@ -1024,11 +1032,28 @@ export class Renderer {
 
     if (!this._scopePts || this._scopePts.length < N * 2) this._scopePts = new Float32Array(N * 2);
     const pts = this._scopePts;
-    for (let i = 0; i < N; i++) {
-      const si = ((i / N) * wave.length) | 0;
-      const sj = (si + delay) % wave.length;
-      pts[i * 2] = ((wave[si] - 128) / 128) * R;
-      pts[i * 2 + 1] = ((wave[sj] - 128) / 128) * R;
+    if (this.stereoL && this.stereoR) {
+      /* True goniometer: plot L against R over time, rotated 45° so an
+         in-phase (mono) signal collapses to a vertical line and stereo
+         width reads as horizontal spread. The delayed-self-correlation
+         trace below is what runs when no L/R tap exists (synth feeds,
+         mono streams) — same phosphor, honest data in both cases. */
+      const n = Math.min(this.stereoL.length, this.stereoR.length);
+      const step = Math.max(1, Math.floor(n / N));
+      for (let i = 0; i < N; i++) {
+        const si = Math.min(n - 1, i * step);
+        const l = this.stereoL[si];
+        const r = this.stereoR[si];
+        pts[i * 2] = ((r - l) / Math.SQRT2) * (R * 0.5);
+        pts[i * 2 + 1] = (-(l + r) / Math.SQRT2) * (R * 0.5);
+      }
+    } else {
+      for (let i = 0; i < N; i++) {
+        const si = ((i / N) * wave.length) | 0;
+        const sj = (si + delay) % wave.length;
+        pts[i * 2] = ((wave[si] - 128) / 128) * R;
+        pts[i * 2 + 1] = ((wave[sj] - 128) / 128) * R;
+      }
     }
 
     sctx.save();

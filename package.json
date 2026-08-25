@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "size": "node scripts/check-size.mjs",
     "shots": "node scripts/render-screens.mjs",
+    "og": "node scripts/make-og.mjs",
     "icons": "node scripts/make-icons.mjs",
     "analyze": "node scripts/analyze-shots.mjs",
     "thumbs": "node scripts/make-thumbs.mjs"
@@ -23,6 +24,7 @@
     "fake-indexeddb": "^6.2.5",
     "globals": "^17.11.0",
     "jsdom": "^30.0.1",
+    "playwright": "^1.62.1",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }
