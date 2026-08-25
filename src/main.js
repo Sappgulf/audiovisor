@@ -1,8 +1,8 @@
 import { setIcon } from './icons.js';
 import { MODES, THEMES } from './themes.js';
 import { AudioEngine } from './audio.js';
-import { Renderer } from './visualizers.js';
-import { fmtTime, pickRandom, fmtStamp, computePeaks } from './utils.js';
+import { Renderer, loadExtraModes } from './visualizers.js';
+import { fmtTime, pickRandom, fmtStamp, computePeaks, esc } from './utils.js';
 import { filterCommands, clampActive } from './palette.js';
 import { bindDragTrack, keyStep, makeDoubleTap } from './drag.js';
 import { bindSheetDrag } from './sheet.js';
@@ -11,7 +11,8 @@ import {
 } from './settings.js';
 /* localStorage writes throw in Safari private browsing and once the origin
    quota is full. Nothing here is worth failing over. See src/storage.js. */
-import { readJSON, writeJSON, writeText, remove as removeStored } from './storage.js';
+import { readJSON, writeJSON, writeText, readText, remove as removeStored } from './storage.js';
+import { readPresets, writePreset, PRESET_SLOTS } from './presets.js';
 import {
   shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, initialTier,
 } from './adaptive.js';
@@ -25,12 +26,15 @@ import { initWebGPU, renderWebGPU } from './webgpu.js';
 import * as Social from './social.js';
 
 const $ = (id) => document.getElementById(id);
-const esc = (s) =>
-  String(s ?? '').replace(/[&<>"']/g, (ch) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 const engine = new AudioEngine();
 const renderer = new Renderer($('viz-canvas'));
+/* The eighteen heavier Canvas2D modes ship in their own chunk. setMode()
+   fetches it on demand, but that leaves a frame or two of bars on the first
+   switch, so warm it once the browser is otherwise idle. */
+const warmExtraModes = () => loadExtraModes(Renderer).catch(() => {});
+if (typeof requestIdleCallback === 'function') requestIdleCallback(warmExtraModes, { timeout: 4000 });
+else setTimeout(warmExtraModes, 1500);
 /* RayStage carries the whole GLSL scene library (raystage + rayshader), by
    far the largest thing in the bundle, and every mode already has a working
    Canvas2D path. Start on a no-op stub that reports `ok: false` — which the
@@ -293,38 +297,49 @@ async function fireSleep() {
 }
 
 // Look presets — click recalls a slot, right-click saves the current look
-const PRESET_KEY = 'audiovisor.presets.v1';
-function getPresets() {
-  try { return JSON.parse(localStorage.getItem(PRESET_KEY)) || {}; } catch { return {}; }
-}
+/* The vocabulary is built on demand rather than hoisted: MODES/THEMES/FX are
+   module constants, but SETTINGS_VOCAB is defined further down and presets
+   must not depend on statement order in this file. */
+const presetVocab = () => ({
+  modeIds: MODES.map((m) => m.id),
+  themeIds: THEMES.map((t) => t.id),
+  fxNames: FX,
+});
+
 function savePreset(slot) {
-  const p = getPresets();
-  p[slot] = { mode: state.modeId, theme: state.themeId, fx: { ...state.fx } };
-  try { localStorage.setItem(PRESET_KEY, JSON.stringify(p)); } catch {}
-  toast(`LOOK <b>saved</b> to slot ${slot}`, { duration: 1600 });
+  const ok = writePreset(slot, { mode: state.modeId, theme: state.themeId, fx: { ...state.fx } }, presetVocab());
+  toast(ok ? `LOOK <b>saved</b> to slot ${slot}` : 'Could not <b>save</b> — storage is full', { duration: 1600 });
+  return ok;
 }
+
 function loadPreset(slot) {
-  const p = getPresets()[slot];
+  const p = readPresets(presetVocab())[slot];
   if (!p) { toast(`Slot <b>${slot}</b> is empty — right-click to save`, { duration: 2200 }); return; }
-  setMode(p.mode);
-  setTheme(p.theme);
-  if (p.fx) for (const [k, v] of Object.entries(p.fx)) {
-    engine.setFx(k, !!v);
-    setToggle(fxEls[k], !!v, 'is-active');
-    state.fx[k] = !!v;
+  if (p.mode) setMode(p.mode);
+  if (p.theme) setTheme(p.theme);
+  for (const [k, v] of Object.entries(p.fx)) {
+    engine.setFx(k, v);
+    setToggle(fxEls[k], v, 'is-active');
+    state.fx[k] = v;
   }
   saveSettings();
   toast(`LOOK <b>recalled</b> from slot ${slot}`, { duration: 1600 });
 }
+
 const presetRow = document.getElementById('preset-row');
 if (presetRow) {
-  for (const slot of [1, 2, 3]) {
+  const stored = readPresets(presetVocab());
+  for (const slot of PRESET_SLOTS) {
     const b = document.createElement('button');
-    b.className = 'fx-chip' + (getPresets()[slot] ? ' is-active' : '');
+    b.className = 'fx-chip' + (stored[slot] ? ' is-active' : '');
     b.title = 'Click to recall · right-click to save';
     b.innerHTML = `<span class="chip-dot"></span><span class="chip-txt">P${slot}</span>`;
     b.addEventListener('click', () => loadPreset(slot));
-    b.addEventListener('contextmenu', (e) => { e.preventDefault(); savePreset(slot); b.classList.add('is-active'); });
+    b.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      // only light the chip if the write actually landed
+      if (savePreset(slot)) b.classList.add('is-active');
+    });
     presetRow.appendChild(b);
   }
 }
@@ -381,7 +396,7 @@ shareBtn?.addEventListener('click', async () => {
   const url = location.origin + location.pathname + '#share=' + data;
   try { await navigator.clipboard.writeText(url); toast('Link <b>copied</b>'); } catch { prompt('Copy link', url); }
   // store in local collab history
-  const hist = JSON.parse(localStorage.getItem('audiovisor.collab')||'[]');
+  const hist = readJSON('audiovisor.collab', []);
   hist.unshift({ url, at: Date.now() });
   writeJSON('audiovisor.collab', hist.slice(0, 20));
 });
@@ -402,13 +417,13 @@ const commentInput = document.getElementById('comment-input');
 const collabEl = document.getElementById('collab-comments');
 function renderComments() {
   if (!collabEl) return;
-  const list = JSON.parse(localStorage.getItem('audiovisor.comments')||'[]');
+  const list = readJSON('audiovisor.comments', []);
   collabEl.innerHTML = list.slice(-6).map(c => `<div style="font-size:11px; color:var(--text-60); padding:4px 6px; background:var(--glass); border-radius:6px"><b style="color:var(--accent)">${esc(c.user)}</b> ${esc(c.text)}</div>`).join('') || '<div style="font-size:10px; color:var(--text-20)">No comments yet</div>';
 }
 document.getElementById('comment-send')?.addEventListener('click', () => {
   const text = commentInput?.value.trim();
   if (!text) return;
-  const list = JSON.parse(localStorage.getItem('audiovisor.comments')||'[]');
+  const list = readJSON('audiovisor.comments', []);
   list.push({ user: 'You', text, at: Date.now() });
   writeJSON('audiovisor.comments', list);
   if (commentInput) commentInput.value = '';
@@ -532,7 +547,7 @@ document.addEventListener('visibilitychange', () => {
 
 function saveSettingsNow() {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(currentSettings()));
+    writeJSON(SETTINGS_KEY, currentSettings());
   } catch {}
 }
 
@@ -902,7 +917,11 @@ function ensureConnect() {
     })
     .catch((err) => {
       console.error('connect panel failed to load:', err);
-      _connectLoad = null;   // let a later Source-tab visit retry
+      /* Only re-arm the retry if no panel was ever built. Clearing this
+         unconditionally meant a failure *after* construction let a second
+         ConnectPanel be created over the same root — two sets of engine
+         subscribers, every toast fired twice. */
+      if (!connect) _connectLoad = null;
       toast('<b>Music accounts unavailable</b> — could not load the panel', { duration: 3600 });
       return null;
     });
@@ -1858,7 +1877,7 @@ function runTour() {
   steps.forEach(([msg, at]) => setTimeout(() => toast(msg, { duration: 3000 }), at));
   writeText('audiovisor.tour', '1');
 }
-if (!localStorage.getItem('audiovisor.tour')) runTour();
+if (!readText('audiovisor.tour')) runTour();
 document.getElementById('tour-replay')?.addEventListener('click', () => { toast('TOUR <b>restarted</b>'); runTour(); });
 
 // Command palette (Cmd+K)
@@ -2162,7 +2181,7 @@ drawerTabs.forEach((btn, i) => {
     setDrawerTab(next.dataset.tab);
   });
 });
-setDrawerTab(localStorage.getItem(TAB_KEY) || 'look', { persist: false });
+setDrawerTab(readText(TAB_KEY) || 'look', { persist: false });
 // ink position depends on layout/fonts — re-measure once settled and on resize
 window.addEventListener('load', () => moveInk(drawerTabs.find((b) => b.getAttribute('aria-selected') === 'true')));
 window.addEventListener('resize', () => moveInk(drawerTabs.find((b) => b.getAttribute('aria-selected') === 'true')));
