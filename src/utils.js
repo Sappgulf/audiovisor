@@ -110,3 +110,52 @@ export function computePeaks(buffer, buckets = 240) {
   for (let i = 0; i < buckets; i++) peaks[i] /= m;
   return peaks;
 }
+
+/**
+ * Run `fn`, swallowing any throw.
+ *
+ * The app is full of calls that are expected to fail harmlessly — stopping an
+ * already-stopped AudioBufferSourceNode, writing to a full localStorage — and
+ * they were all written as a bare `catch {}`. That is correct at runtime and
+ * miserable to debug: a genuine bug landing inside one of those blocks leaves
+ * no trace at all. safe() keeps the swallow but names the site and reports it
+ * on the console in development, so an unexpected throw is visible while a
+ * routine one still costs nothing in production.
+ *
+ * @param {string} label  what was being attempted, e.g. 'preset save'
+ * @param {Function} fn
+ * @returns the function's result, or undefined if it threw
+ */
+export function safe(label, fn) {
+  try {
+    return fn();
+  } catch (err) {
+    if (import.meta.env?.DEV) console.warn(`[safe] ${label}:`, err);
+    return undefined;
+  }
+}
+
+/** Promise-returning sibling of safe(); never rejects. */
+export async function safeAsync(label, fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (import.meta.env?.DEV) console.warn(`[safe] ${label}:`, err);
+    return undefined;
+  }
+}
+
+const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+/**
+ * Escape a string for interpolation into innerHTML.
+ *
+ * Toasts, track titles and provider error text all reach the DOM as HTML,
+ * and every one of those strings comes from somewhere outside this app —
+ * a Spotify track name, a browser permission error, a user-typed URL. This
+ * used to be defined identically in both main.js and connect.js, which is
+ * one definition too many for something that only has to be wrong once.
+ */
+export function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (ch) => ESC_MAP[ch]);
+}

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { clamp, lerp, fmtTime, fmtStamp, logFreqIndex, logSample, median, hexRgba, pickRandom, computePeaks } from '../src/utils.js';
+import { describe, it, expect, vi } from 'vitest';
+import { clamp, lerp, fmtTime, fmtStamp, logFreqIndex, logSample, median, hexRgba, pickRandom, computePeaks, safe, safeAsync, esc } from '../src/utils.js';
 
 describe('clamp', () => {
   it('clamps into range', () => {
@@ -200,5 +200,67 @@ describe('computePeaks', () => {
   it('does not blow the stack on a large bucket count', () => {
     // Math.max(...peaks) used to spread every bucket as an argument
     expect(() => computePeaks(buf(new Array(400000).fill(0.3)), 200000)).not.toThrow();
+  });
+});
+
+describe('safe / safeAsync', () => {
+  it('returns the value when nothing throws', () => {
+    expect(safe('ok', () => 42)).toBe(42);
+  });
+
+  it('swallows a throw and returns undefined', () => {
+    expect(safe('boom', () => { throw new Error('nope'); })).toBeUndefined();
+  });
+
+  it('names the failing site on the console in development', () => {
+    // the whole point of safe() over a bare `catch {}`: the swallow is still
+    // silent in production, but in dev the label makes the site findable
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const err = new Error('nope');
+    safe('preset save', () => { throw err; });
+    expect(warn).toHaveBeenCalledWith('[safe] preset save:', err);
+    warn.mockRestore();
+  });
+
+  it('safeAsync resolves the value', async () => {
+    await expect(safeAsync('ok', async () => 'v')).resolves.toBe('v');
+  });
+
+  it('safeAsync never rejects', async () => {
+    await expect(safeAsync('boom', async () => { throw new Error('nope'); })).resolves.toBeUndefined();
+  });
+
+  it('safeAsync swallows a synchronous throw too', async () => {
+    await expect(safeAsync('sync-boom', () => { throw new Error('nope'); })).resolves.toBeUndefined();
+  });
+});
+
+describe('esc', () => {
+  it('escapes every HTML-significant character', () => {
+    expect(esc(`&<>"'`)).toBe('&amp;&lt;&gt;&quot;&#39;');
+  });
+
+  it('defuses an injected tag', () => {
+    // provider error text and track titles reach the DOM as innerHTML
+    expect(esc('<img src=x onerror=alert(1)>')).not.toContain('<');
+  });
+
+  it('escapes the ampersand first so entities are not doubled wrong', () => {
+    expect(esc('&lt;')).toBe('&amp;lt;');
+  });
+
+  it('leaves ordinary text alone', () => {
+    expect(esc('Kind of Blue — Miles Davis')).toBe('Kind of Blue — Miles Davis');
+  });
+
+  it('renders null and undefined as empty, not as the word', () => {
+    expect(esc(null)).toBe('');
+    expect(esc(undefined)).toBe('');
+  });
+
+  it('stringifies non-strings', () => {
+    expect(esc(42)).toBe('42');
+    expect(esc(0)).toBe('0');
+    expect(esc(false)).toBe('false');
   });
 });
