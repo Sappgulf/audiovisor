@@ -1,11 +1,8 @@
 import { setIcon } from './icons.js';
-import { fmtTime } from './utils.js';
+import { fmtTime, esc } from './utils.js';
 import { SpotifyClient, storedClientId, redirectUri } from './spotify.js';
 import { AppleMusicClient } from './applemusic.js';
 
-const esc = (s) =>
-  String(s ?? '').replace(/[&<>"']/g, (ch) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 /**
  * Drawer "Connect" panel: Spotify (PKCE OAuth + Web Playback SDK) and Apple
