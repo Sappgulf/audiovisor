@@ -1,3 +1,4 @@
+import { safe } from './utils.js';
 import { BeatTracker } from './beattracker.js';
 import { SynthFeed } from './synthfeed.js';
 
@@ -98,7 +99,9 @@ export class AudioEngine {
 
   _fire(name, payload) {
     for (const fn of this._listeners[name] || []) {
-      try { fn(payload); } catch {}
+      /* one bad subscriber must not stop the rest of them from hearing the
+         event, but a throwing subscriber used to vanish without a trace */
+      safe(`audio '${name}' listener`, () => fn(payload));
     }
   }
 
@@ -887,9 +890,25 @@ export class AudioEngine {
   _resetStreamElement(noCors = false) {
     this.streamNoTap = noCors;
     if (this.mediaNode) {
-      try { this.mediaNode.disconnect(); } catch {}
+      safe('media node disconnect', () => this.mediaNode.disconnect());
       this.mediaNode = null;
     }
+    /* Dropping the reference is not enough to retire the old element: an
+       <audio> with a live network fetch stays alive and keeps downloading —
+       and on the CORS retry path it keeps playing straight to the speakers,
+       under the replacement element. Detach its listeners, stop the fetch,
+       then let it go. */
+    if (this.mediaEl) {
+      this._streamAbort?.abort();
+      const old = this.mediaEl;
+      safe('retire stream element', () => {
+        old.pause();
+        old.removeAttribute('src');
+        old.load();
+      });
+    }
+    this._streamAbort = new AbortController();
+    const signal = this._streamAbort.signal;
     this.mediaEl = new Audio();
     this.mediaEl.preload = 'auto';
     if (!noCors) this.mediaEl.crossOrigin = 'anonymous';
@@ -900,14 +919,14 @@ export class AudioEngine {
         this._emit();
         if (this.onEnded) this.onEnded();
       }
-    });
-    this.mediaEl.addEventListener('error', () => this._onStreamError());
+    }, { signal });
+    this.mediaEl.addEventListener('error', () => this._onStreamError(), { signal });
     this.mediaEl.addEventListener('play', () => {
       if (this.mode === 'stream' && !this.playing) { this.playing = true; this._emit(); }
-    });
+    }, { signal });
     this.mediaEl.addEventListener('pause', () => {
       if (this.mode === 'stream' && this.playing) { this.playing = false; this._emit(); }
-    });
+    }, { signal });
   }
 
   _onStreamError(_err) {
