@@ -45,6 +45,8 @@ const QUALITY = {
 };
 
 const HIST_W = 256;
+/* side of the baked value-noise texture; see _noiseTex */
+const NOISE_N = 256;
 const HIST_H = 128;
 
 function compile(gl, type, src) {
@@ -172,6 +174,7 @@ export class RayStage {
         'uRes', 'uTime', 'uMode', 'uSpp', 'uSteps', 'uRefl', 'uPalN',
         'uBass', 'uMid', 'uHigh', 'uLevel', 'uBeat', 'uPhase',
         'uSens', 'uPop', 'uBassFocus', 'uIdle', 'uDrop', 'uSpec', 'uWave', 'uHist', 'uHistRow', 'uSeed',
+        'uNoise',
       ]);
       this.uPal = [0, 1, 2, 3, 4].map((i) => gl.getUniformLocation(this.pScene, `uPal[${i}]`));
       this.uBlur = this._locs(this.pBlur, ['uTex', 'uTexel', 'uDir', 'uThreshold', 'uPrefilter']);
@@ -180,6 +183,7 @@ export class RayStage {
         'uScene', 'uBloom', 'uRes', 'uBloomAmt', 'uExposure', 'uTime', 'uBeat', 'uPop', 'uDrop',
       ]);
 
+      this.noiseTex = this._noiseTex();
       this.specTex = this._dataTex(256, 1);
       this.waveTex = this._dataTex(256, 3);
       this.histTex = this._dataTex(HIST_W, HIST_H);
@@ -203,6 +207,33 @@ export class RayStage {
     const o = {};
     for (const n of names) o[n] = this.gl.getUniformLocation(prog, n);
     return o;
+  }
+
+  /* Tiling value-noise field for the terrain heightfield.
+     vnoise2() was four hash evaluations plus two mixes, and the terrain SDF
+     sums five octaves of it — twenty hashes per SDF call, paid on every
+     march step and again on every normal, shadow and AO tap. Baking the same
+     hash into a texture lets the sampler do the bilinear blend in
+     fixed-function hardware: one fetch replaces the whole octave. The values
+     come from the same hash the shader used, so the terrain keeps its shape. */
+  _noiseTex() {
+    const gl = this.gl;
+    const N = NOISE_N;
+    const d = new Uint8Array(N * N);
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+        d[y * N + x] = Math.round((v - Math.floor(v)) * 255);
+      }
+    }
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, N, N, 0, gl.RED, gl.UNSIGNED_BYTE, d);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    return t;
   }
 
   _dataTex(w, h) {
@@ -441,6 +472,7 @@ export class RayStage {
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.specTex); gl.uniform1i(u.uSpec, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.waveTex); gl.uniform1i(u.uWave, 1);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.histTex); gl.uniform1i(u.uHist, 2);
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.noiseTex); gl.uniform1i(u.uNoise, 3);
     this._fullscreen();
 
     /* ---- 2. temporal accumulation (linear HDR, pre-bloom) ---- */

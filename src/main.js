@@ -2184,9 +2184,8 @@ function frameStep(now) {
     }
   } else if (Number.isFinite(frameGap) && frameGap > 0) frameTimes.push(frameGap);
   /* Normally this waits for a full window before judging, but that window
-     costs more wall-clock the slower things are — at the ~98ms a frame
-     Aurora Terrain takes on an M1 at the default tier it was nearly three
-     seconds of stutter before anything happened. shouldEvaluate() acts on a
+     costs more wall-clock the slower things are — on a mode running several
+     times over budget that was seconds of stutter before anything happened. shouldEvaluate() acts on a
      short window when every sample in it is severely over budget, which is
      not an ambiguous signal. See src/adaptive.js. */
   if (shouldEvaluate(frameTimes, rayBaseline)) {

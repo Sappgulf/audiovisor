@@ -36,6 +36,7 @@ uniform float uDrop;       // 0..1 drop envelope (breakdown → slam)
 uniform sampler2D uSpec;   // 256x1 log-mapped spectrum
 uniform sampler2D uWave;   // 256x3 waveform: mono / L / R
 uniform sampler2D uHist;   // 256x128 rolling spectrum history
+uniform sampler2D uNoise;  // 256x256 tiling value-noise field (heightfields)
 uniform float uHistRow;    // newest row (0..1)
 uniform float uSeed;
 
@@ -96,15 +97,17 @@ float fbm(vec3 p) {
 }
 
 /* 2D value noise, for heightfields.
-   vnoise() interpolates eight corners because it is 3D. A heightfield does
-   not vary in Y, so every one of those evaluations spent half its work on
-   an axis that never changes. This does four corners instead. */
-float hash12(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+   This interpolated four hashed corners by hand. The terrain SDF sums five
+   octaves of it, and the SDF is called on every march step and again on
+   every normal, shadow and AO tap — twenty hash evaluations a call. One
+   bilinear fetch from the baked noise texture (raystage _noiseTex) does the
+   same job: sampling at (floor(p) + smoothstep(fract(p)) + 0.5)/N blends
+   exactly the same four texels with exactly the same weights, in
+   fixed-function hardware instead of ALU. */
 float vnoise2(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x),
-             mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+  return texture(uNoise, (i + f + 0.5) * (1.0 / 256.0)).r;
 }
 /* Two fixed octave counts rather than one parameterised function: the base
    shape needs more detail than the fine layer, and every octave is paid on
@@ -315,11 +318,13 @@ float scTerrain(vec3 p) {
   float ridge = 3.0 * e2 / (1.0 + 0.7 * e2);       // knee: peaks flatten, never wall off
   /* Both layers were 5-octave 3D fbm, i.e. 80 hash+sin evaluations per SDF
      call, paid on every one of the ~128 march steps plus normals, shadows,
-     AO and the reflection bounce. On an M1 that put this mode at 233ms a
-     frame at the default quality — 4fps — and it never reached 60fps even
-     at the lowest tier. The field is a heightfield, so 2D noise gives the
-     same shape, and the fine layer at 0.28 amplitude does not need five
-     octaves to read. */
+     AO and the reflection bounce. The field is a heightfield, so 2D noise
+     gives the same shape, and the fine layer at 0.28 amplitude does not need
+     five octaves to read. The remaining octaves are one texture fetch each
+     rather than four hashes (see vnoise2), which took the mode from 46ms a
+     frame to 29ms — measured with the GPU actually synced; the far worse
+     numbers this comment used to quote came from a sweep that timed only
+     the submission. */
   ridge += fbm2a(vec2(p.x * 0.55, p.z * 0.55 + uTime * 0.05)) * 0.9;
   ridge += fbm2b(vec2(p.x * 1.7, p.z * 1.7)) * 0.28;      // crest detail
   float d = (p.y + 1.2 - ridge) * 0.34;            // conservative slope for the heightfield march
