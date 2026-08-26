@@ -4,7 +4,7 @@
 /* Bump on every release. The old name was pinned at v6.3 across many
    deploys, so returning visitors kept being served whatever assets their
    cache already held. */
-const CACHE = 'audiovisor-v8.11.0';
+const CACHE = 'audiovisor-v8.11.1';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();

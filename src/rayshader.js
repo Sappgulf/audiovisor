@@ -178,8 +178,8 @@ float scWaves(vec3 p) {
     float z = -fi * 1.15;
     float w = wav(p.x * 0.055 + fi * 0.21 + uTime * 0.06) * (1.0 + uLevel * 1.6);
     float y = w * (1.1 - fi * 0.14) + sin(p.x * 0.7 + uTime * 1.1 + fi) * 0.12;
-    float s = abs(p.y - y) - 0.1 - uBeat * 0.03;      // thicker ribbon body
-    s = max(s, abs(p.z - z) - 0.22);                  // deep enough to catch light
+    float s = abs(p.y - y) - 0.17 - uBeat * 0.04;     // thicker ribbon body
+    s = max(s, abs(p.z - z) - 0.26);                  // deep enough to catch light
     s = max(s, abs(p.x) - 6.2);
     if (s < d) { d = s; g_id = 2.0; g_aux = fi / 5.0; }
   }
@@ -594,8 +594,8 @@ Mat matOf(float id, float aux, vec3 p) {
     m.alb = c * 0.55; m.rough = 0.22; m.metal = 1.0;
     m.emis = c * (0.14 + 1.0 * spec(aux) * uSens + uBeat * 0.3);
   } else if (id < 2.5) {                // silk ribbon
-    m.alb = c * 0.3; m.rough = 0.25; m.metal = 0.6;
-    m.emis = c * (0.5 + uLevel * 1.1 + uBeat * 0.45);
+    m.alb = c * 0.5; m.rough = 0.22; m.metal = 0.6;
+    m.emis = c * (1.0 + uLevel * 1.7 + uBeat * 0.5);
   } else if (id < 3.5) {                // glass
     m.alb = vec3(0.92); m.rough = 0.06; m.metal = 0.0; m.trans = 1.0;
     m.emis = c * (0.06 + uLevel * 0.16);
@@ -628,8 +628,11 @@ Mat matOf(float id, float aux, vec3 p) {
   } else if (id < 9.5) {                // wet asphalt
     m.alb = vec3(0.012); m.rough = 0.14; m.metal = 0.9;
   } else if (id < 10.5) {               // liquid chrome
-    m.alb = palf(0.35) * 0.55 + 0.45; m.rough = 0.09; m.metal = 1.0;
-    m.emis = palf(uLevel) * uBeat * 0.35;
+    m.alb = palf(0.35) * 0.6 + 0.45; m.rough = 0.09; m.metal = 1.0;
+    /* chrome reflects the scene, which is often a dark room — a bare metal
+       surface with nothing to mirror reads as a black blob. A faint theme
+       wash keeps the membrane visible between the highlights. */
+    m.emis = palf(0.45) * (0.14 + uLevel * 0.10) + palf(uLevel) * uBeat * 0.5;
   } else if (id < 11.5) {               // dispersive glass
     m.alb = vec3(0.98); m.rough = 0.0; m.metal = 0.0; m.trans = 1.0;
   } else if (id < 12.5) {               // event horizon — swallows everything
@@ -708,6 +711,7 @@ Mat matOf(float id, float aux, vec3 p) {
   if (uMode == 16) gain = 1.3;    // void
   if (uMode == 21) gain = 0.8;    // gpu
   if (uMode == 22) gain = 2.4;    // vinyl — dark deck, the groove burn carries it
+  if (uMode == 13) gain = 2.1;    // fluid — chrome in a dark room needs the lift
   m.emis *= 0.42 * gain * mix(0.75, 1.35, uPop);
   return m;
 }
@@ -869,9 +873,11 @@ float volDensity(vec3 p) {
     float r = length(q.xz);
     float a = atan2s(q.z, q.x);
     float arm = cos(a * 2.0 - r * 2.3 + uTime * 0.2) * 0.5 + 0.5;
-    float d = pow(arm, 2.6) * exp(-r * 0.55) * exp(-abs(q.y) * 5.0);
-    d += exp(-r * 3.2 - abs(q.y) * 6.0) * (1.2 + uBass);
-    d *= 0.6 + 0.6 * fbm(q * 1.6 + uTime * 0.05);
+    /* the old density was so thin the disc vanished against the sky; this
+       carries the arms as a real luminous sheet */
+    float d = pow(arm, 1.6) * exp(-r * 0.42) * exp(-abs(q.y) * 3.0) * 3.0;
+    d += exp(-r * 2.6 - abs(q.y) * 5.0) * (2.4 + uBass * 1.5);
+    d *= 0.75 + 0.6 * fbm(q * 1.6 + uTime * 0.05);
     return d * (1.0 + uLevel);
   }
   // lava
@@ -947,7 +953,7 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 8)  { ro = vec3(sway * 1.6, 3.2, 9.0); ta = vec3(0.0, 0.35, -3.5); ap = 0.008; }
   else if (uMode == 9)  { ro = vec3(sin(t * 0.09) * 7.0, 3.0 + sin(t * 0.14), cos(t * 0.09) * 7.0); ta = vec3(0.0, 1.8, 0.0); ap = 0.04; }
   else if (uMode == 10) { ro = vec3(sin(t * 0.08) * 5.4, 1.6, cos(t * 0.08) * 5.4); ap = 0.0; }
-  else if (uMode == 11) { ro = vec3(sin(t * 0.06) * 4.2, 2.4 + sin(t * 0.1) * 0.5, cos(t * 0.06) * 4.2); ap = 0.0; }
+  else if (uMode == 11) { ro = vec3(sin(t * 0.06) * 2.8, 4.4 + sin(t * 0.1) * 0.7, cos(t * 0.06) * 2.8); ta = vec3(0.0); ap = 0.0; }
   else if (uMode == 12) { ro = vec3(sin(t * 0.17) * 3.6, 0.8, cos(t * 0.17) * 3.6); ap = 0.03; }
   else if (uMode == 13) { ro = vec3(sin(t * 0.15) * 4.2, 1.3, cos(t * 0.15) * 4.2); ap = 0.035; }
   else if (uMode == 14) { ro = vec3(sin(t * 0.1) * 3.2, 1.6 + sin(t * 0.07), cos(t * 0.1) * 3.2); ap = 0.04; }

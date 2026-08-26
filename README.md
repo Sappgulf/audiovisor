@@ -1,4 +1,4 @@
-# AUDIOVISOR — v8.11.0
+# AUDIOVISOR — v8.11.1
 
 A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect Spotify / Apple Music — the engine renders the frequency spectrum live across twenty-three stage modes, twenty-five themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
 
