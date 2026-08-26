@@ -16,6 +16,7 @@ import { readJSON, writeJSON, writeText, readText, remove as removeStored } from
 import { readPresets, writePreset, PRESET_SLOTS } from './presets.js';
 import {
   shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, initialTier,
+  TIERS, SEVERE,
 } from './adaptive.js';
 import * as Library from './library.js';
 import { AI_PRESETS, suggestPreset } from './ai.js';
@@ -1988,6 +1989,7 @@ let raySuspended = false;   // runtime-only kill switch, never persisted
 let _lastSecs = -1;
 let _vuAcc = 0;
 let _lastBeatWritten = -1;
+let _stageLive = null;
 let _uiAcc = 0;
 const seekFillEl = $('seek-fill');
 const timeCurrentEl = $('time-current');
@@ -2004,7 +2006,7 @@ let rayBaselineEstimate = null;
    earned by a run of clean windows rather than measured directly */
 let healthyStreak = 0;
 /* frames to ignore after a mode change, while one-time setup settles */
-const SETTLE_AFTER_MODE_CHANGE = 12;
+const SETTLE_AFTER_MODE_CHANGE = 5;
 let settleFrames = SETTLE_AFTER_MODE_CHANGE;
 let lastFrameTs = performance.now();
 let _frameErrors = 0;
@@ -2036,6 +2038,13 @@ function frameStep(now) {
 
   const input = engine.activeInput;
   const idle = input === 'none';
+  /* The render loop is the only thing that knows whether the stage is
+     actually animating — toggle the class once per change so the CSS can
+     drop the expensive chrome blur while it is (see style.css). */
+  if (idle !== _stageLive) {
+    _stageLive = idle;
+    document.documentElement.classList.toggle('stage-live', !idle);
+  }
 
   engine.syncExternal();
   const audioTime = idle ? 0 : engine.getTime();
@@ -2158,10 +2167,22 @@ function frameStep(now) {
   }
 
   // the interval, not this callback's CPU time — see src/adaptive.js
-  if (settleFrames > 0) settleFrames--;
-  else if (Number.isFinite(frameGap) && frameGap > 0) frameTimes.push(frameGap);
   rayBaselineEstimate = estimateBaseline(frameTimes, rayBaselineEstimate);
   const rayBaseline = baselineOr(rayBaselineEstimate);
+  if (settleFrames > 0) {
+    settleFrames--;
+    /* A mode change used to deliver 12 fully-rendered jank frames before the
+       sampler had a single sample: at ~172ms that was two seconds of stutter
+       in a row for Aurora Terrain before anything reacted. Settle exists so a
+       spiky cold frame cannot poison the *average* window — but one interval
+       three and a half times over budget is not noise, and the climb will
+       undo a wrong guess in a couple of seconds. Step down right now. */
+    if (state.raytraceWanted && ray.ok && Number.isFinite(frameGap)
+        && frameGap > rayBaseline * SEVERE && TIERS.indexOf(ray.quality) > 0) {
+      const { tier } = nextTier(ray.quality, frameGap, state.rayQuality, rayBaseline);
+      if (tier !== ray.quality) ray.setQuality(tier);
+    }
+  } else if (Number.isFinite(frameGap) && frameGap > 0) frameTimes.push(frameGap);
   /* Normally this waits for a full window before judging, but that window
      costs more wall-clock the slower things are — at the ~98ms a frame
      Aurora Terrain takes on an M1 at the default tier it was nearly three

@@ -621,6 +621,18 @@ button:focus-visible, input:focus-visible {
 
 /* ---------- Drawer ---------- */
 
+/* The stage behind these two is a full-rate animating canvas whenever
+   audio runs, and a 24px backdrop blur repaints its entire surface every
+   frame — on a saturated raytraced GPU that serializes the compositor and
+   drags the whole interface with the stage. Both carry opaque-enough
+   grounds already (0.72 / 0.88), so the blur is decorative: it drops while
+   the stage is live and the glass look returns when nothing is playing.
+   main.js toggles .stage-live on the root. */
+:root.stage-live .topbar,
+:root.stage-live .drawer {
+  backdrop-filter: none;
+}
+
 .drawer {
   position: absolute;
   top: 74px;

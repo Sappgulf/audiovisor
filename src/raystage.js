@@ -36,7 +36,11 @@ import { motionScale } from './motion.js';
 const QUALITY = {
   low:    { scale: 0.5,  spp: 1, steps: 64,  refl: 0, blend: 0.62, maxPx: 0.35e6 },
   medium: { scale: 0.7,  spp: 1, steps: 96,  refl: 1, blend: 0.5,  maxPx: 0.7e6 },
-  high:   { scale: 0.8,  spp: 2, steps: 128, refl: 1, blend: 0.45, maxPx: 1.1e6 },
+  /* 128 steps measured with the heavy scenes landing on a worse first
+     impression with no threshold crossed — the tier's march budget shaved
+     to 112, worth ~12% of the primary march, and the heightfield/volume
+     scenes converge inside it; the spp is what carries the noise control */
+  high:   { scale: 0.8,  spp: 2, steps: 112, refl: 1, blend: 0.45, maxPx: 1.1e6 },
   ultra:  { scale: 1.0,  spp: 4, steps: 200, refl: 1, blend: 0.3,  maxPx: 2.0e6 },
 };
 

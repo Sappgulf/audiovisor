@@ -112,7 +112,11 @@ float vnoise2(vec2 p) {
    same shape as fbm() above. */
 float fbm2a(vec2 p) {
   float a = 0.5, s = 0.0;
-  for (int i = 0; i < 4; i++) { s += a * vnoise2(p); p *= 2.03; a *= 0.5; }
+  /* three octaves, not four: this layer is the terrain's large-scale drift,
+     and the amp-packed fbm2b layer carries the detail. One octave here is
+     a quarter of the terrain SDF's noise cost for a shape change nobody
+     sees at 1080p. */
+  for (int i = 0; i < 3; i++) { s += a * vnoise2(p); p *= 2.03; a *= 0.5; }
   return s;
 }
 float fbm2b(vec2 p) {

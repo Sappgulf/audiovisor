@@ -24,8 +24,8 @@
 
 export const TIERS = ['low', 'medium', 'high', 'ultra'];
 
-export const WINDOW = 30;
-export const FAST_WINDOW = 6;
+export const WINDOW = 20;
+export const FAST_WINDOW = 4;
 
 /** Frame interval treated as the display's natural pace when unknown. */
 export const DEFAULT_BASELINE_MS = 16.7;
