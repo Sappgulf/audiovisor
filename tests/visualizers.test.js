@@ -3,8 +3,8 @@ import { MODES, THEMES } from '../src/themes.js';
 import { makeFakeCanvas, ensureGlobals } from './helpers/canvas.js';
 
 describe('themes', () => {
-  it('has 22 stage modes including Pulse Orb', () => {
-    expect(MODES.length).toBe(22);
+  it('has 23 stage modes including Pulse Orb', () => {
+    expect(MODES.length).toBe(23);
     expect(MODES.map(m => m.id)).toContain('orb');
     expect(MODES.find(m => m.id === 'orb').name).toBe('Pulse Orb');
     expect(MODES.find(m => m.id === 'orb').icon).toBe('orb');

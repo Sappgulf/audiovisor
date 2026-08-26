@@ -586,6 +586,7 @@ export class Renderer {
       case 'radar': this._radar(freq, dt); break;
       case 'lava': this._lava(freq, dt, dt60); break;
       case 'gpu': this._gpu(freq); break;
+      case 'vinyl': this._vinyl(freq, dt); break;
     }
   }
 

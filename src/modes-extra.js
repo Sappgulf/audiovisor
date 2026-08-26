@@ -1679,6 +1679,97 @@ class ExtraModes {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
+
+  /* 22 vinyl — a turntable record on the Canvas2D path: concentric grooves
+     burned outward by the spectrum, a rotating shine, a theme-coloured label
+     and a tonearm resting on the play. */
+  _vinyl(freq, dt) {
+    const { ctx, w, h } = this;
+    const cx = w / 2, cy = h / 2;
+    const minDim = Math.min(w, h);
+    const R = minDim * 0.40;
+    const rot = this.t * (0.18 + this.sm.level * 0.9) + this.beat * 0.2;
+    const c0 = this._color(0), c1 = this._color(1);
+    void dt;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.translate(cx, cy);
+    const body = ctx.createRadialGradient(0, 0, R * 0.12, 0, 0, R);
+    body.addColorStop(0, '#1a1a1c');
+    body.addColorStop(1, '#0a0a0b');
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.rotate(rot);
+    const G = 46;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < G; i++) {
+      const t = i / G;
+      const r = R * (0.24 + 0.75 * Math.pow(t, 1.2));
+      const band = logSample(freq, 1 - t);
+      ctx.globalAlpha = 0.05 + band * 0.5 + this.beat * 0.1;
+      ctx.strokeStyle = hexRgba(c1, 1);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+      if (band > 0.6) {
+        ctx.globalAlpha = band * 0.5;
+        ctx.strokeStyle = hexRgba(c0, 1);
+        ctx.lineWidth = 2;
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+    }
+    ctx.restore();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.rotate(rot * 1.4);
+    const sheen = ctx.createLinearGradient(-R, 0, R, 0);
+    sheen.addColorStop(0, 'rgba(0,0,0,0)');
+    sheen.addColorStop(0.5, hexRgba(c0, 0.10 + this.sm.mid * 0.12));
+    sheen.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(-R, -R, R * 2, R * 2);
+    ctx.globalCompositeOperation = 'source-over';
+    const lr = R * 0.20;
+    const label = ctx.createRadialGradient(0, 0, 0, 0, 0, lr);
+    label.addColorStop(0, hexRgba(c0, 0.95));
+    label.addColorStop(1, hexRgba(c1, 0.9));
+    ctx.fillStyle = label;
+    ctx.beginPath();
+    ctx.arc(0, 0, lr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(10,10,11,0.9)';
+    ctx.beginPath();
+    ctx.arc(0, 0, lr * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    if (this.quality !== 'low') {
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(0, 0, lr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const pvx = R * 0.92, pvy = -R * 0.98;
+    ctx.strokeStyle = 'rgba(220,220,225,0.85)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(pvx, pvy);
+    ctx.lineTo(R * 0.06, R * -0.02);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(220,220,225,0.9)';
+    ctx.beginPath();
+    ctx.arc(pvx, pvy, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = hexRgba(c0, 0.9);
+    ctx.beginPath();
+    ctx.arc(R * 0.06, R * -0.02, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
 }
 
 /** Copy every extra mode method onto the Renderer prototype. Idempotent. */

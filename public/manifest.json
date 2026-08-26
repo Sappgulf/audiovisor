@@ -1,7 +1,7 @@
 {
   "name": "AUDIOVISOR",
   "short_name": "AUDIOVISOR",
-  "description": "Premium music visualizer — 22 stage modes, 25 themes, Library, AI Studio, Party",
+  "description": "Premium music visualizer — 23 stage modes, 25 themes, Library, AI Studio, Party",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

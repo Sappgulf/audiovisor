@@ -518,6 +518,22 @@ float scGpu(vec3 p) {
   return d;
 }
 
+/* 22 vinyl — a turntable record: glossy grooves burned by the spectrum, a
+   theme-coloured label and a tonearm riding the beat */
+float scVinyl(vec3 p) {
+  vec3 q = p;
+  q.xz *= rot(0.34);          // tilt the deck toward the camera
+  float disc = sdCyl(q, 0.1, 3.4);
+  g_id = 23.0; g_aux = length(q.xz);
+  float label = sdCyl(q - vec3(0.0, 0.1, 0.0), 0.14, 0.86);
+  if (label < disc) { disc = label; g_id = 24.0; }
+  float arm = sdCapsule(p, vec3(2.9, 0.5, 2.9), vec3(0.5, 0.18, 0.5), 0.05);
+  if (arm < disc) { disc = arm; g_id = 25.0; }
+  float pivot = sdCapsule(p, vec3(2.9, 0.56, 2.9), vec3(2.9, 0.56, 2.9), 0.16);
+  if (pivot < disc) { disc = pivot; g_id = 25.0; g_aux = 0.4; }
+  return disc;
+}
+
 /* 20 lava — the vessel; the wax itself is volumetric */
 float scLavaGlass(vec3 p) {
   float wall = abs(sdCyl(p, 2.1, 1.16)) - 0.03;
@@ -552,6 +568,7 @@ float map(vec3 p) {
   if (uMode == 19) return scRadar(p);
   if (uMode == 20) return scLavaGlass(p);
   if (uMode == 21) return scGpu(p);
+  if (uMode == 22) return scVinyl(p);
   return sdSphere(p, 1.0);
 }
 
@@ -652,6 +669,24 @@ Mat matOf(float id, float aux, vec3 p) {
     vec3 cc = palf(aux);
     m.alb = cc * 0.2; m.rough = 0.12; m.metal = 0.3;
     m.emis = cc * (1.4 + uLevel * 1.6 + uBeat * 0.8);
+  } else if (id < 23.5) {               // vinyl grooves — glossy black + spectrum burn
+    float r = aux;
+    float rr = clamp(r / 3.4, 0.0, 1.0);
+    float grooves = 0.5 + 0.5 * sin(r * 64.0);
+    float band = spec(pow(rr, 0.92));
+    float ang = atan2s(p.z, p.x);
+    float sweep = smoothstep(-0.55, 0.55, sin(ang - uTime * (1.2 + uLevel * 1.6) + uBeat * 0.3));
+    m.alb = vec3(0.010); m.rough = 0.16; m.metal = 0.88;
+    m.emis = palf(pow(rr, 1.15))
+      * (grooves * (0.05 + band * 0.10)
+         + sweep * grooves * band * (1.3 + uBeat * 0.9)
+         + uBeat * 0.10);
+  } else if (id < 24.5) {               // record label
+    vec3 cc = palf(0.5);
+    m.alb = cc * 0.6; m.rough = 0.6; m.metal = 0.0;
+    m.emis = palf(0.5) * (0.05 + uBeat * 0.22);
+  } else if (id < 25.5) {               // tonearm — brushed metal
+    m.alb = vec3(0.55); m.rough = 0.18; m.metal = 0.95;
   } else {                              // accretion disc
     vec3 cc = mix(vec3(1.0, 0.93, 0.85), palf(0.85), clamp(aux * 1.4, 0.0, 1.0));
     m.alb = vec3(0.0); m.rough = 1.0;
@@ -672,6 +707,7 @@ Mat matOf(float id, float aux, vec3 p) {
   if (uMode == 12) gain = 1.2;    // orb
   if (uMode == 16) gain = 1.3;    // void
   if (uMode == 21) gain = 0.8;    // gpu
+  if (uMode == 22) gain = 2.4;    // vinyl — dark deck, the groove burn carries it
   m.emis *= 0.42 * gain * mix(0.75, 1.35, uPop);
   return m;
 }
@@ -921,8 +957,9 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 18) { ro = vec3(sin(t * 0.12) * 2.6, sin(t * 0.09) * 0.9, cos(t * 0.12) * 2.6); ap = 0.02; }
   else if (uMode == 19) { ro = vec3(sin(t * 0.1) * 3.4, 2.6, cos(t * 0.1) * 3.4); ta = vec3(0.0, -0.2, 0.0); ap = 0.03; }
   else if (uMode == 20) { ro = vec3(0.0, 0.0, 5.2); ap = 0.0; }
+  else if (uMode == 21) { ro = vec3(sin(t * 0.12) * 4.0, 2.0, cos(t * 0.12) * 4.0); ap = 0.03; }
+  else if (uMode == 22) { ro = vec3(0.0, 3.3 + sin(t * 0.2) * 0.12, 2.9); ta = vec3(0.0, -0.05, 0.0); ap = 0.028; }
   else                  { ro = vec3(sin(t * 0.12) * 4.0, 2.0, cos(t * 0.12) * 4.0); ap = 0.03; }
-
   vec3 fw = normalize(ta - ro);
   vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
   vec3 up = cross(rt, fw);
