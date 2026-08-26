@@ -1,3 +1,10 @@
+/**
+ * Load-time probe — first paint, DCL, the resource wall, and anything still
+ * pending after 4s. Run it against a deployed URL or a local build to see
+ * what a cold visit waits on (it is how the font-defer fix was found).
+ *
+ *   node scripts/load-metrics.mjs https://audiovisor-one.vercel.app/
+ */
 import { chromium } from 'playwright';
 const url = process.argv[2] || 'https://audiovisor-one.vercel.app/';
 const browser = await chromium.launch();
