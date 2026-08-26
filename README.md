@@ -1,4 +1,4 @@
-# AUDIOVISOR — v8.9.4
+# AUDIOVISOR — v8.10.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect Spotify / Apple Music — the engine renders the frequency spectrum live across twenty-two stage modes, twenty-five themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
 
@@ -45,6 +45,7 @@ Every one of the 22 stage modes is now a **live raytraced scene** rendered on a 
 - **Theme-reactive favicon** — browser tab icon regenerates from the active theme palette
 - **v8.5 upgrades** — GPU Core fully live (missing dispatch fixed): rotating 4×4×4 voxel compute stack, depth-slice energy colors + hot top faces, orbiting data nodes with bus lines; Nebula rebuilt (tilted galactic disc, line-swept filaments, hot star cores, 34-drifter starfield); Bloom Field rebuilt (soft bokeh pools + crisp cores, poppers on loud cells); Prism rebuilt (glass-slab volume, echo face, glint on entry, arced spectrum fan); spectro contrast pass (steep 2.8γ LUT — quiet audio stays black, peaks burn white)
 - **v8.6 quality sweep** — beat-crash fixes: bloom/trail/kickflare retuned (no more white fallout when the kick hits), fluid/tensor/kaleido/gpu per-mode alpha caps so every mode keeps structure at max beat; Beat Radar rebuilt (fading sweep wedge, tick-gratted bezel, rotating crosshair); Terrain (parallax drift ridge, beat-lit front ridgeline + peak glints, 3-stop sky wash, brighter aurora band)
+- **v8.10 polish** — every mode icon is unique (Fractal Bloom, GPU Core got their own marks); the lava lamp's wax carries its own gain so the lamp reads as lit; the render loop is allocation-free (signature strings and per-frame level objects replaced with field compares and per-renderer scratch); mode thumbnails animate on hover (10-frame sprite strips, fetched only on first hover); the brand mark is an equalizer cut into the diamond across icons, favicon and the og card, which is now a real raytraced frame rendered by `npm run og`
 - **Delta-time animation** — identical motion at 60 Hz, 120 Hz, 144 Hz+
 - **Adaptive quality** — auto-scales rendering (DPR, particle caps, bloom) to hold 60fps
 
@@ -87,11 +88,14 @@ Every one of the 22 stage modes is now a **live raytraced scene** rendered on a 
 - **Collab & Share** — copy share link (mode/theme/FX in hash), comments + likes (local + BroadcastChannel)
 - **Live Party** — QR to join, crowd phones sync via BroadcastChannel as light grid
 - **Queue manager** — jump between tracks, remove, shuffle (`Q`)
-- **Snapshot** — save the current frame as PNG (`P` or camera button)
+- **Share card** — `P` (or the camera button) composites the live stage into a 1200×675 branded card: cover-fit frame behind scrims, the equalizer mark, wordmark, track title, and mode + theme chips
 - **Session recorder** — record visuals + master audio mix to WebM (record button)
 - FX chain — Reverb (generated impulse), Limiter, Lowpass, Speed ×1.5, AutoTune (peaking 1.1kHz), Chorus (28ms + feedback), Echo (340ms), Crush (wave-shaper), **Chop N Screwed** (0.66× + 900Hz lowpass + 420ms stutter gate)
 - Reactivity & Color — sensitivity, bass focus, smoothing, Color Pop, Bloom — plus Chop visual stutter (VHS slice) synced to 420ms gate
 - Beat tracking — tempo-locked spectral-flux detector with octave folding, beat-phase prediction & confidence gating; live BPM chip + bass-active indicator; stage punch + bloom react on every predicted beat
+- **Drop choreography** — a breakdown→slam detector (`src/drop.js`) running on the audio clock: sustained quiet arms it, the energy's return fires it. The envelope drives up to 45% slow-mo, a camera punch-in and a bloom/exposure surge on both renderers (scaled by `prefers-reduced-motion`)
+- **True-stereo scope** — a channel splitter taps L/R into their own analysers: the Canvas2D vectorscope plots a real goniometer (mono collapses to a vertical line, width reads as spread) and the raytraced scope's glass tube shears with the L−R difference
+- **Auto theme** — the Auto swatch leads the theme row: `src/artpalette.js` extracts a palette from the track's cover art (Spotify/Apple Music artwork; artless local files hash the track name onto a stable built-in palette). The transport card also echoes the cover's two lead colours
 - Autopilot — cycles modes and themes every 12s
 - MediaSession — OS media keys, lock-screen metadata & album art, seek-to
 
@@ -162,7 +166,7 @@ keyed on viewport height, 641-1179px (tablet through narrow desktop), and
 | `T` | Cycle theme |
 | `R` | Random look (mode + theme) |
 | `Q` | Queue manager |
-| `P` | Snapshot PNG |
+| `P` | Share card (PNG) |
 | `L` | Library |
 | `F` | True fullscreen (cinema — chrome auto-hides) |
 | `C` | Chop N Screwed |

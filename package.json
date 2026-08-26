@@ -1,7 +1,7 @@
 {
   "name": "audiovisor",
   "private": true,
-  "version": "8.9.4",
+  "version": "8.10.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,8 @@
     "og": "node scripts/make-og.mjs",
     "icons": "node scripts/make-icons.mjs",
     "analyze": "node scripts/analyze-shots.mjs",
-    "thumbs": "node scripts/make-thumbs.mjs"
+    "thumbs": "node scripts/make-thumbs.mjs",
+    "sweep": "node scripts/sweep.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
