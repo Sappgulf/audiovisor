@@ -11,7 +11,14 @@
   <title>AUDIOVISOR | Premium Music Visualizer</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3CradialGradient id='g' cx='0.5' cy='0.38' r='0.75'%3E%3Cstop offset='0' stop-color='%23d9b089' stop-opacity='0.34'/%3E%3Cstop offset='1' stop-color='%23d9b089' stop-opacity='0'/%3E%3C/radialGradient%3E%3ClinearGradient id='d' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ecd2ae'/%3E%3Cstop offset='1' stop-color='%23c49a6e'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='6' fill='%2314110f'/%3E%3Crect width='32' height='32' rx='6' fill='url(%23g)'/%3E%3Ccircle cx='16' cy='16' r='9.8' fill='none' stroke='%23f5e6d3' stroke-opacity='0.3' stroke-width='1.4'/%3E%3Crect x='11.4' y='11.4' width='9.2' height='9.2' fill='url(%23d)' transform='rotate(45 16 16)'/%3E%3Crect x='12.85' y='13.4' width='1.5' height='5.2' rx='0.75' fill='%2314110f'/%3E%3Crect x='15.25' y='11.6' width='1.5' height='8.8' rx='0.75' fill='%2314110f'/%3E%3Crect x='17.65' y='12.6' width='1.5' height='6.8' rx='0.75' fill='%2314110f'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
-  <link href="https://api.fontshare.com/v2/css?f[]=space-grotesk@300,400,500,600,700&f[]=jet-brains-mono@400,500&display=swap" rel="stylesheet" />
+  <!-- The display=swap already lets text paint in a fallback instantly, but a
+       plain rel=stylesheet in <head> still blocks HTML parsing until this
+       third-party CSS arrives, and the deferred module script isn't even
+       discovered until parsing proceeds — so the site's OWN JS and CSS wait
+       behind the font round trip. Defer it: parse + fetch our assets in
+       parallel, then swap the fonts in when they land. -->
+  <link href="https://api.fontshare.com/v2/css?f[]=space-grotesk@400,500,600,700&f[]=jet-brains-mono@400,500&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <noscript><link href="https://api.fontshare.com/v2/css?f[]=space-grotesk@400,500,600,700&f[]=jet-brains-mono@400,500&display=swap" rel="stylesheet" /></noscript>
   <link rel="manifest" href="/manifest.json" />
   <!-- the app is near-black; a tan theme-color left the phone's status bar
        and browser chrome a mismatched light tan around a dark stage -->
