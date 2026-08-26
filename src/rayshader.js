@@ -742,11 +742,16 @@ float march(vec3 ro, vec3 rd, float tmax, out float id, out float aux) {
    at the low tier, where the primary march is only 64 steps, the shadow ray
    was a third of the whole scene evaluation. Heavy modes settle on the low
    tier after the adaptive stepping, which is exactly where it is wanted.
-   (No backticks in here — this file is one big JS template literal.) */
+   (No backticks in here — this file is one big JS template literal.)
+   Budgeted at uSteps/8 (8..16): for terrain the primary path is texture-
+   read-bound and every shadow sample re-runs the whole heightfield, so this
+   is the last per-pixel eval that could be halved without touching the
+   surface itself. Shadow penumbra reads a touch wider but the ridge shadow
+   it is paying for survives. */
 float softShadow(vec3 ro, vec3 rd, float tmax) {
-  int maxSteps = clamp(uSteps / 4, 10, 32);
+  int maxSteps = clamp(uSteps / 8, 8, 16);
   float res = 1.0, t = 0.05;
-  for (int i = 0; i < 32; i++) {
+  for (int i = 0; i < 16; i++) {
     if (i >= maxSteps) break;
     vec3 p = ro + rd * t;
     float h = map(p);
@@ -759,7 +764,7 @@ float softShadow(vec3 ro, vec3 rd, float tmax) {
 
 float ao(vec3 p, vec3 n) {
   float occ = 0.0, sca = 1.0;
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 3; i++) {
     float h = 0.025 + 0.14 * float(i);
     occ += (h - map(p + n * h)) * sca;
     sca *= 0.72;

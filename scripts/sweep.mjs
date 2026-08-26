@@ -17,6 +17,10 @@
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 
+const args = process.argv.slice(2);
+const tierFlag = args.indexOf('--tier');
+const TIER = tierFlag >= 0 && args[tierFlag + 1] ? args[tierFlag + 1] : null;
+
 const server = await createServer({ root: process.cwd(), server: { port: 0, strictPort: true }, logLevel: 'error' });
 await server.listen();
 const base = server.resolvedUrls.local[0];
@@ -25,8 +29,9 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 await page.goto(base, { waitUntil: 'load', timeout: 30000 });
 await page.waitForTimeout(2500);
 
-const rows = await page.evaluate(() => {
+const rows = await page.evaluate((tier) => {
   const av = window.__av;
+  if (tier) av.ray.setQuality(tier);
   const out = [];
   for (let m = 0; m < 22; m++) {
     try {
@@ -38,9 +43,9 @@ const rows = await page.evaluate(() => {
     }
   }
   return out;
-});
+}, TIER);
 rows.sort((a, b) => b.ms - a.ms);
-console.log('avg frame ms per mode (worst first):');
+console.log(`avg frame ms per mode (worst first)${TIER ? ` @ ${TIER}` : ''}:`);
 for (const r of rows) {
   console.log(`  ${String(r.mode).padStart(2)}  ${r.ms < 0 ? 'ERROR' : r.ms.toFixed(2).padStart(7) + 'ms'}`);
 }
