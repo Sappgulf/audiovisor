@@ -81,14 +81,19 @@ class ExtraModes {
       const n = parseInt(c.slice(1), 16);
       stops.push([(n >> 16) & 255, (n >> 8) & 255, n & 255]);
     }
-    /* lighten each theme stop slightly as energy climbs */
+    /* Lighten each theme stop slightly as energy climbs — but ceilinged.
+       Adding a flat offset to a pale palette (Warm Brass tops out at
+       #f5e6d3) drove every upper stop to 255,255,255, so a tenth of the
+       waterfall was one flat white with no hue and no gradient left. The
+       cap keeps the hot end reading as hot while the channels stay apart. */
+    const CEIL = 232;
     const boosted = [];
     for (let i = 1; i < stops.length; i++) {
       const s = stops[i];
       boosted.push([
-        Math.min(255, s[0] + 40 + i * 10),
-        Math.min(255, s[1] + 40 + i * 10),
-        Math.min(255, s[2] + 40 + i * 10),
+        Math.min(CEIL, s[0] + 22 + i * 6),
+        Math.min(CEIL, s[1] + 22 + i * 6),
+        Math.min(CEIL, s[2] + 22 + i * 6),
       ]);
     }
     stops.push(...boosted);
@@ -98,9 +103,9 @@ class ExtraModes {
        gamma curve, so peaks still read as hot. */
     const top = stops[stops.length - 1];
     stops.push([
-      Math.min(255, Math.round(top[0] * 0.35 + 255 * 0.65)),
-      Math.min(255, Math.round(top[1] * 0.35 + 252 * 0.65)),
-      Math.min(255, Math.round(top[2] * 0.35 + 242 * 0.65)),
+      Math.min(242, Math.round(top[0] * 0.58 + 255 * 0.42)),
+      Math.min(242, Math.round(top[1] * 0.58 + 252 * 0.42)),
+      Math.min(238, Math.round(top[2] * 0.58 + 242 * 0.42)),
     ]);
     const lut = this.specLut = new Uint8Array(256 * 3);
     for (let i = 0; i < 256; i++) {
@@ -1640,13 +1645,16 @@ class ExtraModes {
          avoid exactly that, and then the top face did it anyway. Lifting
          the slice colour instead keeps the lit read and the hue. */
       ctx.globalAlpha = clamp((0.4 + amp * 0.2) * bright, 0, 0.62);
-      ctx.fillStyle = this._tint(col, 0.45 + amp * 0.25);
+      /* the lift is toward white, so a pale palette (Warm Brass tops out at
+         #f5e6d3) reached white on its own — keep the lift proportional to
+         how much headroom the slice colour actually has */
+      ctx.fillStyle = this._tint(col, 0.26 + amp * 0.14);
       ctx.fillRect(c.px - c.s / 2, c.py - c.s / 2, c.s, c.s * 0.30);
       /* soft halo on loud cells */
       if (amp > 0.55) {
         ctx.globalCompositeOperation = 'lighter';
         const hr = c.s * (1.1 + amp * 0.5);
-        ctx.globalAlpha = (amp - 0.55) * 0.45;
+        ctx.globalAlpha = (amp - 0.55) * 0.28;   // additive halos stacked to white on dense frames
         ctx.drawImage(this._soft(this._color(ci)), c.px - hr, c.py - hr, hr * 2, hr * 2);
       }
     }

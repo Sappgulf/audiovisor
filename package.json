@@ -15,7 +15,8 @@
     "icons": "node scripts/make-icons.mjs",
     "analyze": "node scripts/analyze-shots.mjs",
     "thumbs": "node scripts/make-thumbs.mjs",
-    "sweep": "node scripts/sweep.mjs"
+    "sweep": "node scripts/sweep.mjs",
+    "rayshots": "node scripts/ray-shots.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

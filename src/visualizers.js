@@ -5,6 +5,10 @@ import { sanitizeLevels, usableSpectrum, safeDimension } from './levels.js';
 import { motionScale } from './motion.js';
 import { isLowPowerDevice } from './adaptive.js';
 
+/* modes whose scenes are broad bright plates rather than thin bright
+   marks; full-strength bloom clips them (see _bloom) */
+const MODE_BLOOM = { spectro: 0.28, gpu: 0.34, terrain: 0.62 };
+
 /* The four modes that ship in the entry bundle. Everything else lives in
    modes-extra.js and is fetched the first time it is selected; until it
    lands the renderer falls back to bars rather than drawing nothing. */
@@ -595,6 +599,13 @@ export class Renderer {
   _bloom(punch = 0) {
     if (this.quality === 'low' || this.bloomAmount <= 0.01) return;
     const { ctx, w, h } = this;
+    /* Per-mode bloom scale. Spectrogram and GPU Core fill the frame with
+       large, already-bright plates rather than thin bright marks, so the
+       full-strength glow added itself back on top and drove a tenth of the
+       waterfall past white — the mode read as a flat wash with its dynamics
+       thrown away. They still bloom, just at a fraction that highlights the
+       hot rows instead of erasing them. */
+    const modeScale = MODE_BLOOM[this.mode] ?? 1;
     const gw = Math.max(2, Math.floor(w / 4));
     const gh = Math.max(2, Math.floor(h / 4));
     if (this.glowA.width !== gw || this.glowA.height !== gh) {
@@ -626,16 +637,16 @@ export class Renderer {
     ctx.imageSmoothingEnabled = true;
     // chromatic bloom on strong beats (soft offset split, capped hard)
     if (punch > 0.6) {
-      ctx.globalAlpha = clamp((0.08 + punch * 0.03) * (0.5 + this.bloomAmount), 0, 0.14);
+      ctx.globalAlpha = clamp((0.08 + punch * 0.03) * (0.5 + this.bloomAmount) * modeScale, 0, 0.14);
       ctx.drawImage(this.glowB, -w * 0.02 + 1.2, -h * 0.02, w * 1.04, h * 1.04);
       ctx.drawImage(this.glowB, -w * 0.02 - 1.2, -h * 0.02, w * 1.04, h * 1.04);
     }
     /* The bright pass halves what reaches the glow, so the gain is raised to
        keep the same amount of visible bloom — the difference is that it now
        comes from highlights rather than from lifting the whole frame. */
-    ctx.globalAlpha = clamp((0.25 + punch * 0.06) * (0.5 + this.bloomAmount), 0, 0.36);
+    ctx.globalAlpha = clamp((0.25 + punch * 0.06) * (0.5 + this.bloomAmount) * modeScale, 0, 0.36);
     ctx.drawImage(this.glowB, -w * 0.02, -h * 0.02, w * 1.04, h * 1.04);
-    ctx.globalAlpha = clamp((0.17 + punch * 0.05) * (0.5 + this.bloomAmount), 0, 0.29);
+    ctx.globalAlpha = clamp((0.17 + punch * 0.05) * (0.5 + this.bloomAmount) * modeScale, 0, 0.29);
     ctx.drawImage(this.glowA, 0, 0, w, h);
     ctx.restore();
   }

@@ -15,6 +15,7 @@
  *   npm run sweep
  */
 import { chromium } from 'playwright';
+import { MODES } from '../src/themes.js';
 import { createServer } from 'vite';
 
 const args = process.argv.slice(2);
@@ -29,11 +30,11 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 await page.goto(base, { waitUntil: 'load', timeout: 30000 });
 await page.waitForTimeout(2500);
 
-const rows = await page.evaluate((tier) => {
+const rows = await page.evaluate(({ tier, count }) => {
   const av = window.__av;
   if (tier) av.ray.setQuality(tier);
   const out = [];
-  for (let m = 0; m < 22; m++) {
+  for (let m = 0; m < count; m++) {
     try {
       const t0 = performance.now();
       av.pump(m, 40, 3);
@@ -43,7 +44,7 @@ const rows = await page.evaluate((tier) => {
     }
   }
   return out;
-}, TIER);
+}, { tier: TIER, count: MODES.length });
 rows.sort((a, b) => b.ms - a.ms);
 console.log(`avg frame ms per mode (worst first)${TIER ? ` @ ${TIER}` : ''}:`);
 for (const r of rows) {

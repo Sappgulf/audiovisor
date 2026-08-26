@@ -188,8 +188,11 @@ npm test        # vitest — engine, beat tracker, synth feed, PKCE, utils,
                 #          pointer drags, sheet gestures, PWA/responsive contract
 npm run lint    # eslint
 npm run size    # bundle budget (needs a build first)
-npm run shots   # render every stage mode to /tmp/audiovisor-shots for eyeballing
-npm run analyze # exposure report per mode: mean luminance, clipping, saturation
+npm run shots    # render every stage mode (Canvas2D) to /tmp/audiovisor-shots
+npm run analyze  # exposure report per mode: mean luminance, clipping, saturation
+npm run rayshots # the same pass for the raytraced stage — real GPU headless
+                 #   Chromium via window.__av.pump(); writes one PNG per mode
+                 #   plus a labelled contact sheet to /tmp/audiovisor-ray
 npm run icons   # regenerate the PWA / home-screen icons
 npm run thumbs  # regenerate the stage-mode thumbnails in public/modes/
 ```

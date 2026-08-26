@@ -66,9 +66,17 @@ describe('ray shaders', () => {
     for (const i of idx) expect(fn.includes(`m == ${i}`)).toBe(true);
   });
 
-  it('composites the lava volume against its glass vessel', () => {
+  it('marches the lava volume past the near glass wall, not up to it', () => {
+    /* The vessel's near wall is the first surface the ray hits, so limiting
+       the volume march to that hit distance marched nothing but the air in
+       front of the lamp and the wax never rendered — an empty glass tube.
+       The limit has to clear the vessel interior. */
     const lava = MODES.findIndex((m) => m.id === 'lava');
-    expect(SCENE_FRAG.includes(`if (uMode == ${lava}) col += marchVolume(ro, rd, t);`)).toBe(true);
+    const call = SCENE_FRAG.match(
+      new RegExp(`if \\(uMode == ${lava}\\) col \\+= marchVolume\\(ro, rd, t([^)]*)\\);`),
+    );
+    expect(call).not.toBe(null);
+    expect(parseFloat(call[1].replace('+', ''))).toBeGreaterThan(2.3);
   });
 
   it('gives every mode a camera rig', () => {

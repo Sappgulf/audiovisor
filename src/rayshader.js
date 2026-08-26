@@ -605,7 +605,7 @@ Mat matOf(float id, float aux, vec3 p) {
   } else if (id < 5.5) {                // spectrogram terrace
     vec3 cc = palf(pow(clamp(aux, 0.0, 1.0), 0.55));
     m.alb = cc * 0.5; m.rough = 0.5; m.metal = 0.15;
-    m.emis = cc * (0.25 + pow(aux, 1.7) * 2.2);
+    m.emis = cc * (0.18 + pow(aux, 2.1) * 1.15);
   } else if (id < 6.5) {                // structural strut / bezel
     m.alb = palf(0.3) * 0.25; m.rough = 0.3; m.metal = 0.8;
     m.emis = palf(0.25) * (0.12 + uLevel * 0.25);
@@ -613,7 +613,7 @@ Mat matOf(float id, float aux, vec3 p) {
     m.alb = mix(vec3(0.025, 0.023, 0.021), palf(aux) * 0.3, aux);
     m.rough = 0.62; m.metal = 0.18;
     // snow-line glow on the crests plus a cool wash in the troughs
-    m.emis = palf(aux) * pow(aux, 2.4) * 2.2 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06;
+    m.emis = palf(aux) * pow(aux, 3.0) * 1.15 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06;
   } else if (id < 8.5) {                // city block + windows
     // anti-aliased window grid: hard step() speckles badly at distance
     vec3 wp = p * vec3(2.6, 3.4, 2.6);
@@ -624,7 +624,7 @@ Mat matOf(float id, float aux, vec3 p) {
     float lit = step(0.28, hash13(floor(wp)));   // some windows are dark
     float win = wy * max(wx, wz) * lit;
     m.alb = vec3(0.02); m.rough = 0.22; m.metal = 0.5;
-    m.emis = palf(aux) * win * (0.7 + aux * 1.6 + uBeat * 0.5);
+    m.emis = palf(aux) * win * (0.5 + aux * 0.9 + uBeat * 0.35);
   } else if (id < 9.5) {                // wet asphalt
     m.alb = vec3(0.012); m.rough = 0.14; m.metal = 0.9;
   } else if (id < 10.5) {               // liquid chrome
@@ -693,7 +693,7 @@ Mat matOf(float id, float aux, vec3 p) {
   } else {                              // accretion disc
     vec3 cc = mix(vec3(1.0, 0.93, 0.85), palf(0.85), clamp(aux * 1.4, 0.0, 1.0));
     m.alb = vec3(0.0); m.rough = 1.0;
-    m.emis = cc * (6.0 * pow(1.0 - aux, 3.0) + 0.25 + uBeat * 0.7);
+    m.emis = cc * (3.2 * pow(1.0 - aux, 2.6) + 0.2 + uBeat * 0.5);
   }
   // per-mode emissive gain: dense scenes (particle/voxel fields) would
   // otherwise bloom into a flat white sheet
@@ -704,7 +704,6 @@ Mat matOf(float id, float aux, vec3 p) {
   if (uMode == 14) gain = 0.5;    // tensor lattice
   if (uMode == 17) gain = 0.35;   // bloom field
   if (uMode == 9)  gain = 0.70;   // city
-  if (uMode == 13) gain = 1.6;    // fluid
   if (uMode == 15) gain = 1.4;    // prism
   if (uMode == 2)  gain = 2.6;    // scope
   if (uMode == 12) gain = 1.2;    // orb
@@ -863,9 +862,9 @@ float volDensity(vec3 p) {
     f = f * f * 1.6;                                    // more contrast between wisps
     float arms = 0.5 + 0.5 * sin(atan2s(q.z, q.x) * 2.0 + length(q.xz) * 1.9);
     float d = disc * f * (0.35 + arms);
-    d += 0.5 * exp(-length(q) * 1.6) * (1.0 + uBass);   // hot core
-    d *= smoothstep(4.6, 0.8, length(q));
-    return max(0.0, d - 0.05) * (3.2 + uLevel * 2.6);
+    d += 0.32 * exp(-length(q) * 1.1) * (1.0 + uBass);   // hot core
+    d *= smoothstep(6.4, 1.4, length(q));                // a wider cloud, not a ball
+    return max(0.0, d - 0.07) * (2.4 + uLevel * 2.0);
   }
   if (uMode == 11) {                        // spiral galaxy
     vec3 q = p;
@@ -875,9 +874,9 @@ float volDensity(vec3 p) {
     float arm = cos(a * 2.0 - r * 2.3 + uTime * 0.2) * 0.5 + 0.5;
     /* the old density was so thin the disc vanished against the sky; this
        carries the arms as a real luminous sheet */
-    float d = pow(arm, 1.6) * exp(-r * 0.42) * exp(-abs(q.y) * 3.0) * 3.0;
-    d += exp(-r * 2.6 - abs(q.y) * 5.0) * (2.4 + uBass * 1.5);
-    d *= 0.75 + 0.6 * fbm(q * 1.6 + uTime * 0.05);
+    float d = pow(arm, 3.2) * exp(-r * 0.34) * exp(-abs(q.y) * 4.5) * 3.4;
+    d += exp(-r * 3.4 - abs(q.y) * 7.0) * (1.1 + uBass * 0.8);   // bulge, not a floodlight
+    d *= 0.55 + 0.9 * fbm(q * 2.4 + uTime * 0.05);               // dust lanes inside the arms
     return d * (1.0 + uLevel);
   }
   // lava
@@ -1062,7 +1061,9 @@ vec3 trace(vec3 ro, vec3 rd) {
   col = mix(col, envBase(rd) * 0.9, pow(clamp(t / 42.0, 0.0, 1.0), 1.4) * 0.7);
   // lava lamp: the wax is a volume inside the glass vessel, so it has to be
   // marched separately and composited in front of whatever the SDF hit
-  if (uMode == 20) col += marchVolume(ro, rd, t);
+  // the wax sits *behind* the near glass wall, so the march limit has to
+  // clear the vessel interior — capping at the first hit marched nothing but air
+  if (uMode == 20) col += marchVolume(ro, rd, t + 4.8);
   return col;
 }
 
