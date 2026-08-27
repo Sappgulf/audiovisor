@@ -32,7 +32,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="AUDIOVISOR" />
   <meta property="og:title" content="AUDIOVISOR — Real-time Audio Visualizer" />
-  <meta property="og:description" content="22 stage modes, 25 themes, AI Studio, Library, Chop N Screwed, Auto DJ — drop a track and watch it dance." />
+  <meta property="og:description" content="23 stage modes, 25 themes, AI Studio, Library, Chop N Screwed, Auto DJ — drop a track and watch it dance." />
   <meta property="og:image" content="/og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -93,6 +93,7 @@
                announcing three unlabelled canvases adds noise without adding
                information, so they are hidden from assistive tech. The BPM
                readout and track info carry the actual state. -->
+          <img id="mode-art" class="mode-art" src="/modes/art/bars.webp" alt="" aria-hidden="true" decoding="async">
           <canvas id="ray-canvas" class="stage-canvas" aria-hidden="true"></canvas>
           <canvas id="viz-canvas" aria-hidden="true"></canvas>
           <canvas id="webgpu-canvas" aria-hidden="true" style="position:absolute; inset:0; width:100%; height:100%; display:none"></canvas>
@@ -112,6 +113,12 @@
               <span class="ic ic-lime" data-icon="sparkles"></span>
               <span class="mono chip-label" id="mood-value">—</span>
             </div>
+          </div>
+
+          <div class="stage-story" id="stage-story" aria-live="polite" aria-atomic="true">
+            <span class="mono stage-story-chapter" id="mode-story-chapter">01 / FIRST LIGHT</span>
+            <strong class="stage-story-title" id="mode-story-title">Build the skyline</strong>
+            <span class="stage-story-copy" id="mode-story-copy">Pillars rise where the kick lands, turning rhythm into architecture.</span>
           </div>
 
           <div class="dropzone-wrap" id="dropzone">

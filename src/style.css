@@ -469,6 +469,76 @@ button:focus-visible, input:focus-visible {
   z-index: 3;
 }
 
+/* Generated key art is a slow narrative layer. It sits above the opaque
+   renderer with a restrained screen blend so the live Canvas2D/WebGL scene
+   stays legible while every mode still has a distinct world underneath. */
+.mode-art {
+  position: absolute;
+  inset: -3%;
+  z-index: 2;
+  width: 106%;
+  height: 106%;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+  opacity: calc(0.16 + var(--beat, 0) * 0.12);
+  mix-blend-mode: screen;
+  filter: saturate(1.18) contrast(1.12) brightness(0.72);
+  transform: scale(1.035);
+  transition: opacity 0.8s var(--ease), filter 0.8s var(--ease);
+  animation: art-drift 22s ease-in-out infinite alternate;
+}
+html:not(.stage-live) .mode-art {
+  opacity: 0.32;
+  filter: saturate(1.2) contrast(1.1) brightness(0.84);
+}
+.mode-art.is-art-switch {
+  opacity: 0.05;
+  filter: saturate(1.8) contrast(1.24) brightness(1.2);
+}
+.mode-art.is-art-enter { animation: art-arrival 0.72s var(--ease) both; }
+@keyframes art-drift {
+  0% { transform: scale(1.035) translate3d(-0.7%, 0, 0); }
+  100% { transform: scale(1.08) translate3d(0.7%, -0.8%, 0); }
+}
+@keyframes art-arrival {
+  0% { opacity: 0.04; transform: scale(1.12); filter: saturate(1.9) contrast(1.3) brightness(1.25); }
+  100% { opacity: calc(0.16 + var(--beat, 0) * 0.12); transform: scale(1.035); filter: saturate(1.18) contrast(1.12) brightness(0.72); }
+}
+
+.stage-story {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: min(330px, 48%);
+  pointer-events: none;
+  text-shadow: 0 2px 18px rgba(0,0,0,0.72);
+}
+.stage-story-chapter {
+  color: rgba(255,250,243,0.55);
+  font-size: 8px;
+  letter-spacing: 0.18em;
+}
+.stage-story-title {
+  color: rgba(255,250,243,0.96);
+  font-family: var(--font-display);
+  font-size: clamp(17px, 2.2vw, 28px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.stage-story-copy {
+  color: rgba(255,250,243,0.62);
+  font-size: 10px;
+  line-height: 1.45;
+  max-width: 280px;
+}
+
 #viz-canvas {
   position: absolute;
   inset: 0;
@@ -486,6 +556,7 @@ button:focus-visible, input:focus-visible {
   background: linear-gradient(to right, transparent, rgba(var(--accent-rgb), 0.14), transparent);
   box-shadow: 0 0 80px 20px rgba(var(--accent-rgb), 0.04);
   pointer-events: none;
+  z-index: 3;
 }
 
 .stage-overlays {
@@ -746,11 +817,12 @@ button:focus-visible, input:focus-visible {
   object-fit: cover;
   opacity: 0;
   transition: opacity 0.24s var(--ease), filter 0.2s var(--ease);
-  filter: grayscale(1) brightness(0.72) contrast(1.05);
+  filter: saturate(0.88) brightness(0.72) contrast(1.08);
+  transform: scale(1.01);
 }
-.mode-card.has-thumb .mode-thumb { opacity: 0.62; }
+.mode-card.has-thumb .mode-thumb { opacity: 0.8; }
 .mode-card.has-thumb .ic { opacity: 0; }
-.mode-card.has-thumb:hover .mode-thumb { opacity: 0.85; filter: grayscale(1) brightness(0.9) contrast(1.05); }
+.mode-card.has-thumb:hover .mode-thumb { opacity: 1; filter: saturate(1.12) brightness(0.9) contrast(1.1); transform: scale(1.07); }
 /* The selected card reads as selected through its accent border and ground.
    This used to tint the thumbnail itself with sepia + hue-rotate, which was a
    filter chain hand-tuned to brass — it produced the wrong hue for all 24
@@ -759,7 +831,7 @@ button:focus-visible, input:focus-visible {
    alone marks the selection; the colour around it carries the theme. */
 .mode-card.is-active.has-thumb .mode-thumb {
   opacity: 1;
-  filter: grayscale(1) brightness(1.06) contrast(1.05);
+  filter: saturate(1.08) brightness(0.98) contrast(1.1);
 }
 
 /* Hover animation layer. Sits over the still; the strip (10 frames baked by
@@ -789,6 +861,8 @@ button:focus-visible, input:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .mode-thumb { transition: none; }
   .mode-thumb-anim { transition: none; animation: none; }
+  .mode-art { animation: none; transition: opacity 0.2s ease; }
+  .mode-art.is-art-enter { animation: none; }
 }
 
 .mode-name {
@@ -1217,6 +1291,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   transition: opacity 0.32s var(--ease);
   padding: 24px;
 }
+.about-panel[hidden] { display: none; }
 .about-panel.is-open { opacity: 1; pointer-events: auto; }
 
 .about-card {
@@ -1287,7 +1362,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   position: absolute;
   left: 20px;
   bottom: 100px;
-  z-index: 34;
+  z-index: 55;
   /* clamped to the viewport rather than fixed: at a fixed width these
      floating panels hang off the edge of a phone screen */
   width: min(360px, calc(100vw - 40px));
@@ -1381,7 +1456,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   position: absolute;
   right: 20px;
   bottom: 100px;
-  z-index: 34;
+  z-index: 55;
   /* This was a fixed 380px against `right: 20px`, so on a 390px phone it
      started at left: -26px and the first 26px — the search field and the
      left of every track name — sat permanently off-screen. The queue panel
@@ -1472,7 +1547,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   .transport { gap: 18px; padding: 0 16px; height: 76px; }
   .track-info { width: 200px; }
   .pill-nav { display: none; }
-  .shell { width: calc(100vw - 16px); height: calc(100vh - 16px); border-radius: 1.25rem; }
+  .shell { width: calc(100vw - 16px); height: calc(100vh - 16px); margin-inline: auto; border-radius: 1.25rem; }
 }
 
 @media (max-width: 640px) {
@@ -2398,7 +2473,13 @@ html, body {
     margin-top: calc(6px + var(--sat));
   }
   .workspace { padding: 6px 8px 4px; }
-  .stage { max-height: none; }
+  .stage {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    aspect-ratio: auto;
+    min-height: 0;
+  }
 
   /* the transport wraps to two short rows so the scrubber gets real width
      instead of whatever is left over */
