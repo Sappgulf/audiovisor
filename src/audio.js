@@ -1021,7 +1021,13 @@ export class AudioEngine {
     const out = Number.isFinite(ctx.outputLatency) ? ctx.outputLatency : 0;
     const base = Number.isFinite(ctx.baseLatency) ? ctx.baseLatency : 0;
     const total = out + base;
-    return total > 0 && total < 0.5 ? total : 0;
+    /* Bluetooth chains can report past the sane ceiling (a cheap dongle
+       measured 0.56s). This used to return zero in that case — dropping all
+       compensation, the worst possible outcome: the beat grid then fires
+       half a second early every single beat. The tracker clamps its side to
+       0..0.5s anyway, so match it here instead of zeroing. */
+    if (!Number.isFinite(total) || total <= 0) return 0;
+    return Math.min(total, 0.5);
   }
 
   getTime() {
@@ -1134,7 +1140,12 @@ export class AudioEngine {
     const binHz = (this.ctx?.sampleRate || 44100) / 2 / n;
     const iBass = Math.floor(120 / binHz);
     const iMid = Math.floor(2000 / binHz);
-    const iHigh = Math.floor(8000 / binHz);
+    /* the content window ends at ~16kHz, not Nyquist: the bins above carry
+       nothing musical, and averaging them into `level` diluted perceived
+       loudness by a third — quiet-but-full tracks measured as half-alive.
+       The high band picks up the same edge so cymbal air is no longer
+       thrown away at 8kHz. */
+    const iTOP = Math.min(n, Math.ceil(16000 / binHz));
     const avg = (a, b) => {
       let s = 0;
       for (let i = a; i < b; i++) s += freq[i];
@@ -1142,8 +1153,8 @@ export class AudioEngine {
     };
     const bass = avg(2, iBass);
     const mid = avg(iBass, iMid);
-    const high = avg(iMid, iHigh);
-    const level = avg(2, n);
+    const high = avg(iMid, iTOP);
+    const level = avg(2, iTOP);
 
     /* beat clock runs on song position + full spectrum, not wall time;
        live inputs have no song clock so use the audio context clock */

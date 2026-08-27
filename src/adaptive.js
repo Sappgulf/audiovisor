@@ -69,9 +69,45 @@ export function estimateBaseline(samples, previous = null) {
   return Math.min(Math.max(min, 6), 40);
 }
 
-/** The baseline to judge against, falling back while it is still unknown. */
+/**
+ * The baseline to judge against, falling back while it is still unknown.
+ */
 export function baselineOr(estimate) {
   return Number.isFinite(estimate) ? estimate : DEFAULT_BASELINE_MS;
+}
+
+/**
+ * Let a stale best-case estimate recover toward what the display currently
+ * manages.
+ *
+ * `estimateBaseline` keeps the fastest interval the session has ever seen,
+ * which is correct for identifying the refresh pace but has a failure mode:
+ * one lucky frame — a moment of driver throttling in the app's favour, a
+ * compositor coincidence — permanently pins the estimate below the display's
+ * real pace. Every subsequent comfortable frame then reads as OVER_BUDGET
+ * against a 6ms line it can never meet, and the tiers grind down for no
+ * reason.
+ *
+ * This nudges the stored estimate 12% of the way toward the slowest recent
+ * window's minimum each time it runs, so a genuinely-faster-than-display
+ * number drifts up to reality within seconds while a real fast frame (which
+ * `estimateBaseline` re-observes continuously) holds the floor down. Called
+ * once per evaluated window, not per frame, so the rate is independent of
+ * frame timing.
+ *
+ * @param {number} estimate current baseline estimate, or null
+ * @param {number[]} samples the most recent window of frame intervals
+ * @returns {number} the relaxed estimate
+ */
+export function relaxBaseline(estimate, samples) {
+  if (!Number.isFinite(estimate)) return estimate;
+  let recent = Infinity;
+  for (const ms of samples) {
+    if (Number.isFinite(ms) && ms > 4 && ms < 200 && ms < recent) recent = ms;
+  }
+  if (!Number.isFinite(recent)) return Math.min(estimate, 40);
+  const moved = estimate + (recent - estimate) * 0.12;
+  return Math.min(Math.max(moved, 6), 40);
 }
 
 /** Should this window be judged yet? */
@@ -84,12 +120,8 @@ export function shouldEvaluate(samples, baseline = DEFAULT_BASELINE_MS) {
 }
 
 /**
- * @param {string} current tier in use
- * @param {number} avgMs mean frame interval over the window
- * @param {string} ceiling the tier the user asked for
- * @param {number} baseline the display's natural interval
- */
-/**
+ * Decide the next tier from an evaluated window.
+ *
  * @param {string} current tier in use
  * @param {number} avgMs mean frame interval over the window
  * @param {string} ceiling the tier the user asked for

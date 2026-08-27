@@ -1,4 +1,4 @@
-# AUDIOVISOR — v8.11.1
+# AUDIOVISOR — v8.12.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect Spotify / Apple Music — the engine renders the frequency spectrum live across twenty-three stage modes, twenty-five themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
 
@@ -15,26 +15,32 @@ A hifi, real-time music visualizer for the browser. Drop in a track, stream a UR
 > **Note on streaming services:** DRM-protected streams (Spotify/Apple Music in-app playback) can't be tapped by the Web Audio API directly. When Spotify plays through the built-in player without capture, AUDIOVISOR drives the visuals with a procedural synth feed seeded from the track — hit **Capture** and share the current tab for true spectrum-reactive visuals of the actual audio.
 
 ### Raytraced stage (v8.8)
-Every one of the 22 stage modes is now a **live raytraced scene** rendered on a WebGL2 ray-marcher — the Canvas2D engine remains as a fallback and can be toggled back on at any time (Look tab → **Raytrace**).
+Every one of the 23 stage modes is now a **live raytraced scene** rendered on a WebGL2 ray-marcher — the Canvas2D engine remains as a fallback and can be toggled back on at any time (Look tab → **Raytrace**).
 
 - **Path** — per-frame: SDF/volumetric ray march into a linear HDR buffer → temporal accumulation with neighbourhood clamping → bright-pass + separable gaussian bloom at quarter res → ACES tonemap with chromatic aberration, vignette and grain
 - **Shading** — Cook-Torrance GGX with metallic/roughness materials, penumbra soft shadows, 4-tap AO, one reflection bounce for polished metals, and a theme-tinted procedural environment used as both key light and reflection probe
 - **Glass** — true two-interface refraction (into the solid, march to the far wall, refract back out); Prism Ray splits R/G/B at 1.38/1.45/1.53 for real dispersion
 - **Depth of field** — thin-lens camera with a per-sample golden-angle lens jitter; Bloom Field is built around it
 - **Audio → geometry** — spectrum and waveform ride into the shader as textures, plus a 256×128 rolling spectrum history that drives the Spectrogram terrace and Aurora Terrain ridges
-- **Frame budget** — audio scratch buffers are reused rather than reallocated per frame, the spectrum history scrolls on a fixed 45 rows/sec clock (so a 144Hz display doesn't run the waterfall at 2.4x speed), the temporal pass is skipped when there's nothing to blend, and an idle stage renders at half rate
+- **Frame budget** — audio scratch buffers are reused rather than reallocated per frame, the spectrum history scrolls on a fixed 45 rows/sec clock (so a 144Hz display doesn't run the waterfall at 2.4x speed), the temporal pass is skipped when there's nothing to blend, and an idle stage renders at half rate. Static uniforms (mode/tier/palette/sampler assignments) upload once per look change behind a revision counter instead of twenty dead calls every frame; the two quarter-res bloom passes are skipped entirely when Bloom is zeroed; and the spectrum/history textures fill from baked bin-index tables rather than recomputing `pow()` per texel per row
+- **Treble wired in** — the spectrogram terrace's freshest row and the terrain crest line answer the high band (hats light the waterfall's front lip), and nebula/spiral volumes shape their density with mids and highs, so those scenes respond to the whole mix instead of only bass-and-level
+- **Accumulation safety** — a width-only resize invalidates the temporal history exactly like a mode/tier change (a stale-height key let one frame resample an old-size buffer)
+- **v8.12 scene rebuilds** — Beat Radar is a listening post now: a ribbed lattice dome with latitude hoops, a bass-breathing centre mast, and spectrum-banded contacts that flare the instant the phosphor sweep crosses their azimuth (phase-locked to the deck's wedge — locked by test); GPU Core grew corner pylons, band-swollen voxels under a hard cap (uncapped swell funneled rays into cell gaps at 5× the march cost) and an orbiting data node tapped outside the marching loop; Tensor Grid couples each rod axis to a band — bass thickens one family, mids another, highs the third, so the lattice leans with the mix; Prism Ray gained a gently orbiting camera so beam/prism/fan parallax actually reads; nebula/spiral/lava volumes all answer the drop envelope
+- **Tier baseline recovery** — one lucky frame used to pin the adaptive sampler's session-best interval below anything the display could achieve again, grinding tiers down against an unreachable floor; a per-window relaxation (`relaxBaseline`) drifts a stale estimate back toward present reality within seconds while genuinely-fast frames hold the floor down
 - **Quality tiers** — Low / Medium / High / Ultra (resolution scale, march steps, samples per pixel, reflection bounce), cycled from the Look tab and auto-stepped down when frames run long
 - **Themes** — all 25 palettes feed the shader in linear space, so every scene re-lights with the theme
 - **Numerically safe** — `atan(0,0)`, negative `pow()` bases and unbounded specular all produce NaN or saturated plateaus on flat mirror-like surfaces; every site is guarded and each sample is NaN-scrubbed before accumulation
 - **Resilient** — a lost GPU context (driver reset, sleep, another tab hogging the GPU) drops the stage to Canvas2D with a toast, and a watchdog rebuilds the renderer and resumes raytracing when the context comes back; the on/off preference records what you asked for, not what the GPU happened to support at boot
 
 ### Stage
-- **22 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Pulse Orb, Fluid Metal, Tensor Grid, Prism Ray, Void Core, Bloom Field, Fractal Bloom, Beat Radar (beat-dropped contacts + spectrum blips), Lava Lamp (bass-heated metaball drift), GPU Core (rotating voxel compute stack)
+- **23 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Pulse Orb, Fluid Metal, Tensor Grid, Prism Ray, Void Core, Bloom Field, Fractal Bloom, Beat Radar (beat-dropped contacts + spectrum blips), Lava Lamp (bass-heated metaball drift), GPU Core (rotating voxel compute stack), Vinyl Groove (spectrum-burned turntable)
 - **25 themes** — Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic, Monolith, Sunset, Matrix, Ultraviolet, Warm Brass, AutoTune Pop, Laser Tag, Chop N Screwed, Jade, Crimson Silk, Desert Mirage, Ocean Depth, Fractal Dawn, Solar Flare, Toxic Sludge, Cotton Candy, Midnight Ink
 - **Look presets** — right-click P1–P3 to save mode+theme+FX, click to recall (also in Cmd+K palette)
 - **Memory-bounded queue** — decoded audio is uncompressed (~100MB per 5-minute stereo track), so buffers beyond ~1500s are released while the queue entry keeps its name, position and File handle; the track decodes again the moment you select it
 - **Sleep timer** — 15/30/60 min countdown with volume fade-out and pause
 - **Interpolated log spectra** — smoother, more accurate frequency mapping across every mode (bars, terrain, city, kaleido, tunnel, orb) with gravity-fall peak caps
+- **Honest loudness** — the level read averages only the content window (up to ~16kHz): the bins above carry nothing musical and were diluting measured loudness by up to a third, while the high band now reaches past 8kHz so cymbal air drives `uHigh` instead of vanishing
+- **Latency that degrades gracefully** — Bluetooth chains reporting over 0.5s of output latency get their estimate clamped to the ceiling; the old behavior silently dropped compensation entirely and fired the beat grid half a second early on every beat
 - **Phosphor scope & wobble tunnel** — vectorscope with true persistence afterglow, radial tunnel with spectral wobble per ring, beat-synced stage punch + bloom
 - **Bloom compositing** — two-pass downscale glow replaces per-element shadow blur
 - **Post-FX stack** — atmosphere backdrop (drifting theme glows), cinematic vignette, tiled film grain, longer phosphor trails, layered silk depth in waves
@@ -67,7 +73,7 @@ Every one of the 22 stage modes is now a **live raytraced scene** rendered on a 
 - **Genre/Mood detector** — tempo + spectral centroid → Ambient/Lo-Fi/House/EDM/Trap/Drill/DnB tag chip
 - **Procedural album art** — deterministic cover per track (arcs + diamond + grain)
 - **Tabbed settings drawer** — Source / Look / Audio / Studio tabs (animated ink underline, arrow-key navigation, remembered between sessions) replace the single endless-scroll panel; every section now fits on one screen
-- **Mode filter** — type to narrow the 22 stage modes, Enter selects the first match, Esc clears
+- **Mode filter** — type to narrow the 23 stage modes, Enter selects the first match, Esc clears
 - **Keyboard shortcuts overlay** — press `?` (or the topbar key icon) for the full grouped shortcut sheet; also in the Cmd+K palette along with direct tab jumps
 - **Focus rings + live-region toasts** — visible keyboard focus across all controls, toasts announced to screen readers
 - **Onboarding tour** — first-run hint chain, replayable
@@ -207,7 +213,7 @@ apart anyway.
 
 They are committed artifacts, so **re-run it after changing how a mode
 looks** — nothing detects a stale thumbnail automatically, since that would
-mean re-rendering all 22 on every test run. `tests/mode-thumbs.test.js`
+mean re-rendering all 23 on every test run. `tests/mode-thumbs.test.js`
 covers the failures that can be caught cheaply: a mode with no thumbnail, a
 thumbnail left behind by a removed mode, and files that are empty or large
 enough to hurt the mobile sheet's first paint.
@@ -220,7 +226,7 @@ bug that shipped as v8.8.3 (`atan(0,0)` → NaN whiting out flat surfaces)
 turns it red.
 
 `npm run analyze` answers "does this look blown out?" with numbers rather
-than by squinting at 22 screenshots. Clipped pixels throw away colour and
+than by squinting at 23 screenshots. Clipped pixels throw away colour and
 detail exactly where the signal is loudest, so it is worth watching: the
 suite currently averages ~4.3% clipped on the Canvas2D renderer and ~0% on
 the raytraced stage, which tonemaps properly.

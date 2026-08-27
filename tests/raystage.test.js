@@ -66,6 +66,27 @@ describe('ray shaders', () => {
     for (const i of idx) expect(fn.includes(`m == ${i}`)).toBe(true);
   });
 
+  it('keeps the radar contacts phase-locked to the deck sweep', () => {
+    /* The contact flare in scRadar must read the same sweep fraction the
+       deck material draws its phosphor wedge from — fract(a / TAU - uTime *
+       0.22). Change one side without the other and the contacts blink out
+       of sync with the beam that is supposed to be illuminating them. */
+    const radar = SCENE_FRAG.slice(SCENE_FRAG.indexOf('float scRadar'), SCENE_FRAG.indexOf('/* 21 gpu'));
+    expect(radar).toContain('fract(a / TAU - uTime * 0.22)');
+    const mat = SCENE_FRAG.slice(SCENE_FRAG.indexOf('id < 15.5'));
+    expect(mat).toContain('- uTime * 0.22');
+  });
+
+  it('couples each tensor axis family to a band and the drop to the volumes', () => {
+    /* bass/mids/highs own one rod direction each; the three volumetric
+       densities answer the drop envelope so breakdowns land there too */
+    expect(SCENE_FRAG).toContain('uBass * 0.026');
+    expect(SCENE_FRAG).toContain('uMid * 0.022');
+    expect(SCENE_FRAG).toContain('uHigh * 0.018');
+    const vol = SCENE_FRAG.slice(SCENE_FRAG.indexOf('float volDensity'));
+    expect(vol.match(/uDrop/g)?.length).toBeGreaterThanOrEqual(4);
+  });
+
   it('marches the lava volume past the near glass wall, not up to it', () => {
     /* The vessel's near wall is the first surface the ray hits, so limiting
        the volume march to that hit distance marched nothing but the air in
@@ -101,6 +122,27 @@ describe('RayStage runtime behaviour', () => {
     const src = readFileSync(new URL('../src/raystage.js', import.meta.url), 'utf8');
     // per-frame pushes make the waterfall run at double speed on a 120Hz panel
     expect(src.includes('this._histAcc >= 1 / 45')).toBe(true);
+  });
+
+  it('maps uploads through cached index tables, not per-texel pow()', () => {
+    /* the log-ish bin maps are constants of the input length; recomputing
+       ~768 pows+floors every frame showed up as CPU burn on weak machines */
+    const src = readFileSync(new URL('../src/raystage.js', import.meta.url), 'utf8');
+    const push = src.slice(src.indexOf('pushHistory(freq)'), src.indexOf('_specIdxFor(n)'));
+    expect(push.includes('Math.pow')).toBe(false);
+    expect(src.includes('this._histIdxFor(freq.length)')).toBe(true);
+    expect(src.includes("this._specIdxFor(freq.length)")).toBe(true);
+  });
+
+  it('gates static uniforms behind a look revision and skips dead bloom', () => {
+    const src = readFileSync(new URL('../src/raystage.js', import.meta.url), 'utf8');
+    // mode/tier/palette/samplers only change with a look edit
+    expect(src.includes('this._lookRev !== this._staticRev')).toBe(true);
+    // a width-only resize must invalidate accumulation too, or history
+    // resamples the stale buffer for a frame
+    expect(src.includes('this._lastKeyH === this.rh')).toBe(true);
+    // at bloom 0 the two quarter-res passes contribute nothing and are skipped
+    expect((src.match(/bloomAmount > 0\.001/g) || []).length).toBe(2);
   });
 });
 

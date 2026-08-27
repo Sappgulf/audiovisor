@@ -457,3 +457,76 @@ describe('AudioEngine', () => {
     expect(engine.queueIndex).toBe(released);
   });
 });
+
+describe('latency compensation at the engine boundary', () => {
+  let engine;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+    await engine.addToQueue([makeFile()]);
+  });
+
+  it('sums output and base latency on a normal wired setup', () => {
+    engine.play();
+    engine.ctx.outputLatency = 0.12;
+    engine.ctx.baseLatency = 0.01;
+    expect(engine.outputLatency()).toBeCloseTo(0.13, 6);
+  });
+
+  it('clamps an oversized Bluetooth report instead of dropping compensation', () => {
+    /* a dongle reporting 0.56s used to fall past the sanity ceiling and
+       return ZERO — the grid then fired half a second early every beat,
+       which is far worse than clipping the estimate */
+    engine.play();
+    engine.ctx.outputLatency = 0.56;
+    engine.ctx.baseLatency = 0.01;
+    expect(engine.outputLatency()).toBe(0.5);
+  });
+
+  it('returns zero when the browser reports nothing usable', () => {
+    delete engine.ctx.outputLatency;
+    delete engine.ctx.baseLatency;
+    expect(engine.outputLatency()).toBe(0);
+  });
+});
+
+describe('getLevels content window', () => {
+  let engine;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+  });
+
+  it('does not dilute level with the silent bins above ~16kHz', () => {
+    /* flat mid content across bins 2..743 and nothing above: the average
+       must run over the content window only, not all 1024 bins — the old
+       full-spectrum mean measured this track at ~72% of its real loudness */
+    engine.analyser.getByteFrequencyData = (arr) => {
+      for (let i = 0; i < arr.length; i++) arr[i] = i < 744 ? 100 : 0;
+    };
+    const lv = engine.getLevels();
+    expect(lv.level).toBeCloseTo(100 / 255, 5);
+  });
+
+  it('keeps cymbal air beyond 8kHz in the high band', () => {
+    /* energy only in the ~9-15kHz air band: the old band stopped at 8kHz
+       and read it as silence, so hats never reached uHigh (this fill
+       measured exactly 0 before) */
+    engine.analyser.getByteFrequencyData = (arr) => {
+      for (let i = 0; i < arr.length; i++) arr[i] = i >= 440 && i < 700 ? 200 : 0;
+    };
+    const lv = engine.getLevels();
+    // 260 lit bins inside the 652-bin high window
+    expect(lv.high).toBeCloseTo((200 * 260) / (744 - 92) / 255, 5);
+    expect(lv.bass).toBe(0);
+    expect(lv.mid).toBe(0);
+  });
+});

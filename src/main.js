@@ -1,6 +1,7 @@
 import { setIcon } from './icons.js';
 import { applyAccent } from './chrome.js';
 import { MODES, THEMES } from './themes.js';
+import { modeArt } from './mode-art.js';
 import { AudioEngine } from './audio.js';
 import { Renderer, loadExtraModes } from './visualizers.js';
 import { fmtTime, pickRandom, fmtStamp, computePeaks, esc } from './utils.js';
@@ -15,7 +16,7 @@ import {
 import { readJSON, writeJSON, writeText, readText, remove as removeStored } from './storage.js';
 import { readPresets, writePreset, PRESET_SLOTS } from './presets.js';
 import {
-  shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, initialTier,
+  shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, relaxBaseline, initialTier,
   TIERS, SEVERE,
 } from './adaptive.js';
 import * as Library from './library.js';
@@ -111,7 +112,10 @@ document.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.
 const modeList = $('mode-list');
 MODES.forEach((m) => {
   const btn = document.createElement('button');
+  const art = modeArt(m.id);
   btn.className = 'mode-card' + (m.id === state.modeId ? ' is-active' : '');
+  btn.dataset.story = art.story;
+  btn.title = `${m.name} — ${art.story}`;
   /* The tile shows the mode. Every card used to carry a small line icon and
      nothing else, so the picker was 22 near-identical rectangles for a
      decision that is entirely visual — and two of the icons were reused
@@ -121,7 +125,7 @@ MODES.forEach((m) => {
   btn.innerHTML = `
     <div class="mode-preview">
       <span class="ic" data-icon="${m.icon}"></span>
-      <img class="mode-thumb" src="/modes/${m.id}.webp" alt="" aria-hidden="true"
+    <img class="mode-thumb" src="${art.image}" alt="" aria-hidden="true"
            loading="lazy" decoding="async" width="176" height="108">
     </div>
     <span class="mode-name">${m.name}</span>`;
@@ -133,24 +137,6 @@ MODES.forEach((m) => {
     btn.classList.remove('has-thumb');
     thumb.remove();
   });
-  /* hover animation: a 10-frame sprite strip baked by make-thumbs.mjs,
-     walked with a CSS steps() animation. The strip is only fetched the
-     first time a card is hovered, so the drawer's first paint still costs
-     just the static thumbnails. */
-  const preview = btn.querySelector('.mode-preview');
-  const anim = document.createElement('div');
-  anim.className = 'mode-thumb-anim';
-  preview.appendChild(anim);
-  let stripRequested = false;
-  btn.addEventListener('pointerenter', () => {
-    if (!btn.classList.contains('has-thumb')) return;
-    if (!stripRequested) {
-      anim.style.backgroundImage = `url('/modes/${m.id}-anim.webp')`;
-      stripRequested = true;
-    }
-    btn.classList.add('is-anim');
-  });
-  btn.addEventListener('pointerleave', () => btn.classList.remove('is-anim'));
   btn.addEventListener('click', () => setMode(m.id));
   modeList.appendChild(btn);
 });
@@ -165,6 +151,7 @@ autoDot.className = 'theme-dot theme-dot-auto';
 autoDot.dataset.theme = 'auto';
 autoDot.title = 'Auto — from album art';
 autoDot.setAttribute('aria-label', 'Auto theme from album art');
+autoDot.setAttribute('aria-pressed', String(state.themeId === 'auto'));
 autoDot.style.background = 'conic-gradient(from 210deg, #ff2bd6, #ff8a00, #ccff00, #00f0ff, #7b2bff, #ff2bd6)';
 autoDot.addEventListener('click', () => setTheme('auto'));
 themeRow.appendChild(autoDot);
@@ -174,6 +161,8 @@ THEMES.forEach((t) => {
   btn.dataset.theme = t.id;
   btn.style.background = t.css;
   btn.title = t.name;
+  btn.setAttribute('aria-label', t.name);
+  btn.setAttribute('aria-pressed', String(t.id === state.themeId));
   btn.addEventListener('click', () => setTheme(t.id));
   themeRow.appendChild(btn);
 });
@@ -192,10 +181,10 @@ SLIDERS.forEach((cfg) => {
   group.className = 'slider-group';
   group.innerHTML = `
     <div class="slider-head">
-      <label class="slider-label mono">${cfg.label}</label>
+      <label class="slider-label mono" for="sl-${cfg.id}">${cfg.label}</label>
       <span class="slider-value" id="sl-val-${cfg.id}">${cfg.fmt(cfg.value)}</span>
     </div>
-    <input type="range" class="ctrl-slider" id="sl-${cfg.id}" min="${cfg.min}" max="${cfg.max}" step="${cfg.step}" value="${cfg.value}">`;
+    <input type="range" class="ctrl-slider" id="sl-${cfg.id}" min="${cfg.min}" max="${cfg.max}" step="${cfg.step}" value="${cfg.value}" aria-describedby="sl-val-${cfg.id}">`;
   slidersWrap.appendChild(group);
   const input = group.querySelector('input');
   sliderEls[cfg.id] = input;
@@ -277,11 +266,16 @@ if (eqBands) {
   EQ_FREQS.forEach((f, i) => {
     const row = document.createElement('div');
     row.className = 'eq-row';
-    row.innerHTML = `<span class="mono eq-label">${f >= 1000 ? f/1000 + 'K' : f}</span><input type="range" class="ctrl-slider eq-slider" min="-10" max="10" step="0.5" value="0" /><span class="mono eq-val">0</span>`;
+    const label = f >= 1000 ? `${f / 1000}K` : `${f}`;
+    const accessibleLabel = f >= 1000 ? `${f / 1000} kilohertz` : `${f} hertz`;
+    const inputId = `eq-${f}`;
+    const valueId = `${inputId}-value`;
+    row.innerHTML = `<label class="mono eq-label" for="${inputId}">${label}</label><input id="${inputId}" type="range" class="ctrl-slider eq-slider" min="-10" max="10" step="0.5" value="0" aria-label="${accessibleLabel} equalizer gain" aria-describedby="${valueId}" aria-valuetext="0 dB" /><span class="mono eq-val" id="${valueId}">0</span>`;
     eqBands.appendChild(row);
     row.querySelector('input').addEventListener('input', (e) => {
       const v = parseFloat(e.target.value);
       row.querySelector('.eq-val').textContent = v > 0 ? '+' + v : v;
+      e.target.setAttribute('aria-valuetext', `${v > 0 ? '+' : ''}${v} dB`);
       engine.setEq(i, v);
       saveSettings();
     });
@@ -519,6 +513,35 @@ function pulseStage() {
   st.classList.add('is-look-change');
 }
 
+let artSwapToken = 0;
+function setModeArt(id) {
+  const image = $('mode-art');
+  const story = modeArt(id);
+  if (!image) return;
+  $('stage').dataset.mode = id;
+  $('mode-story-chapter').textContent = story.chapter;
+  $('mode-story-title').textContent = story.title;
+  $('mode-story-copy').textContent = story.story;
+
+  const token = ++artSwapToken;
+  const next = new Image();
+  next.decoding = 'async';
+  next.onload = () => {
+    if (token !== artSwapToken) return;
+    image.classList.remove('is-art-enter');
+    image.classList.add('is-art-switch');
+    window.setTimeout(() => {
+      if (token !== artSwapToken) return;
+      image.src = story.image;
+      image.classList.remove('is-art-switch');
+      image.classList.add('is-art-enter');
+      window.setTimeout(() => image.classList.remove('is-art-enter'), 720);
+    }, 110);
+  };
+  next.onerror = () => { image.src = story.image; };
+  next.src = story.image;
+}
+
 function setMode(id) {
   /* Each mode has its own cost, and the tier adapted for the last one says
      nothing about this one — without this, stepping down for a heavy mode
@@ -536,6 +559,7 @@ function setMode(id) {
   const start = initialTier(state.rayQuality);
   if (ray.ok && ray.quality !== start) ray.setQuality(start);
   state.modeId = id;
+  setModeArt(id);
   renderer.setMode(id);
   ray.setMode(id);
   [...modeList.children].forEach((c, i) => setToggle(c, MODES[i].id === id, 'is-active'));
@@ -1679,7 +1703,7 @@ aboutPanel.innerHTML = `
     <h2 id="about-title">AUDIOVISOR</h2>
     <div class="about-tag mono">Real-time audio visualizer</div>
     <p id="about-description">Drop in a track, stream a URL, capture any app's audio or connect your
-    Spotify account — twenty-two stage modes, twenty-five theme moods, a full
+    Spotify account — ${MODES.length} stage modes, twenty-five theme moods, a full
     FX chain and a beat tracker, all rendered live.</p>
     <div class="about-keys">
       <div class="about-key"><kbd>SPACE</kbd><span>Play / Pause</span></div>
@@ -1697,11 +1721,15 @@ aboutPanel.innerHTML = `
     </div>
   </div>`;
 $('shell').appendChild(aboutPanel);
+aboutPanel.hidden = true;
 aboutPanel.inert = true;
 
 const aboutClose = aboutPanel.querySelector('.about-close');
 let aboutReturnFocus = null;
+let aboutHideTimer = null;
 function setAboutOpen(open) {
+  clearTimeout(aboutHideTimer);
+  if (open) aboutPanel.hidden = false;
   aboutPanel.classList.toggle('is-open', open);
   $('nav-about').setAttribute('aria-expanded', String(open));
   if (open) {
@@ -1716,6 +1744,9 @@ function setAboutOpen(open) {
     aboutPanel.inert = true;
     aboutPanel.setAttribute('aria-hidden', 'true');
     restore?.focus?.();
+    aboutHideTimer = setTimeout(() => {
+      if (!aboutPanel.classList.contains('is-open')) aboutPanel.hidden = true;
+    }, 340);
   }
 }
 $('nav-about').addEventListener('click', () => {
@@ -2190,19 +2221,25 @@ function frameStep(now) {
      not an ambiguous signal. See src/adaptive.js. */
   if (shouldEvaluate(frameTimes, rayBaseline)) {
     const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+    /* a window is the natural pace to revisit the baseline: one lucky frame
+       can pin the session best below what the display ever achieves again,
+       and relaxing per-frame would tie recovery speed to frame timing */
+    rayBaselineEstimate = relaxBaseline(rayBaselineEstimate, frameTimes);
+    const relaxed = baselineOr(rayBaselineEstimate);
     frameTimes.length = 0;
     if (state.raytraceWanted && ray.ok) {
-      const { tier, streak } = nextTier(ray.quality, avg, state.rayQuality, rayBaseline, healthyStreak);
+      const { tier, streak } = nextTier(ray.quality, avg, state.rayQuality, relaxed, healthyStreak);
       healthyStreak = streak;
       if (tier !== ray.quality) ray.setQuality(tier);
     } else {
-      renderer.setQuality(next2dQuality(renderer.quality, avg, rayBaseline));
+      renderer.setQuality(next2dQuality(renderer.quality, avg, relaxed));
     }
   }
 
 }
 
 loadSettings();
+setModeArt(state.modeId);
 /* The CSS ships the brass tokens and state defaults to the brass theme, so
    first run happens to line up — but that is a coincidence between two files,
    and it breaks silently the day the default theme changes. Derive the accent
@@ -2227,7 +2264,7 @@ requestAnimationFrame(frame);
 function runTour() {
   const steps = [
     ['Drop <b>audio</b> or press <b>Space</b> to begin', 800],
-    ['<b>M</b> cycles 22 modes · <b>T</b> cycles 25 themes', 3800],
+    [`<b>M</b> cycles ${MODES.length} modes · <b>T</b> cycles ${THEMES.length} themes`, 3800],
     ['<b>C</b> Chop N Screwed · <b>L</b> Library · <b>F</b> Cinema', 6800],
     ['<b>R</b> random look · right-click P1-P3 to save looks', 9800],
   ];

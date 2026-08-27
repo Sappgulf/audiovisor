@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, initialTier, isLowPowerDevice,
+  shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, relaxBaseline, initialTier, isLowPowerDevice,
   TIERS, WINDOW, FAST_WINDOW, DEFAULT_BASELINE_MS, SEVERE,
 } from '../src/adaptive.js';
 
@@ -82,6 +82,43 @@ describe('estimateBaseline', () => {
 
   it('never rises above the clamp, so a slow session cannot excuse itself', () => {
     expect(estimateBaseline(fill(10, 100), 100)).toBeLessThanOrEqual(40);
+  });
+});
+
+describe('relaxBaseline', () => {
+  /* One lucky frame pins the session best forever; when the display can
+     never get near that number again, every comfortable window reads as over
+     budget against an unreachable floor. */
+  it('drags a stale lucky estimate up toward what the machine manages now', () => {
+    const out = relaxBaseline(6, fill(WINDOW, 16.7));
+    expect(out).toBeGreaterThan(6);
+    expect(out).toBeLessThan(16.7);        // converges, never overshoots
+  });
+
+  it('holds the line when the estimate is genuinely achievable', () => {
+    expect(relaxBaseline(16.7, fill(WINDOW, 16.9))).toBeCloseTo(16.7, 1);
+  });
+
+  it('recent fast frames within the window keep the floor down', () => {
+    const mixed = fill(WINDOW - 2, 20).concat([6.5, 6.5]);
+    expect(relaxBaseline(6, mixed)).toBeLessThan(8);
+  });
+
+  it('stays inside the same clamps the estimator uses', () => {
+    const high = relaxBaseline(39, fill(WINDOW, 400));
+    const low = relaxBaseline(6, fill(WINDOW, 4));
+    expect(high).toBeLessThanOrEqual(40);
+    expect(low).toBeGreaterThanOrEqual(6);
+  });
+
+  it('passes an unknown estimate through untouched', () => {
+    expect(relaxBaseline(null, fill(WINDOW, 16.7))).toBeNull();
+    expect(relaxBaseline(NaN, [])).toBeFalsy();
+  });
+
+  it('recovers an unusable sample window without moving', () => {
+    // all gaps absurd (backgrounded tab): nothing learned, nothing relaxed
+    expect(relaxBaseline(12, fill(WINDOW, 4000))).toBeCloseTo(12, 5);
   });
 });
 

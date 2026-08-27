@@ -9,7 +9,7 @@ import { motionScale } from './motion.js';
  *
  * Pipeline per frame:
  *   1. scene pass   → HDR RGBA16F target, N spp with lens + AA jitter
- *   2. temporal     → blended against the previous frame in the post pass
+ *   2. temporal     → separate pre-bloom blend against the previous frame
  *   3. bloom        → bright-pass + two separable gaussians at 1/4 res
  *   4. composite    → ACES tonemap, chromatic aberration, vignette, grain
  *
@@ -172,7 +172,7 @@ export class RayStage {
       this.vao = gl.createVertexArray();
       this.uScene = this._locs(this.pScene, [
         'uRes', 'uTime', 'uMode', 'uSpp', 'uSteps', 'uRefl', 'uPalN',
-        'uBass', 'uMid', 'uHigh', 'uLevel', 'uBeat', 'uPhase',
+        'uBass', 'uMid', 'uHigh', 'uLevel', 'uBeat',
         'uSens', 'uPop', 'uBassFocus', 'uIdle', 'uDrop', 'uSpec', 'uWave', 'uHist', 'uHistRow', 'uSeed',
         'uNoise',
       ]);
@@ -193,8 +193,13 @@ export class RayStage {
       this._lastKeyMode = -1;
       this._lastKeyQ = '';
       this._lastKeyW = 0;
+      this._lastKeyH = 0;
       this.frames = 0;
       this.targets = {};
+      /* look-state revision for the static-uniform cache below; a fresh
+         program after a context restore has its own uniform storage */
+      this._lookRev = (this._lookRev || 0) + 1;
+      this._staticRev = -1;
       this.error = null;
       this.ok = true;
     } catch (e) {
@@ -274,17 +279,19 @@ export class RayStage {
 
   setMode(id) {
     const i = MODES.findIndex((m) => m.id === id);
-    if (i >= 0 && i !== this.mode) { this.mode = i; this.frames = 0; }
+    if (i >= 0 && i !== this.mode) { this.mode = i; this.frames = 0; this._lookRev++; }
   }
   setTheme(theme) {
     if (!theme) return;
     this.pal = theme.colors.slice(0, 5).map(hexToRgb);
     this.frames = 0;
+    this._lookRev++;
   }
   setQuality(q) {
     if (!QUALITY[q] || q === this.quality) return;
     this.quality = q;
     this.frames = 0;
+    this._lookRev++;
     this.resize(this.w, this.h);
   }
   setSensitivity(v) { this.sensitivity = v; }
@@ -308,17 +315,45 @@ export class RayStage {
     this.frames = 0;
   }
 
+  /* The bin map below is a constant of the input length: the same
+     pow(u, 1.9) * n * 0.72 evaluated per texel, every row. Baking it into a
+     lookup keyed by that length turns ~256 pows+floors per row and
+     ~512 per spectrum frame into array reads. Rebuilt only if a source with
+     a different fftSize shows up (analyser swap, capture tap). */
+  _histIdxFor(n) {
+    let c = this._histIdxCache;
+    if (!c || c.n !== n) {
+      const idx = new Uint16Array(HIST_W);
+      for (let i = 0; i < HIST_W; i++) {
+        idx[i] = Math.min(n - 1, Math.floor(Math.pow(i / HIST_W, 1.9) * n * 0.72));
+      }
+      this._histIdxCache = { n, idx };
+    }
+    return this._histIdxCache.idx;
+  }
+
+  /** paired primary/offset indices for the 256-wide spectrum texture */
+  _specIdxFor(n) {
+    let c = this._specIdxCache;
+    if (!c || c.n !== n) {
+      const idx = new Uint16Array(256);
+      const idx2 = new Uint16Array(256);
+      for (let i = 0; i < 256; i++) {
+        const a = Math.min(n - 1, Math.floor(Math.pow(i / 256, 1.65) * n * 0.72));
+        idx[i] = a;
+        idx2[i] = Math.min(n - 1, a + 2);
+      }
+      this._specIdxCache = { n, idx, idx2 };
+    }
+    return this._specIdxCache;
+  }
+
   /** push one spectrum row into the rolling history used by spectro/terrain */
   pushHistory(freq) {
     const gl = this.gl;
     const row = this._histScratch;
-    const n = freq.length;
-    for (let i = 0; i < HIST_W; i++) {
-      // log-ish frequency mapping so bass doesn't eat the whole texture
-      const u = i / HIST_W;
-      const idx = Math.min(n - 1, Math.floor(Math.pow(u, 1.9) * n * 0.72));
-      row[i] = freq[idx];
-    }
+    const lut = this._histIdxFor(freq.length);
+    for (let i = 0; i < HIST_W; i++) row[i] = freq[lut[i]];
     gl.bindTexture(gl.TEXTURE_2D, this.histTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, this.histRow, HIST_W, 1, gl.RED, gl.UNSIGNED_BYTE, row);
     this.histRow = (this.histRow + 1) % HIST_H;
@@ -329,13 +364,8 @@ export class RayStage {
     // reused scratch: these ran 60-144x a second and were pure GC churn
     const s = this._specScratch || (this._specScratch = new Uint8Array(256));
     if (freq) {
-      const n = freq.length;
-      for (let i = 0; i < 256; i++) {
-        const u = i / 256;
-        const idx = Math.min(n - 1, Math.floor(Math.pow(u, 1.65) * n * 0.72));
-        const idx2 = Math.min(n - 1, idx + 2);
-        s[i] = Math.max(freq[idx], freq[idx2]);
-      }
+      const { idx, idx2 } = this._specIdxFor(freq.length);
+      for (let i = 0; i < 256; i++) s[i] = Math.max(freq[idx[i]], freq[idx2[i]]);
     }
     gl.bindTexture(gl.TEXTURE_2D, this.specTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 1, gl.RED, gl.UNSIGNED_BYTE, s);
@@ -382,10 +412,6 @@ export class RayStage {
     const dt = Math.min(Math.max((dtMs || 16.7) / 1000, 0.001), 0.06);
     this.t = tOverride != null ? tOverride : this.t + dt;
 
-    /* Same boundary guard as the Canvas2D renderer. WebGL accepts a NaN
-       uniform without complaint, so a bad analysis frame does not throw
-       here — it just pushes NaN into the shader and the whole stage renders
-       as garbage. See src/levels.js. */
     /* Same boundary guard as the Canvas2D renderer. WebGL accepts a NaN
        uniform without complaint, so a bad analysis frame does not throw
        here — it just pushes NaN into the shader and the whole stage renders
@@ -445,21 +471,38 @@ export class RayStage {
     const u = this.uScene;
     gl.uniform2f(u.uRes, this.rw, this.rh);
     gl.uniform1f(u.uTime, this.t);
-    gl.uniform1i(u.uMode, this.mode);
-    gl.uniform1i(u.uSpp, q.spp);
-    gl.uniform1i(u.uSteps, q.steps);
-    gl.uniform1i(u.uRefl, q.refl);
-    gl.uniform1i(u.uPalN, this.pal.length);
-    for (let i = 0; i < 5; i++) {
-      const c = this.pal[Math.min(i, this.pal.length - 1)];
-      gl.uniform3f(this.uPal[i], c[0], c[1], c[2]);
+    /* mode/tier/palette/sampler-assignment only change with a look edit.
+       Program uniforms persist between frames, so re-uploading them
+       60-144x/s was ~20 dead calls every frame; one revision counter gates
+       the whole static block. */
+    if (this._lookRev !== this._staticRev) {
+      gl.uniform1i(u.uMode, this.mode);
+      gl.uniform1i(u.uSpp, q.spp);
+      gl.uniform1i(u.uSteps, q.steps);
+      gl.uniform1i(u.uRefl, q.refl);
+      gl.uniform1i(u.uPalN, this.pal.length);
+      for (let i = 0; i < 5; i++) {
+        const c = this.pal[Math.min(i, this.pal.length - 1)];
+        gl.uniform3f(this.uPal[i], c[0], c[1], c[2]);
+      }
+      gl.uniform1i(u.uSpec, 0);
+      gl.uniform1i(u.uWave, 1);
+      gl.uniform1i(u.uHist, 2);
+      gl.uniform1i(u.uNoise, 3);
+      this._staticRev = this._lookRev;
     }
+    /* unit bindings are global state the accumulation/blur/post passes keep
+       overwriting, so these four rebinds do have to run every frame — only
+       the sampler assignments above are safely cached */
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.specTex);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.waveTex);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.histTex);
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
     gl.uniform1f(u.uBass, lv.bass || 0);
     gl.uniform1f(u.uMid, lv.mid || 0);
     gl.uniform1f(u.uHigh, lv.high || 0);
     gl.uniform1f(u.uLevel, idle ? 0.12 : (lv.level || 0));
     gl.uniform1f(u.uBeat, this.beat);
-    gl.uniform1f(u.uPhase, lv.beatPhase || 0);
     gl.uniform1f(u.uSens, this.sensitivity);
     gl.uniform1f(u.uPop, this.colorPop);
     gl.uniform1f(u.uBassFocus, this.bassFocus);
@@ -469,10 +512,6 @@ export class RayStage {
     gl.uniform1f(u.uDrop, (lv.drop || 0) * motionScale());
     gl.uniform1f(u.uHistRow, this.histRow / HIST_H);
     gl.uniform1f(u.uSeed, (this.frames % 64) * 0.618 + 0.13);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.specTex); gl.uniform1i(u.uSpec, 0);
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.waveTex); gl.uniform1i(u.uWave, 1);
-    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.histTex); gl.uniform1i(u.uHist, 2);
-    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.noiseTex); gl.uniform1i(u.uNoise, 3);
     this._fullscreen();
 
     /* ---- 2. temporal accumulation (linear HDR, pre-bloom) ---- */
@@ -482,10 +521,11 @@ export class RayStage {
     // hits stay crisp instead of ghosting. Three field compares instead of
     // the template string this used to build every frame.
     const stable = this._lastKeyMode === this.mode && this._lastKeyQ === this.quality
-      && this._lastKeyW === this.rw && this.frames > 1;
+      && this._lastKeyW === this.rw && this._lastKeyH === this.rh && this.frames > 1;
     this._lastKeyMode = this.mode;
     this._lastKeyQ = this.quality;
     this._lastKeyW = this.rw;
+    this._lastKeyH = this.rh;
     // a beat softens the blend so hits stay crisp, but killing it entirely
     // left every beat frame full of sampling noise
     const blend = stable ? q.blend * (1 - Math.min(this.beat, 0.6) * 0.5) : 0;
@@ -505,24 +545,29 @@ export class RayStage {
     }
     const lit = accumulated ? next : scene;
 
-    /* ---- 3. bloom: bright-pass H, then V (quarter res) ---- */
-    gl.useProgram(this.pBlur);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, blurA.fbo);
-    gl.viewport(0, 0, bw, bh);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lit.tex);
-    gl.uniform1i(this.uBlur.uTex, 0);
-    gl.uniform2f(this.uBlur.uTexel, 1 / this.rw, 1 / this.rh);
-    gl.uniform2f(this.uBlur.uDir, 1, 0);
-    gl.uniform1f(this.uBlur.uThreshold, 0.75);
-    gl.uniform1i(this.uBlur.uPrefilter, 1);
-    this._fullscreen();
+    /* ---- 3. bloom: bright-pass H, then V (quarter res) ----
+       the post shader multiplies the bloom texel by uBloomAmt, so at 0 the
+       whole two-pass quarter-res chain contributes nothing — skip it and
+       hand the post pass the scene texture to sample instead */
+    if (this.bloomAmount > 0.001) {
+      gl.useProgram(this.pBlur);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, blurA.fbo);
+      gl.viewport(0, 0, bw, bh);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lit.tex);
+      gl.uniform1i(this.uBlur.uTex, 0);
+      gl.uniform2f(this.uBlur.uTexel, 1 / this.rw, 1 / this.rh);
+      gl.uniform2f(this.uBlur.uDir, 1, 0);
+      gl.uniform1f(this.uBlur.uThreshold, 0.75);
+      gl.uniform1i(this.uBlur.uPrefilter, 1);
+      this._fullscreen();
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, blurB.fbo);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, blurA.tex);
-    gl.uniform2f(this.uBlur.uTexel, 1 / bw, 1 / bh);
-    gl.uniform2f(this.uBlur.uDir, 0, 1);
-    gl.uniform1i(this.uBlur.uPrefilter, 0);
-    this._fullscreen();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, blurB.fbo);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, blurA.tex);
+      gl.uniform2f(this.uBlur.uTexel, 1 / bw, 1 / bh);
+      gl.uniform2f(this.uBlur.uDir, 0, 1);
+      gl.uniform1i(this.uBlur.uPrefilter, 0);
+      this._fullscreen();
+    }
 
     /* ---- 4. composite to the screen ---- */
     gl.useProgram(this.pPost);
@@ -540,7 +585,7 @@ export class RayStage {
     gl.uniform1f(this.uPost.uPop, this.colorPop);
     gl.uniform1f(this.uPost.uDrop, (this._drop || 0) * motionScale());
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lit.tex); gl.uniform1i(this.uPost.uScene, 0);
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, blurB.tex); gl.uniform1i(this.uPost.uBloom, 1);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.bloomAmount > 0.001 ? blurB.tex : lit.tex); gl.uniform1i(this.uPost.uBloom, 1);
     this._fullscreen();
 
     this.frames++;

@@ -29,7 +29,7 @@ uniform int   uSteps;      // max march steps
 uniform int   uRefl;       // reflection bounce on/off
 uniform vec3  uPal[5];
 uniform int   uPalN;
-uniform float uBass, uMid, uHigh, uLevel, uBeat, uPhase;
+uniform float uBass, uMid, uHigh, uLevel, uBeat;
 uniform float uSens, uPop, uBassFocus;
 uniform float uIdle;
 uniform float uDrop;       // 0..1 drop envelope (breakdown → slam)
@@ -390,12 +390,16 @@ float scTensor(vec3 p) {
   vec3 cell = floor(p / 1.25);
   vec3 lp = mod(p, 1.25) - 0.625;
   float e = spec(fract(hash13(cell) * 2.3));
-  float rx = length(lp.yz) - 0.016;
-  float ry = length(lp.xz) - 0.016;
-  float rz = length(lp.xy) - 0.016;
+  /* each axis family carries one band of the mix — bass thickens one set of
+     rods, mids another, highs the third — so the lattice visibly leans
+     toward whatever the song is doing instead of staying uniform. The
+     radii are position-independent, so the SDF gradient stays Lipschitz-1. */
+  float rx = length(lp.yz) - (0.012 + uBass * 0.026);
+  float ry = length(lp.xz) - (0.012 + uMid * 0.022);
+  float rz = length(lp.xy) - (0.012 + uHigh * 0.018);
   float d = min(rx, min(ry, rz));
   g_id = 6.0; g_aux = 0.3;
-  float node = sdSphere(lp, 0.03 + e * 0.055 * uSens + uBeat * 0.015);
+  float node = sdSphere(lp, 0.03 + e * 0.06 * uSens + uBeat * 0.018);
   if (node < d) { d = node; g_id = 4.0; g_aux = e; }
   d = max(d, length(p) - 3.4);          // lattice reads as a core, not a wall
   return d;
@@ -482,44 +486,103 @@ float scFractal(vec3 p) {
   return 0.5 * log(max(r, 1e-4)) * r / dr;
 }
 
-/* 19 radar — glass dome over a swept disc */
+/* 19 radar — listening post: ribbed lattice dome, bass-breathing mast and
+   spectrum-banded contacts that flare exactly when the beam crosses them */
 float scRadar(vec3 p) {
-  // bezel ring + a few meridian ribs instead of a closed glass dome
+  /* spectrum taps live OUTSIDE the loops: every map() step would otherwise
+     pay a texture fetch per contact, which measured 2.6x the whole scene's
+     cost against hashing the same data. Four bands feed seven contacts
+     round-robin. */
+  float e0 = spec(0.18);
+  float e1 = spec(0.41);
+  float e2 = spec(0.64);
+  float e3 = spec(0.87);
   float d = abs(sdTorus(p - vec3(0.0, 0.02, 0.0), vec2(2.2, 0.035))) - 0.01;
   g_id = 6.0; g_aux = 0.2;
+  /* meridian ribs every 30° rather than the sparse six — a dome reads as a
+     dome through repetition, not through six lonely arcs */
   vec3 rq = p;
-  rq.xz *= rot(floor(atan2s(p.z, p.x) / (PI / 3.0) + 0.5) * (PI / 3.0));
-  float rib = abs(length(rq) - 2.2) - 0.012;   // meridian arc
-  rib = max(rib, abs(rq.z) - 0.03);
+  rq.xz *= rot(floor(atan2s(p.z, p.x) / (PI / 6.0) + 0.5) * (PI / 6.0));
+  float rib = abs(length(rq) - 2.18) - 0.01;
+  rib = max(rib, abs(rq.z) - 0.028);
   rib = max(rib, -p.y);
   if (rib < d) { d = rib; g_id = 6.0; g_aux = 0.2; }
-  float disc = sdCyl(p, 0.06, 2.1);
+  /* latitude hoops tie the ribs together into an actual silhouette */
+  float hoop = abs(sdTorus(p - vec3(0.0, 1.1, 0.0), vec2(1.89, 0.014))) - 0.004;
+  if (hoop < d) { d = hoop; g_id = 6.0; g_aux = 0.35; }
+  hoop = abs(sdTorus(p - vec3(0.0, 1.85, 0.0), vec2(0.82, 0.013))) - 0.004;
+  if (hoop < d) { d = hoop; g_id = 6.0; g_aux = 0.35; }
+  /* centre mast extends with bass — the post breathes */
+  float mastH = 1.45 + uBass * 0.45 + uBeat * 0.08;
+  float mast = sdCapsule(p, vec3(0.0, 0.06, 0.0), vec3(0.0, mastH, 0.0), 0.045 + uBeat * 0.012);
+  if (mast < d) { d = mast; g_id = 4.0; g_aux = 0.72; }
+  float disc = sdCyl(p, 0.06, 2.05);
   if (disc < d) { d = disc; g_id = 15.0; g_aux = 0.0; }
-  for (int i = 0; i < 6; i++) {
+  /* Contacts used to float wherever their hash put them and glow at a
+     constant intensity — decoration with no relationship to the display
+     they sat on. Now each owns a band and pulses the instant the phosphor
+     sweep passes its azimuth, matching the wedge drawn in matOf (which runs
+     at fract(a/TAU - t*0.22)), then fades until the next turn. */
+  for (int i = 0; i < 7; i++) {
     float fi = float(i);
-    float a = hash11(fi * 3.1) * TAU + uTime * 0.2;
-    float rr = 0.5 + hash11(fi * 7.7) * 1.5;
-    float e = spec(hash11(fi * 5.3));
-    vec3 c = vec3(cos(a) * rr, 0.12 + e * 0.35, sin(a) * rr);
-    float s = sdSphere(p - c, 0.045 + e * 0.07);
-    if (s < d) { d = s; g_id = 4.0; g_aux = 0.85; }
+    float h1 = hash11(fi * 3.1);
+    float h2 = hash11(fi * 7.7);
+    float band = hash11(fi * 5.3);
+    float e = fi < 0.5 ? e0 : fi < 1.5 ? e1 : fi < 2.5 ? e2 : fi < 3.5 ? e3
+            : fi < 4.5 ? e1 : fi < 5.5 ? e2 : e0;
+    float a = h1 * TAU;
+    float rr = 0.5 + h2 * 1.45;
+    float swc = fract(a / TAU - uTime * 0.22);
+    float sq = clamp(1.0 - swc * 7.0, 0.0, 1.0);
+    float fresh = sq * sq;
+    float ht = 0.10 + e * 0.4 + fresh * 0.34;
+    float ax = cos(a) * rr;
+    float az = sin(a) * rr;
+    vec3 c = vec3(ax, 0.115 + ht * 0.5, az);
+    float s = sdSphere(p - c, 0.045 + e * 0.05 + fresh * 0.05 + uBeat * 0.02);
+    if (s < d) { d = s; g_id = 4.0; g_aux = band; }
   }
   return d;
 }
 
-/* 21 gpu — voxel compute stack */
+/* 21 gpu — voxel compute stack with a corner-pylon chassis and a lone
+   orbiting data node; voxels swell with their own band under a hard cap.
+   The band tap lives outside the field so the march loop never pays for it
+   (see scRadar). */
 float scGpu(vec3 p) {
+  float ne = spec(0.43);
   vec3 q = p;
   q.xz *= rot(uTime * 0.35);
   vec3 cell = clamp(floor(q / 0.62 + 2.0), vec3(0.0), vec3(3.0));
   vec3 lp = q - (cell - 2.0 + 0.5) * 0.62;
   float e = spec(fract(dot(cell, vec3(0.11, 0.29, 0.07))));
-  float d = sdRBox(lp, vec3(0.2 + e * 0.04), 0.035);
+  /* the swell is capped: let beats push voxels past ~0.27 half-extent and
+     the 0.62 pitch leaves such narrow funnels that every ray's march length
+     blew up (measured 5x the quiet case on the sweep) */
+  float d = sdRBox(lp, vec3(0.19 + e * 0.04 + min(uBeat, 0.6) * 0.025), 0.035);
   d = max(d, sdBox(q, vec3(1.3)));
   g_id = 16.0; g_aux = e;
-  vec3 bq = q; bq.xz *= rot(uTime * 0.9);
-  float bus = sdCapsule(bq, vec3(0.0, -1.9, 0.0), vec3(0.0, 1.9, 0.0), 0.02);
-  if (bus < d) { d = bus; g_id = 4.0; g_aux = 0.8; }
+  /* four corner pylons anchor the slab so it reads as hardware. These are
+     explicit capsules rather than a modulo trick: the wrapped-corner field
+     had gradient seams that made sphere tracing crawl (measured 29ms vs
+     8ms for this scene). A 4-iteration constant loop keeps it honest. */
+  float py = 1e9;
+  for (int i = 0; i < 4; i++) {
+    float sx = i < 2 ? -0.95 : 0.95;
+    float sz = i == 0 || i == 3 ? -0.95 : 0.95;
+    py = min(py, sdCapsule(q, vec3(sx, -1.6, sz), vec3(sx, 1.6, sz), 0.032));
+  }
+  if (py < d) { d = py; g_id = 6.0; g_aux = 0.55; }
+  /* the bus rides inside the spinning frame now, reading as rigid wiring to
+     the core instead of a separate object intersecting it */
+  float wire = sdCapsule(q, vec3(0.0, -1.95, 0.0), vec3(0.0, 1.95, 0.0), 0.02);
+  if (wire < d) { d = wire; g_id = 4.0; g_aux = 0.78; }
+  /* one data node orbits in WORLD space (raw p, not the spinning frame)
+     so it sweeps past the stack edges instead of riding along with it */
+  float na = uTime * 0.55;
+  float nd = sdSphere(p - vec3(cos(na) * 1.82, sin(na * 0.73) * 0.55, sin(na) * 1.82),
+                      0.045 + ne * 0.05 * uSens);
+  if (nd < d) { d = nd; g_id = 4.0; g_aux = 0.66; }
   return d;
 }
 
@@ -610,15 +673,24 @@ Mat matOf(float id, float aux, vec3 p) {
   } else if (id < 5.5) {                // spectrogram terrace
     vec3 cc = palf(pow(clamp(aux, 0.0, 1.0), 0.55));
     m.alb = cc * 0.5; m.rough = 0.5; m.metal = 0.15;
-    m.emis = cc * (0.18 + pow(aux, 2.1) * 1.15);
+    /* the newest edge answers treble: a hat lands and the waterfall's front
+       lip lights up even where that bin's column isn't tall yet */
+    float age = clamp((p.z + 5.0) / 10.0, 0.0, 1.0);
+    m.emis = cc * (0.18 + pow(aux, 2.1) * 1.15)
+           + palf(0.82) * pow(1.0 - age, 5.0) * uHigh * 0.55;
   } else if (id < 6.5) {                // structural strut / bezel
     m.alb = palf(0.3) * 0.25; m.rough = 0.3; m.metal = 0.8;
     m.emis = palf(0.25) * (0.12 + uLevel * 0.25);
   } else if (id < 7.5) {                // terrain rock
+    float crest = pow(clamp(aux, 0.0, 1.0), 3.0);
     m.alb = mix(vec3(0.025, 0.023, 0.021), palf(aux) * 0.3, aux);
     m.rough = 0.62; m.metal = 0.18;
-    // snow-line glow on the crests plus a cool wash in the troughs
-    m.emis = palf(aux) * pow(aux, 3.0) * 1.15 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06;
+    /* snow-line glow on the crests plus a cool wash in the troughs. The ridge
+       used to freeze on hits — every other mode pulsed while the mountains
+       sat still — so the crest line now lifts with the beat and shimmers
+       with treble. */
+    m.emis = (palf(aux) * crest * 1.15 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06)
+           * (1.0 + uBeat * 0.45 + uHigh * crest * 0.35);
   } else if (id < 8.5) {                // city block + windows
     // anti-aliased window grid: hard step() speckles badly at distance
     vec3 wp = p * vec3(2.6, 3.4, 2.6);
@@ -706,7 +778,7 @@ Mat matOf(float id, float aux, vec3 p) {
   if (uMode == 3)  gain = 0.45;   // particles
   if (uMode == 5)  gain = 0.55;   // spectro terrace
   if (uMode == 6)  gain = 0.55;   // tunnel
-  if (uMode == 14) gain = 0.5;    // tensor lattice
+   if (uMode == 14) gain = 0.62;   // tensor — band-coupled rods earn more light
   if (uMode == 17) gain = 0.35;   // bloom field
   if (uMode == 9)  gain = 0.70;   // city
   if (uMode == 15) gain = 1.4;    // prism
@@ -867,9 +939,11 @@ float volDensity(vec3 p) {
     f = f * f * 1.6;                                    // more contrast between wisps
     float arms = 0.5 + 0.5 * sin(atan2s(q.z, q.x) * 2.0 + length(q.xz) * 1.9);
     float d = disc * f * (0.35 + arms);
-    d += 0.32 * exp(-length(q) * 1.1) * (1.0 + uBass);   // hot core
+    d += 0.32 * exp(-length(q) * 1.1) * (1.0 + uBass + uDrop * 0.55);   // hot core
     d *= smoothstep(6.4, 1.4, length(q));                // a wider cloud, not a ball
-    return max(0.0, d - 0.07) * (2.4 + uLevel * 2.0);
+    /* mids thicken the wisps, highs burn off the outer veil, so the cloud
+       answers the whole mix instead of only the kick; the drop slams it all */
+    return max(0.0, d - 0.07) * (2.4 + uLevel * 2.0 + uMid * 0.8 - uHigh * 0.35 + uDrop * 0.7);
   }
   if (uMode == 11) {                        // spiral galaxy
     vec3 q = p;
@@ -880,9 +954,9 @@ float volDensity(vec3 p) {
     /* the old density was so thin the disc vanished against the sky; this
        carries the arms as a real luminous sheet */
     float d = pow(arm, 3.2) * exp(-r * 0.34) * exp(-abs(q.y) * 4.5) * 3.4;
-    d += exp(-r * 3.4 - abs(q.y) * 7.0) * (1.1 + uBass * 0.8);   // bulge, not a floodlight
+    d += exp(-r * 3.4 - abs(q.y) * 7.0) * (1.1 + uBass * 0.8 + uDrop * 0.5);   // bulge, not a floodlight
     d *= 0.55 + 0.9 * fbm(q * 2.4 + uTime * 0.05);               // dust lanes inside the arms
-    return d * (1.0 + uLevel);
+    return d * (1.0 + uLevel + uMid * 0.25 + uHigh * 0.2);
   }
   // lava
   vec3 q = p;
@@ -891,12 +965,12 @@ float volDensity(vec3 p) {
     float fi = float(i);
     float ph = uTime * (0.25 + fi * 0.07) + fi * 2.1;
     vec3 c = vec3(sin(ph * 0.7) * 0.42, sin(ph) * 1.45, cos(ph * 0.6) * 0.42);
-    float rr = 0.46 + spec(fi / 5.0) * 0.3 * uSens + uBass * 0.14;
+    float rr = 0.46 + spec(fi / 5.0) * 0.3 * uSens + uBass * 0.14 + uDrop * 0.1;
     float s = length(q - c) - rr;
     d = (i == 0) ? s : smin(d, s, 0.3);
   }
   float cyl = sdCyl(q, 2.1, 1.15);
-  return max(0.0, -d * 1.1) * step(cyl, 0.0) * (0.9 + uBass * 0.7);
+  return max(0.0, -d * 1.1) * step(cyl, 0.0) * (0.9 + uBass * 0.7 + uDrop * 0.5);
 }
 
 vec3 volColor(float dens, vec3 p) {
@@ -909,7 +983,7 @@ vec3 volColor(float dens, vec3 p) {
      march — it measured a third of the nebula's brightness. Base it hotter
      so the lamp actually glows between beats. */
   float base = (uMode == 20) ? 0.95 : 0.6;
-  return c * (base + uBeat * 0.5);
+  return c * (base + uBeat * 0.5 + uDrop * 0.3);
 }
 
 /* Volume march with an optional far limit, so a surface can occlude it. */
@@ -961,13 +1035,16 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 12) { ro = vec3(sin(t * 0.17) * 3.6, 0.8, cos(t * 0.17) * 3.6); ap = 0.03; }
   else if (uMode == 13) { ro = vec3(sin(t * 0.15) * 4.2, 1.3, cos(t * 0.15) * 4.2); ap = 0.035; }
   else if (uMode == 14) { ro = vec3(sin(t * 0.1) * 3.2, 1.6 + sin(t * 0.07), cos(t * 0.1) * 3.2); ap = 0.04; }
-  else if (uMode == 15) { ro = vec3(0.0, 0.2, 4.2); ap = 0.02; }
+  /* a gentle orbit rather than the locked frontal shot: the slab itself
+     rotates, so any camera drift now produces real parallax between beam,
+     prism and fan instead of one flat diagram */
+  else if (uMode == 15) { ro = vec3(sin(t * 0.21) * 0.85, 0.25 + sin(t * 0.15) * 0.28, 4.2 + cos(t * 0.12) * 0.3); ap = 0.02; }
   else if (uMode == 16) { ro = vec3(sin(t * 0.08) * 5.0, 1.1, cos(t * 0.08) * 5.0); ap = 0.03; }
   else if (uMode == 17) { ro = vec3(sin(t * 0.07) * 1.4, cos(t * 0.06) * 0.8, 4.4); ta = vec3(0.0, 0.0, -2.6); ap = 0.19; }
   else if (uMode == 18) { ro = vec3(sin(t * 0.12) * 2.6, sin(t * 0.09) * 0.9, cos(t * 0.12) * 2.6); ap = 0.02; }
   else if (uMode == 19) { ro = vec3(sin(t * 0.1) * 3.4, 2.6, cos(t * 0.1) * 3.4); ta = vec3(0.0, -0.2, 0.0); ap = 0.03; }
   else if (uMode == 20) { ro = vec3(0.0, 0.0, 5.2); ap = 0.0; }
-  else if (uMode == 21) { ro = vec3(sin(t * 0.12) * 4.0, 2.0, cos(t * 0.12) * 4.0); ap = 0.03; }
+  else if (uMode == 21) { ro = vec3(sin(t * 0.12) * 4.0, 2.7, cos(t * 0.12) * 4.0); ta = vec3(0.0, -0.2, 0.0); ap = 0.03; }
   else if (uMode == 22) { ro = vec3(0.0, 3.3 + sin(t * 0.2) * 0.12, 2.9); ta = vec3(0.0, -0.05, 0.0); ap = 0.028; }
   else                  { ro = vec3(sin(t * 0.12) * 4.0, 2.0, cos(t * 0.12) * 4.0); ap = 0.03; }
   vec3 fw = normalize(ta - ro);
