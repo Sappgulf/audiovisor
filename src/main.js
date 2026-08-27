@@ -513,33 +513,12 @@ function pulseStage() {
   st.classList.add('is-look-change');
 }
 
-let artSwapToken = 0;
-function setModeArt(id) {
-  const image = $('mode-art');
+function setModeStory(id) {
   const story = modeArt(id);
-  if (!image) return;
   $('stage').dataset.mode = id;
   $('mode-story-chapter').textContent = story.chapter;
   $('mode-story-title').textContent = story.title;
   $('mode-story-copy').textContent = story.story;
-
-  const token = ++artSwapToken;
-  const next = new Image();
-  next.decoding = 'async';
-  next.onload = () => {
-    if (token !== artSwapToken) return;
-    image.classList.remove('is-art-enter');
-    image.classList.add('is-art-switch');
-    window.setTimeout(() => {
-      if (token !== artSwapToken) return;
-      image.src = story.image;
-      image.classList.remove('is-art-switch');
-      image.classList.add('is-art-enter');
-      window.setTimeout(() => image.classList.remove('is-art-enter'), 720);
-    }, 110);
-  };
-  next.onerror = () => { image.src = story.image; };
-  next.src = story.image;
 }
 
 function setMode(id) {
@@ -559,7 +538,7 @@ function setMode(id) {
   const start = initialTier(state.rayQuality);
   if (ray.ok && ray.quality !== start) ray.setQuality(start);
   state.modeId = id;
-  setModeArt(id);
+  setModeStory(id);
   renderer.setMode(id);
   ray.setMode(id);
   [...modeList.children].forEach((c, i) => setToggle(c, MODES[i].id === id, 'is-active'));
@@ -2239,7 +2218,7 @@ function frameStep(now) {
 }
 
 loadSettings();
-setModeArt(state.modeId);
+setModeStory(state.modeId);
 /* The CSS ships the brass tokens and state defaults to the brass theme, so
    first run happens to line up — but that is a coincidence between two files,
    and it breaks silently the day the default theme changes. Derive the accent
