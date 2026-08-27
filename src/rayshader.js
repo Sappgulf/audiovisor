@@ -211,6 +211,10 @@ float scScope(vec3 p) {
   }
   float ring = abs(sdTorus(p.xzy, vec2(2.35, 0.02))) - 0.004;
   if (ring < d) { d = ring; g_id = 1.0; g_aux = 0.6; }
+  /* instrument housing behind the face — the trace used to float in a void;
+     a bezel wall gives the accent light something to spill on */
+  float panel = sdBox(p - vec3(0.0, 0.0, -1.55), vec3(2.55, 1.85, 0.05));
+  if (panel < d) { d = panel; g_id = 21.0; g_aux = 0.22; }
   return d;
 }
 
@@ -258,6 +262,12 @@ float scKaleido(vec3 p) {
   }
   float core = sdSphere(p, 0.32 + uBeat * 0.1);
   if (core < d) { d = core; g_id = 4.0; g_aux = 0.9; }
+  /* mirror pool under the cluster — crystals reflecting into still water
+     double the subject for free and ground the whole composition */
+  /* bounded disc, not an endless plane: below-horizon sky outside the
+     pool misses cheaply instead of paying shade+shadow+AO */
+  float pool = max(p.y + 1.38, length(p.xz) - 2.5);
+  if (pool < d) { d = pool; g_id = 22.0; }
   return d;
 }
 
@@ -292,9 +302,14 @@ float scTunnel(vec3 p) {
   return d;
 }
 
-/* 7 plasma — nested torii */
+/* 7 plasma — nested torii inside a dark charging cell */
 float scPlasma(vec3 p) {
-  float d = 1e9;
+  /* enclosing chamber: the camera sits inside it, so the rings light a
+     room instead of hanging in space. Thin-shell abs() trick keeps it a
+     single cheap sdCyl per march step. */
+  float chamber = abs(sdCyl(p, 4.6, 5.2)) - 0.06;
+  g_id = 21.0; g_aux = 0.18;
+  float d = chamber;
   for (int i = 0; i < 4; i++) {
     float fi = float(i);
     float e = spec(0.06 + fi * 0.2) * uSens;
@@ -360,6 +375,11 @@ float scOrb(vec3 p) {
   if (core < d) { d = core; g_id = 18.0; g_aux = clamp(band, 0.0, 1.0); }
   float ring = abs(sdTorus(p, vec2(1.75 + uBeat * 0.45, 0.012))) - 0.004;
   if (ring < d) { d = ring; g_id = 4.0; g_aux = 0.5; }
+  /* phosphor arena floor below the orb — reusing the radar deck material
+     means the wedge sweep now plays underneath the pulse, tying the room
+     together; the accent light sells the orb's glow onto it */
+  float arena = sdCyl(p - vec3(0.0, -1.88, 0.0), 0.06, 4.0);
+  if (arena < d) { d = arena; g_id = 15.0; g_aux = 0.0; }
   return d;
 }
 
@@ -431,6 +451,9 @@ float scPrism(vec3 p) {
     g_id = 17.0;
     g_aux = clamp(0.5 + fp.y / max(spread * 2.0, 0.001), 0.0, 1.0);
   }
+  /* mirror floor: the dispersion fan finally has something to land on */
+  float flr = max(p.y + 1.45, length(p.xz - vec2(1.7, 0.0)) - 2.45);
+  if (flr < d) { d = flr; g_id = 22.0; }
   return d;
 }
 
@@ -767,6 +790,28 @@ Mat matOf(float id, float aux, vec3 p) {
     m.emis = palf(0.5) * (0.05 + uBeat * 0.22);
   } else if (id < 25.5) {               // tonearm — brushed metal
     m.alb = vec3(0.55); m.rough = 0.18; m.metal = 0.95;
+  } else if (id < 26.5) {               // matte enclosure wall
+    /* set dressing for chambers/panels. Deliberately NOT mirror-grade: walls
+       are huge on screen and a reflective wall made nearly every primary ray
+       spawn a full second trace (measured 2x the scene cost). Roughness
+       above the bounce gate keeps them cheap; they still light up under
+       accents, fog and bloom. */
+    m.alb = palf(0.28) * 0.055; m.rough = 0.55; m.metal = 0.12;
+    m.emis = palf(0.30) * 0.012 * (0.4 + uLevel);
+    /* plasma's cell carries vertical strip lights so the enclosure reads as
+       a room with practicals rather than a painted backdrop */
+    if (uMode == 7 && length(p.xz) > 3.2) {
+      float strip = smoothstep(0.955, 0.99, sin(atan2s(p.z, p.x) * 6.0))
+                  * clamp(p.y * 0.22 + 0.55, 0.0, 1.0);
+      m.emis += palf(0.62) * strip * (0.30 + uBeat * 0.55);
+    }
+  } else if (id < 27.5) {               // wet gloss floor
+    /* water under kaleido / prism fan. Same trade as above: the look is the
+       smear of bloom reflecting off a dark sheen, which shading alone gives,
+       not a traced mirror — a true mirror floor doubled every scene that
+       grew one (kaleido went ~2.5x with a full-id mirror). */
+    m.alb = vec3(0.010); m.rough = 0.37; m.metal = 0.90;
+    m.emis = palf(0.60) * 0.010 * (0.35 + uLevel);
   } else {                              // accretion disc
     vec3 cc = mix(vec3(1.0, 0.93, 0.85), palf(0.85), clamp(aux * 1.4, 0.0, 1.0));
     m.alb = vec3(0.0); m.rough = 1.0;
@@ -821,6 +866,15 @@ vec3 envBase(vec3 rd) {
     float ripple = 0.45 + 0.55 * sin(rd.x * 7.0 + uTime * 0.5) * sin(rd.x * 3.0 - uTime * 0.3);
     sky += palf(0.7) * band * ripple * (0.3 + uLevel * 0.55);
     sky += starField(rd) * 0.5;
+  }
+  if (uMode == 1) {
+    // low sun on a sea horizon: the ribbons used to play to an empty void
+    vec3 sun = normalize(vec3(0.42, 0.10, -0.90));
+    sky += palf(0.88) * pow(clamp(dot(rd, sun), 0.0, 1.0), 260.0) * (2.4 + uBeat * 1.4);
+    float hz = exp(-pow((rd.y - 0.015) * 26.0, 2.0));
+    sky += palf(0.72) * hz * (0.30 + uLevel * 0.5);
+    sky += palf(0.30) * exp(-pow((rd.y - 0.24) * 3.4, 2.0)) * 0.05;
+    sky += starField(rd) * smoothstep(0.06, 0.4, rd.y) * (0.7 + uLevel);
   }
   return sky;
 }
@@ -915,12 +969,17 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, Mat m, float shadows) {
   if (uMode == 16 && m.alb == vec3(0.0) && m.emis == vec3(0.0)) return vec3(0.0);
   vec3 v = -rd;
   vec3 col = m.emis;
+  /* The makeover's lighting lift rides the EXISTING rig: key warms with the
+     mix, the fill takes the beat pulse. Two extra brdf calls (rim GGX plus a
+     point-light accent) measured as board-wide compile/occupancy tax on all
+     23 scenes — including ones that never reached them — so the pulse moves
+     through these same evaluations instead of new ones. */
   vec3 key = normalize(vec3(0.55, 0.75, -0.4));
-  vec3 kc = palf(0.45) * (1.1 + uLevel * 0.7);
+  vec3 kc = palf(0.45) * (1.15 + uLevel * 0.8 + uBeat * 0.35);
   float sh = shadows > 0.5 ? softShadow(p + n * 0.01, key, 12.0) : 1.0;
   col += brdf(n, v, key, m, kc) * sh;
   vec3 fill = normalize(vec3(-0.6, 0.35, 0.55));
-  col += brdf(n, v, fill, m, palf(0.85) * 0.45);
+  col += brdf(n, v, fill, m, palf(0.72) * (0.5 + uBeat * 0.62));
   float occ = ao(p, n);
   col += m.alb * (1.0 - m.metal) * envColor(n) * 0.7 * occ;
   float fres = pow(max(1.0 - max(dot(n, v), 0.0), 0.0), 4.0);
@@ -1047,6 +1106,18 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 21) { ro = vec3(sin(t * 0.12) * 4.0, 2.7, cos(t * 0.12) * 4.0); ta = vec3(0.0, -0.2, 0.0); ap = 0.03; }
   else if (uMode == 22) { ro = vec3(0.0, 3.3 + sin(t * 0.2) * 0.12, 2.9); ta = vec3(0.0, -0.05, 0.0); ap = 0.028; }
   else                  { ro = vec3(sin(t * 0.12) * 4.0, 2.0, cos(t * 0.12) * 4.0); ap = 0.03; }
+  /* cinematic pass layered over every rig, applied BEFORE the basis is
+     built from ro→ta: a second, slower drift breaks the lone-sinusoid sway
+     every camera used to share; a drop pushes the whole camera toward its
+     target and tightens the lens (impact reads as compression); and the
+     aperture breathes with the pulse so depth of field feels alive */
+  {
+    float drift = sin(t * 0.058) * 0.12 + sin(t * 0.041 + 1.9) * 0.08;
+    ro.xz *= rot(drift);
+    float k = min(uDrop, 1.0);
+    ro = mix(ro, ta, k * 0.20);
+    fov *= 1.0 - k * 0.085;
+  }
   vec3 fw = normalize(ta - ro);
   vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
   vec3 up = cross(rt, fw);
