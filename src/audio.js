@@ -585,6 +585,29 @@ export class AudioEngine {
     }
   }
 
+  /** Empty the file queue and return transport/UI state to idle file mode. */
+  clearQueue() {
+    if (!this.queue.length) {
+      if (this.mode === 'file' && this.track) this._setMode('none');
+      if (this.mode === 'file') this._retireSource();
+      return;
+    }
+
+    if (this.mode === 'file') {
+      this._retireSource();
+    }
+
+    this.queue = [];
+    this.queueIndex = -1;
+    this.buffer = null;
+    this.track = null;
+    this.offset = 0;
+    this.playing = false;
+    this.beat.reset();
+    if (this.mode === 'file') this._setMode('none');
+    if (this.onQueueChange) this.onQueueChange();
+  }
+
   /** Remove a queue item. If it's playing, advance to the next track in its place. */
   removeFromQueue(i) {
     if (i < 0 || i >= this.queue.length) return;
@@ -592,10 +615,7 @@ export class AudioEngine {
     this.queue.splice(i, 1);
 
     if (!this.queue.length) {
-      if (this.source) {
-        try { this.source.stop(); } catch {}
-        this.source = null;
-      }
+      this._retireSource();
       this.buffer = null;
       this.track = null;
       this.offset = 0;
@@ -608,10 +628,7 @@ export class AudioEngine {
 
     if (removingCurrent) {
       const wasPlaying = this.playing;
-      if (this.source) {
-        try { this.source.stop(); } catch {}
-        this.source = null;
-      }
+      if (this.source) this._retireSource();
       this.playing = false;
       this._applyQueueItem(Math.min(i, this.queue.length - 1));
       if (wasPlaying) this.play();

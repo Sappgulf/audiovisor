@@ -20,9 +20,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@napi-rs/canvas": "^1.0.7",
+    "@napi-rs/canvas": "^1.0.8",
     "@shaderfrog/glsl-parser": "^7.0.1",
-    "eslint": "^10.9.0",
+    "eslint": "^10.9.1",
     "fake-indexeddb": "^6.2.5",
     "globals": "^17.11.0",
     "jsdom": "^30.0.1",

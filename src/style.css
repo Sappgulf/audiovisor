@@ -1351,6 +1351,15 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   border-bottom: 1px solid var(--border-soft);
   background: var(--glass);
 }
+.queue-clear-btn {
+  margin-left: auto;
+  padding-inline: 7px;
+  height: 24px;
+  min-height: 24px;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  opacity: 0.85;
+}
 .queue-title {
   font-size: 10px;
   letter-spacing: 0.14em;
@@ -2249,6 +2258,7 @@ html, body {
   .ghost-btn,
   .mic-btn,
   .lime-btn,
+  .queue-clear-btn,
   .icon-x,
   .add-btn,
   .drawer-tab,

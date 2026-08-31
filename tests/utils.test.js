@@ -135,6 +135,15 @@ describe('hexRgba', () => {
     expect(hexRgba('#ccff00', 0.5)).toBe('rgba(204, 255, 0, 0.5)');
     expect(hexRgba('#ffffff', 1)).toBe('rgba(255, 255, 255, 1)');
   });
+
+  it('normalizes short hex strings', () => {
+    expect(hexRgba('#f0c', 1)).toBe('rgba(255, 0, 204, 1)');
+  });
+
+  it('falls back to black for malformed colors', () => {
+    expect(hexRgba('not-a-color', 0.25)).toBe('rgba(0, 0, 0, 0.25)');
+    expect(hexRgba(null, 0.5)).toBe('rgba(0, 0, 0, 0.5)');
+  });
 });
 
 describe('pickRandom', () => {

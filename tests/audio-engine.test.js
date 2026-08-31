@@ -297,6 +297,30 @@ describe('AudioEngine', () => {
     expect(engine.playing).toBe(true);
   });
 
+  it('clearQueue empties queue and resets file transport state', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
+    engine.play();
+    engine.clearQueue();
+    expect(engine.queue.length).toBe(0);
+    expect(engine.queueIndex).toBe(-1);
+    expect(engine.track).toBeNull();
+    expect(engine.buffer).toBeNull();
+    expect(engine.source).toBeNull();
+    expect(engine.playing).toBe(false);
+    expect(engine.mode).toBe('none');
+    expect(engine.hasTrack).toBe(false);
+    expect(engine.activeInput).toBe('none');
+  });
+
+  it('clearQueue is safe when queue is already empty', async () => {
+    await engine.addToQueue([makeFile('a.mp3')]);
+    engine.removeFromQueue(0);
+    expect(engine.activeInput).toBe('none');
+    engine.clearQueue();
+    expect(engine.queue.length).toBe(0);
+    expect(engine.activeInput).toBe('none');
+  });
+
   it('removeFromQueue on the only track returns the engine to idle', async () => {
     await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
     engine.play();

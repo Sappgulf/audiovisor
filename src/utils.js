@@ -59,13 +59,22 @@ export function pickRandom(arr) {
 }
 
 export function hexRgba(hex, a) {
-  const q = Math.round(Math.max(0, Math.min(1, a)) * 1000);
-  const key = `${hex}:${q}`;
+  const alpha = Math.round(Math.max(0, Math.min(1, a)) * 1000);
+  const safe = typeof hex === 'string' ? hex.trim() : '';
+  const match = safe.match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+  const key = `${match ? match[0] : '#000000'}:${alpha}`;
   let s = _rgbaCache.get(key);
   if (s === undefined) {
     if (_rgbaCache.size > 8192) _rgbaCache.clear();
-    const n = parseInt(hex.slice(1), 16);
-    s = `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${q / 1000})`;
+    if (match) {
+      const digits = match[1].length === 3
+        ? match[1].split('').map((ch) => ch + ch).join('')
+        : match[1];
+      const n = parseInt(digits, 16);
+      s = `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha / 1000})`;
+    } else {
+      s = `rgba(0, 0, 0, ${alpha / 1000})`;
+    }
     _rgbaCache.set(key, s);
   }
   return s;

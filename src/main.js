@@ -761,10 +761,13 @@ $('shell').appendChild(libraryPanel);
 
 function renderQueue() {
   const q = engine.queue;
+  const total = q.reduce((acc, t) => acc + (t.meta?.duration || 0), 0);
+  const totalText = q.length ? ` · ${fmtTime(total)}` : '';
   let html = `
     <div class="queue-head">
       <span class="ic ic-lime" data-icon="list"></span>
-      <span class="mono queue-title">QUEUE · ${q.length}</span>
+      <span class="mono queue-title">QUEUE · ${q.length}${totalText}</span>
+      <button class="mini-btn queue-clear-btn" id="queue-clear-btn" title="Clear queue" ${q.length ? '' : 'disabled'}>CLEAR</button>
       <button class="icon-x" id="queue-shuffle-btn" title="Shuffle queue"><span class="ic ic-sm" data-icon="shuffle"></span></button>
       <button class="icon-x" id="queue-close-btn" title="Close"><span class="ic ic-sm" data-icon="close"></span></button>
     </div>`;
@@ -797,6 +800,12 @@ function renderQueue() {
       engine.removeFromQueue(i);
       renderQueue();
     });
+  });
+  queuePanel.querySelector('#queue-clear-btn')?.addEventListener('click', () => {
+    if (!q.length) return;
+    engine.clearQueue();
+    toast('QUEUE <b>CLEARED</b>', { duration: 1200 });
+    renderQueue();
   });
   queuePanel.querySelector('#queue-shuffle-btn')?.addEventListener('click', () => {
     engine.shuffleQueue();
@@ -991,6 +1000,14 @@ function updateTrackUI() {
       /* no cover to read, so Auto derives this track's look from its name */
       if (state.themeId === 'auto') applyNamePalette(t.name);
     }
+  } else {
+    $('track-name').textContent = 'No track loaded';
+    $('track-spec').textContent = 'Drop audio or pick a source';
+    $('time-total').textContent = '00:00';
+    trackArtEl.innerHTML = '<span class="ic" data-icon="layers"></span>';
+    setIcon(trackArtEl.querySelector('.ic'), 'layers');
+    trackInfoEl.classList.remove('has-art');
+    currentArtworkUrl = null;
   }
   updateMediaSession();
 }
@@ -2271,6 +2288,12 @@ function buildCmds() {
   cmds.push({ label: 'Sleep Timer 30m', action: () => document.getElementById('sleep-chip')?.click(), keys: 'sleep timer' });
   cmds.push({ label: 'Toggle Library', action: () => toggleLibrary(), keys: 'library' });
   cmds.push({ label: 'Toggle Queue', action: () => toggleQueue(), keys: 'queue' });
+  cmds.push({ label: 'Clear Queue', action: () => {
+    if (engine.queue.length) {
+      engine.clearQueue();
+      toast('QUEUE <b>CLEARED</b>', { duration: 1200 });
+    }
+  }, keys: 'clear queue' });
   cmds.push({ label: 'Toggle Fullscreen', action: () => document.getElementById('fullscreen-btn')?.click(), keys: 'fullscreen' });
   cmds.push({ label: 'Share card (PNG)', action: snapshot, keys: 'snapshot' });
   cmds.push({ label: 'Keyboard Shortcuts', action: () => document.getElementById('help-btn')?.click(), keys: 'shortcuts help keys' });
