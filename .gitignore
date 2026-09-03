@@ -1,10 +1,15 @@
 node_modules
 dist
+coverage
 .superdesign
 *.log
 .DS_Store
 .vercel
 .playwright-mcp
+
+# local env overrides (see .env.example) — never commit secrets
+.env.local
+.env.*.local
 
 # scratch / working files
 sheet*.png

@@ -14,6 +14,7 @@ export default [
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'no-empty': ['warn', { allowEmptyCatch: true }],
+      'no-debugger': 'error',
     },
   },
   {

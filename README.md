@@ -185,7 +185,7 @@ npm install
 npm run dev
 ```
 
-Requires Node 20.19+ / 22.12+ (Vite 8).
+Requires Node 20.19+ / 22.12+ (Vite 8); Node 24 recommended (see `.nvmrc`, CI runs 24).
 
 ## Tests & lint
 

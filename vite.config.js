@@ -8,6 +8,16 @@ export default defineConfig({
        undoes the split — so the hints are off and the chunks load when the
        code actually asks for them. */
     modulePreload: false,
+    // Baseline-widely-available keeps the output runnable on the last few
+    // years of browsers without shipping legacy transpilation for the
+    // stage's WebGL2/WebGPU path, which needs modern runtimes anyway.
+    target: 'baseline-widely-available',
+    sourcemap: false,
+    cssMinify: true,
+    // scripts/check-size.mjs enforces the real gzip budgets; keep Vite's
+    // own warning above the known-large entry chunk so local builds only
+    // flag unexpected growth, not the intentional splits.
+    chunkSizeWarningLimit: 160,
   },
   test: {
     /* Several suites do real work rather than mocking it — parsing every

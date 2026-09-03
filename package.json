@@ -3,12 +3,17 @@
   "private": true,
   "version": "8.13.0",
   "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint .",
+    "audit": "npm audit --audit-level=moderate",
     "size": "node scripts/check-size.mjs",
     "shots": "node scripts/render-screens.mjs",
     "og": "node scripts/make-og.mjs",
@@ -16,7 +21,8 @@
     "analyze": "node scripts/analyze-shots.mjs",
     "thumbs": "node scripts/make-thumbs.mjs",
     "sweep": "node scripts/sweep.mjs",
-    "rayshots": "node scripts/ray-shots.mjs"
+    "rayshots": "node scripts/ray-shots.mjs",
+    "ci": "npm run lint && npm test && npm run build && npm run size"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -24,7 +30,7 @@
     "@shaderfrog/glsl-parser": "^7.0.1",
     "eslint": "^10.9.1",
     "fake-indexeddb": "^6.2.5",
-    "globals": "^17.11.0",
+    "globals": "^17.12.0",
     "jsdom": "^30.0.1",
     "playwright": "^1.62.1",
     "vite": "^8.2.2",
