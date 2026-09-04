@@ -738,6 +738,12 @@ button:focus-visible, input:focus-visible {
   transition: all 0.2s var(--ease);
 }
 .mode-card:hover { background: var(--glass); border-color: var(--border-soft); }
+.mode-card:focus-visible {
+  outline: none;
+  border-color: var(--accent-line);
+  background: var(--accent-dim);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.24), 0 2px 16px rgba(0, 0, 0, 0.2);
+}
 .mode-card.is-active {
   border-color: var(--accent-line);
   background: var(--accent-dim);

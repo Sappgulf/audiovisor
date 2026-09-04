@@ -110,10 +110,15 @@ document.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.
 /* ---------- drawer sections ---------- */
 
 const modeList = $('mode-list');
+const modeCatalog = [];
 MODES.forEach((m) => {
   const btn = document.createElement('button');
   const art = modeArt(m.id);
+  const searchText = `${m.name} ${m.id} ${art.chapter} ${art.title} ${art.story}`.toLowerCase();
   btn.className = 'mode-card' + (m.id === state.modeId ? ' is-active' : '');
+  btn.setAttribute('aria-label', `${m.name} mode`);
+  btn.setAttribute('aria-pressed', String(m.id === state.modeId));
+  btn.dataset.modeId = m.id;
   btn.dataset.story = art.story;
   btn.title = `${m.name} — ${art.story}`;
   /* The tile shows the mode. Every card used to carry a small line icon and
@@ -138,6 +143,7 @@ MODES.forEach((m) => {
     thumb.remove();
   });
   btn.addEventListener('click', () => setMode(m.id));
+  modeCatalog.push({ id: m.id, searchText, button: btn });
   modeList.appendChild(btn);
 });
 modeList.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
@@ -541,7 +547,11 @@ function setMode(id) {
   setModeStory(id);
   renderer.setMode(id);
   ray.setMode(id);
-  [...modeList.children].forEach((c, i) => setToggle(c, MODES[i].id === id, 'is-active'));
+  [...modeList.children].forEach((c) => {
+    const on = c.dataset.modeId === id;
+    setToggle(c, on, 'is-active');
+    c.setAttribute('aria-pressed', String(on));
+  });
   pulseStage();
   saveSettings();
 }
@@ -1827,7 +1837,7 @@ syncDrawer();
 /* ---------- keyboard ---------- */
 
 window.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (isTypingTarget(e.target)) return;
   switch (e.code) {
     case 'Space':
       e.preventDefault();
@@ -2338,6 +2348,12 @@ cmdInput?.addEventListener('keydown', (e) => {
   else if (e.key === 'Enter') { e.preventDefault(); const c = cmdVisible[cmdActive]; if (c) { c.action(); closeCmd(); } }
   else if (e.key === 'Escape') closeCmd();
 });
+function isTypingTarget(el) {
+  if (!el || !(el instanceof HTMLElement)) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+}
 window.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); if (cmdPalette.classList.contains('is-hidden')) openCmd(); else closeCmd(); }
   if (e.key === 'Escape' && !cmdPalette.classList.contains('is-hidden')) closeCmd();
@@ -2586,22 +2602,56 @@ window.addEventListener('resize', () => moveInk(drawerTabs.find((b) => b.getAttr
 
 const modeFilter = document.getElementById('mode-filter');
 const modeEmpty = document.getElementById('mode-empty');
-modeFilter?.addEventListener('input', () => {
+let modeFilterIndex = -1;
+
+function getModeFilterCards() {
+  return modeCatalog.filter((entry) => !entry.button.classList.contains('is-filtered')).map((entry) => entry.button);
+}
+
+function applyModeFilter() {
+  if (!modeFilter) return [];
   const q = modeFilter.value.trim().toLowerCase();
   let shown = 0;
-  [...modeList.children].forEach((card, i) => {
-    const m = MODES[i];
-    const hit = !q || (m && (m.name.toLowerCase().includes(q) || m.id.includes(q)));
-    card.classList.toggle('is-filtered', !hit);
+  modeCatalog.forEach((entry) => {
+    const hit = !q || entry.searchText.includes(q);
+    entry.button.classList.toggle('is-filtered', !hit);
     if (hit) shown++;
   });
   modeEmpty?.classList.toggle('is-hidden', shown > 0);
+  return getModeFilterCards();
+}
+
+function focusModeFilterCard(step) {
+  const cards = applyModeFilter();
+  if (!cards.length) return;
+  if (step > 0) {
+    modeFilterIndex = (modeFilterIndex + 1) % cards.length;
+  } else if (step < 0) {
+    modeFilterIndex = (modeFilterIndex - 1 + cards.length) % cards.length;
+  } else {
+    modeFilterIndex = 0;
+  }
+  cards[modeFilterIndex].focus();
+}
+
+modeFilter?.addEventListener('input', () => {
+  applyModeFilter();
+  modeFilterIndex = -1;
 });
 modeFilter?.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { modeFilter.value = ''; modeFilter.dispatchEvent(new Event('input')); modeFilter.blur(); }
+  if (e.key === 'Escape') { modeFilter.value = ''; modeFilter.dispatchEvent(new Event('input')); modeFilter.blur(); return; }
   if (e.key === 'Enter') {
-    const first = [...modeList.children].find((c) => !c.classList.contains('is-filtered'));
-    if (first) first.click();
+    const cards = getModeFilterCards();
+    if (!cards.length) return;
+    const idx = Math.max(0, Math.min(modeFilterIndex, cards.length - 1));
+    const target = cards[idx] || cards[0];
+    if (target) target.click();
+    return;
+  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (modeFilterIndex < 0) modeFilterIndex = e.key === 'ArrowDown' ? -1 : 0;
+    focusModeFilterCard(e.key === 'ArrowDown' ? 1 : -1);
   }
 });
 
@@ -2660,8 +2710,7 @@ document.getElementById('help-btn')?.addEventListener('click', () => toggleShort
 document.getElementById('shortcuts-close')?.addEventListener('click', () => toggleShortcuts(false));
 shortcutsOverlay?.addEventListener('click', (e) => { if (e.target === shortcutsOverlay) toggleShortcuts(false); });
 window.addEventListener('keydown', (e) => {
-  const typing = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT';
-  if (!typing && (e.key === '?' || (e.key === '/' && !e.shiftKey))) { e.preventDefault(); toggleShortcuts(); }
+  if (!isTypingTarget(e.target) && (e.key === '?' || (e.key === '/' && !e.shiftKey))) { e.preventDefault(); toggleShortcuts(); }
   else if (e.key === 'Escape') toggleShortcuts(false);
 });
 

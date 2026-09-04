@@ -63,12 +63,20 @@ function compile(gl, type, src) {
 
 function link(gl, fragSrc) {
   const p = gl.createProgram();
-  gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, VERT));
-  gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fragSrc));
+  const vs = compile(gl, gl.VERTEX_SHADER, VERT);
+  const fs = compile(gl, gl.FRAGMENT_SHADER, fragSrc);
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
   gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-    throw new Error(`program link failed: ${gl.getProgramInfoLog(p)}`);
+    const log = gl.getProgramInfoLog(p);
+    gl.deleteProgram(p);
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    throw new Error(`program link failed: ${log}`);
   }
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
   return p;
 }
 
@@ -154,6 +162,7 @@ export class RayStage {
   }
 
   _init() {
+    this.ok = false;
     const gl = this.gl;
     this.float = !!gl.getExtension('EXT_color_buffer_float');
     gl.getExtension('OES_texture_float_linear');
