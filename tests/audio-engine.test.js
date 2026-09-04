@@ -554,3 +554,71 @@ describe('getLevels content window', () => {
     expect(lv.mid).toBe(0);
   });
 });
+
+describe('stereo width', () => {
+  let stereoWidth;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    ({ stereoWidth } = await import('../src/audio.js'));
+  });
+
+  const sine = (n, phase = 0) => {
+    const a = new Float32Array(n);
+    for (let i = 0; i < n; i++) a[i] = Math.sin((i / n) * Math.PI * 8 + phase);
+    return a;
+  };
+
+  it('reads mono (dual-mono or silence) as 0', () => {
+    const m = sine(512);
+    expect(stereoWidth(m, m.slice())).toBe(0);
+    expect(stereoWidth(new Float32Array(512), new Float32Array(512))).toBe(0);
+  });
+
+  it('reads opposite-phase material as fully wide', () => {
+    expect(stereoWidth(sine(512), sine(512, Math.PI))).toBeCloseTo(1, 5);
+  });
+
+  it('reads decorrelated sides around the middle, panned mono near zero', () => {
+    let s = 1234;
+    const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280) * 2 - 1;
+    const l = new Float32Array(512);
+    const r = new Float32Array(512);
+    for (let i = 0; i < 512; i++) { l[i] = rnd(); r[i] = rnd(); }
+    const wide = stereoWidth(l, r);
+    expect(wide).toBeGreaterThan(0.35);
+    expect(wide).toBeLessThan(0.65);
+    const c = sine(512);
+    const d = sine(512, 0.7);
+    const mostlyMono = stereoWidth(
+      c.map((v, i) => 0.8 * v + 0.2 * d[i]),
+      c.map((v, i) => 0.8 * v - 0.2 * d[i]),
+    );
+    expect(mostlyMono).toBeLessThan(0.15);
+  });
+
+  it('returns 0 for missing, mismatched or tiny inputs', () => {
+    expect(stereoWidth(null, null)).toBe(0);
+    expect(stereoWidth(new Float32Array(64), null)).toBe(0);
+    expect(stereoWidth(new Float32Array(4), new Float32Array(4))).toBe(0);
+  });
+
+  it('carries width through getLevels, defaulting to mono without a tap', async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    const engine = new AudioEngine();
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+    // tapless analysers fill silence: no L/R difference to measure
+    expect(engine.getLevels().width).toBe(0);
+    // injected L/R pair flows into levels
+    const l = sine(2048);
+    const lv = engine.getLevels({
+      freq: new Uint8Array(1024),
+      stereoL: l,
+      stereoR: l.map((v) => -v),
+    });
+    expect(lv.width).toBeCloseTo(1, 3);
+  });
+});

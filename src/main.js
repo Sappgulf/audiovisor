@@ -2176,7 +2176,7 @@ function frameStep(now) {
       bpmValueEl.textContent = bi.bpm && bi.confidence > 0.25 ? bi.bpm.toFixed(2) : '--.--';
       bassChipEl.classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));
       if (levels) {
-        const mood = detectMood({ bpm: levels.bpm, bass: levels.bass, mid: levels.mid, high: levels.high });
+        const mood = detectMood({ bpm: levels.bpm, bass: levels.bass, mid: levels.mid, high: levels.high, width: levels.width });
         if (mood) { moodValueEl.textContent = mood.tag; moodChipEl.classList.remove('is-hidden'); }
         else moodChipEl.classList.add('is-hidden');
       }

@@ -189,4 +189,62 @@ describe('BeatTracker', () => {
     expect(bt.bpm).toBe(0);
     expect(bt.phase).toBe(0);
   });
+
+  it('locks quiet material the fixed floor used to miss entirely', () => {
+    /* The old absolute 0.008 onset floor sat above the kick flux of a
+       quiet track (~0.005 at low amplitude through analyser smoothing),
+       so nothing ever fired and the stage went arrhythmic. The floor now
+       scales with a slow peak-hold of the flux: the same arrangement at
+       low amplitude must still lock, while dither (next test) must not. */
+    const bt = new BeatTracker();
+    const BINS = 1024;
+    const AMP = 0.15;
+    const sm = new Float32Array(BINS);
+    const bytes = new Uint8Array(BINS);
+    let s = 9301;
+    const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+    for (let f = 0; f < 26 * 60; f++) {
+      const t = f / 60;
+      const period = 0.5;
+      const beat = t / period;
+      const inBeat = beat - Math.floor(beat);
+      const beatNo = Math.floor(beat) % 4;
+      const kick = Math.exp(-(inBeat * period) / 0.055) * 0.95 * AMP;
+      const snare = (beatNo === 1 || beatNo === 3)
+        ? Math.exp(-(inBeat * period) / 0.09) * 0.5 * AMP : 0;
+      const hat = Math.exp(-(((beat * 2) % 1) * period / 2) / 0.02) * 0.5 * 0.35 * AMP;
+      for (let i = 0; i < BINS; i++) {
+        const u = i / BINS;
+        const v = 0.04 + rnd() * 0.02
+          + kick * Math.exp(-((u / 0.03) ** 2))
+          + snare * Math.exp(-(((u - 0.12) / 0.09) ** 2))
+          + hat * Math.exp(-(((u - 0.55) / 0.3) ** 2));
+        sm[i] += (v * 255 - sm[i]) * 0.1;   // analyser smoothing at 0.9
+        bytes[i] = Math.round(sm[i]);
+      }
+      bt.process(bytes, t);
+    }
+    expect(bt.bpm).toBeGreaterThan(118);
+    expect(bt.bpm).toBeLessThan(122);
+  });
+
+  it('does not lock converter dither or fire a pulse storm on it', () => {
+    /* Flat spectrum with ±1 LSB churn: the adaptive floor must stay above
+       it, or silence would shimmer with phantom kicks. */
+    const bt = new BeatTracker();
+    const BINS = 64;
+    let s = 4242;
+    const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+    let pulses = 0;
+    for (let f = 0; f < 20 * 60; f++) {
+      const a = new Uint8Array(BINS);
+      for (let i = 0; i < BINS; i++) a[i] = 40 + Math.floor(rnd() * 3) - 1;
+      const before = bt.pulse;
+      bt.process(a, f / 60);
+      if (bt.pulse === 1 && before !== 1) pulses++;
+    }
+    expect(bt.bpm).toBe(0);
+    expect(bt.confidence).toBe(0);
+    expect(pulses).toBeLessThan(4);
+  });
 });

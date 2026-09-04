@@ -15,6 +15,32 @@ import { DropDetector } from './drop.js';
 export const BEAT_SMOOTHING = 0.9;
 
 /**
+ * Stereo width from a pair of time-domain buffers, 0 (mono) to 1 (fully
+ * wide). Mid/side energy ratio: dual-mono collapses the side to zero,
+ * opposite-phase material collapses the mid. Silence reads 0 rather than
+ * amplifying float dust into a verdict.
+ *
+ * Pure function so it is unit-testable without an AudioContext; the engine
+ * feeds it the buffers it already pulls for the vectorscope goniometer.
+ */
+export function stereoWidth(bufL, bufR) {
+  if (!bufL || !bufR) return 0;
+  const n = Math.min(bufL.length, bufR.length);
+  if (n < 16) return 0;
+  let mid = 0;
+  let side = 0;
+  for (let i = 0; i < n; i++) {
+    const m = (bufL[i] + bufR[i]) * 0.5;
+    const s = (bufL[i] - bufR[i]) * 0.5;
+    mid += m * m;
+    side += s * s;
+  }
+  const total = mid + side;
+  if (!(total > 1e-9)) return 0;
+  return Math.min(1, Math.max(0, side / total));
+}
+
+/**
  * Unified audio engine.
  *
  * Input modes:
@@ -81,7 +107,7 @@ export class AudioEngine {
     this.freqData = null;
     this.waveData = null;
     this._frameData = { freq: null, wave: null, stereoL: null, stereoR: null };
-    this._levels = { bass: 0, mid: 0, high: 0, level: 0, bpm: 0, beatPhase: 0, beatPulse: 0, beatConfidence: 0, drop: 0, chop: false };
+    this._levels = { bass: 0, mid: 0, high: 0, level: 0, bpm: 0, beatPhase: 0, beatPulse: 0, beatConfidence: 0, drop: 0, chop: false, width: 0 };
 
     this.beat = new BeatTracker();
     this.dropDetector = new DropDetector();
@@ -1150,6 +1176,7 @@ export class AudioEngine {
       this._levels.bpm = this._levels.beatPhase = this._levels.beatPulse = this._levels.beatConfidence = 0;
       this._levels.drop = 0;
       this._levels.chop = false;
+      this._levels.width = 0;
       return this._levels;
     }
     const { freq } = d;
@@ -1190,6 +1217,11 @@ export class AudioEngine {
     this._levels.beatConfidence = bi.confidence;
     this._levels.drop = this.dropDetector.process(bass, level, beatTime);
     this._levels.chop = !!this.fx.chop;
+    /* stereo width from the goniometer tap buffers the scope already pulls;
+       synth and tapless sources carry no L/R pair and read mono (0) */
+    this._levels.width = d.stereoL && d.stereoR
+      ? stereoWidth(d.stereoL, d.stereoR)
+      : 0;
     return this._levels;
   }
 

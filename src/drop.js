@@ -10,8 +10,14 @@ import { clamp } from './utils.js';
  *   1. a slow EMA of bass energy forms the track's own baseline
  *   2. bass sagging well under that baseline for a sustained stretch arms
  *      the detector (the breakdown)
- *   3. bass surging back over the baseline while armed fires the drop
- *   4. a cooldown keeps one long breakdown from re-firing every bar
+ *   3. the arming latches for a short grace window instead of dying on the
+ *      very frame the bass climbs back — real slams arrive through analyser
+ *      smoothing over several frames, and gating on the single exit frame
+ *      meant only instant full-scale steps ever fired
+ *   4. firing additionally requires a fast broadband level rise (the slam):
+ *      a slow swell crossing back over the baseline inside the grace window
+ *      is a fade-in, not a drop, and must not trigger the choreography
+ *   5. a cooldown keeps one long breakdown from re-firing every bar
  *
  * The output is a 0..1 envelope that jumps to 1 on the fire and decays over
  * ~a second — renderers read it for slow-mo, camera punch and a bloom surge.
@@ -27,6 +33,11 @@ export class DropDetector {
     surgeRatio = 0.95,  /* fire when bass returns above baseline×this    */
     holdSec = 1.1,      /* envelope decay time from 1 → 0                */
     cooldownSec = 10,   /* minimum spacing between fires                 */
+    hotSec = 1.0,       /* arming grace after the breakdown ends         */
+    /* minimum broadband level rise for the return to count as a slam,
+       in level units per second. A real slam moves ~0.5 level in ~0.1s
+       (≈5/s through analyser smoothing); a slow swell manages ~0.1/s. */
+    slamVel = 0.5,
   } = {}) {
     this.baseTau = baseTau;
     this.breakRatio = breakRatio;
@@ -34,11 +45,15 @@ export class DropDetector {
     this.surgeRatio = surgeRatio;
     this.holdSec = holdSec;
     this.cooldownSec = cooldownSec;
+    this.hotSec = hotSec;
+    this.slamVel = slamVel;
 
     this.drop = 0;
     this._base = 0;
     this._baseSeen = false;
     this._quiet = 0;
+    this._hotUntil = -1e9;
+    this._prevLevel = 0;
     this._lastFire = -1e9;
     this._t = -1;
   }
@@ -48,6 +63,8 @@ export class DropDetector {
     this._base = 0;
     this._baseSeen = false;
     this._quiet = 0;
+    this._hotUntil = -1e9;
+    this._prevLevel = 0;
     this._lastFire = -1e9;
     this._t = -1;
   }
@@ -69,6 +86,10 @@ export class DropDetector {
     /* envelope decay runs on every frame, fire or not */
     if (dt > 0) this.drop = Math.max(0, this.drop - dt / this.holdSec);
 
+    /* broadband rise rate — the difference between a slam and a swell */
+    const vel = dt > 0 ? (level - this._prevLevel) / dt : 0;
+    this._prevLevel = level;
+
     if (firstCall) {
       this._base = bass;
       this._baseSeen = bass > 0.001;
@@ -81,7 +102,6 @@ export class DropDetector {
       return this.drop;
     }
 
-    const armed = this._quiet >= this.breakSec;
     const cooled = tSec - this._lastFire >= this.cooldownSec;
 
     if (bass < this._base * this.breakRatio) {
@@ -89,11 +109,15 @@ export class DropDetector {
          coming surge fire on a whisper) and accumulate quiet time */
       this._quiet += dt;
     } else {
-      /* The slam is a return, not a peak: a real drop brings the energy
-         back to roughly where it was, and the contrast is already guaranteed
-         by being armed (bass held under half the baseline). So the fire is
-         simply the moment bass recovers past the baseline while armed. */
-      if (armed && cooled && bass > this._base * this.surgeRatio && level > 0.12) {
+      /* Leaving (or never in) a breakdown: a sustained quiet stretch latches
+         the arming for a grace window rather than dying on this frame, so a
+         slam smeared over several frames by analyser smoothing still lands
+         inside it. */
+      if (this._quiet >= this.breakSec) this._hotUntil = tSec + this.hotSec;
+      /* The slam is a sudden return, not a slow one: bass back near the
+         baseline while hot, confirmed by a fast broadband rise. */
+      if (tSec <= this._hotUntil && cooled && bass > this._base * this.surgeRatio
+          && level > 0.12 && vel > this.slamVel) {
         this.drop = 1;
         this._lastFire = tSec;
       }

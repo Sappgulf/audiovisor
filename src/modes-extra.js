@@ -165,6 +165,10 @@ class ExtraModes {
         const g = (freq[bin] / 255) * this.sensitivity;
         let v = g > 0 ? 1 - Math.exp(-g * 1.15) : 0;
         v = v < 0.04 ? 0 : v;
+        /* onsets print brighter: the fresh column carries the beat, so kick
+           drums land in the waterfall as bright stripes instead of the
+           history showing no trace of the rhythm */
+        if (v > 0 && this.beat > 0.02) v = Math.min(1, v * (1 + this.beat * 0.35));
         const o = ((v * 255) | 0) * 3;
         const lut = this.specLut;
         for (let x = 0; x < colW; x++) {
@@ -179,12 +183,20 @@ class ExtraModes {
     ctx.globalCompositeOperation = 'lighter';
     const beam = ctx.createLinearGradient(scanX - 30, 0, scanX, 0);
     beam.addColorStop(0, 'rgba(0,0,0,0)');
-    beam.addColorStop(1, hexRgba(this._color(0), 0.22));
+    beam.addColorStop(1, hexRgba(this._color(0), 0.22 + this.beat * 0.12));
     ctx.fillStyle = beam;
     ctx.fillRect(scanX - 30, 0, 30, h);
     ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = hexRgba(this._color(0), 0.5);
+    ctx.fillStyle = hexRgba(this._color(0), 0.5 + this.beat * 0.2);
     ctx.fillRect(w - colW - 1, 0, 1, h);
+    /* the drop lands as a wash of theme colour over the waterfall — the
+       global camera punch already covers motion, so this is brightness
+       only and stays comfortable under reduced-motion */
+    const drop = this.beatInfo?.drop || 0;
+    if (drop > 0.02) {
+      ctx.fillStyle = hexRgba(this._color(0), drop * 0.10);
+      ctx.fillRect(0, 0, w, h);
+    }
   }
 
   /* ---------------- HYPERSPACE TUNNEL ---------------- */
@@ -569,7 +581,7 @@ class ExtraModes {
 
   /* ---------------- NEBULA DEEP FIELD ---------------- */
 
-  _nebula() {
+  _nebula(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h / 2;
     const minDim = Math.min(w, h);
@@ -606,6 +618,11 @@ class ExtraModes {
       const x = cx + Math.sin(this.t * b.fx * 2 + b.p1) * w * b.ax;
       const y = cy + Math.cos(this.t * b.fy * 2 + b.p2) * h * b.ay;
       const bandV = bands[b.band];
+      /* unsmoothed spectral read at this blob's position: the smoothed
+         bands alone made every filament breathe a half-beat late, so the
+         transient pokes through on top of the band envelope */
+      const rip = freq ? logSample(freq, (i + 0.5) / N) : bandV;
+      const tv = Math.max(bandV, rip * 0.9);
       const r = Math.min(minDim * 0.20, minDim * b.sz * (0.75 + bandV * 1.4 * this.sensitivity + this.beat * 0.18));
       const ci = Math.floor(this.t * 0.05 + i * 0.8);
       const sprite = this._soft(this._color(ci));
@@ -616,16 +633,16 @@ class ExtraModes {
       ctx.rotate(swirl * (i % 2 ? 1 : -1));
       ctx.drawImage(sprite, -r * 1.6, -r * 1.6, r * 3.2, r * 3.2);
       /* dense line-swept filament crossing the gas */
-      ctx.strokeStyle = hexRgba(this._color(ci), 0.22 + bandV * 0.35 * this.sensitivity);
-      ctx.lineWidth = 1 + bandV * 1.6;
+      ctx.strokeStyle = hexRgba(this._color(ci), 0.22 + tv * 0.35 * this.sensitivity);
+      ctx.lineWidth = 1 + tv * 1.6;
       ctx.beginPath();
       const fr = r * 2.1;
       ctx.moveTo(-fr, 0);
       ctx.quadraticCurveTo(0, -r * 0.9 + Math.sin(this.t * 0.9 + i) * r * 0.3, fr, 0);
       ctx.stroke();
       /* hot star core at filament center */
-      const hr = Math.max(1.4, r * 0.16 * (0.55 + bandV * 1.2));
-      ctx.globalAlpha = clamp(0.35 + bandV * 0.6, 0, 0.9);
+      const hr = Math.max(1.4, r * 0.16 * (0.55 + tv * 1.2));
+      ctx.globalAlpha = clamp(0.35 + tv * 0.6, 0, 0.9);
       ctx.drawImage(this._dot(this._color(ci)), -hr, -hr, hr * 2, hr * 2);
       ctx.restore();
     }
@@ -696,7 +713,10 @@ class ExtraModes {
         const spread = ((Math.sin(i * 7.13 + a * 3.3) + Math.cos(i * 3.71)) / 2) * 0.06 * (0.4 + v);
         const x = p.x + Math.cos(p.theta) * jitter * p.r + Math.cos(p.theta + Math.PI / 2) * spread * outer;
         const y = p.y + Math.sin(p.theta) * jitter * p.r + Math.sin(p.theta + Math.PI / 2) * spread * outer;
-        const size = 3 + v * 10 * this.sensitivity + (1 - p.tt) * 4;
+        /* capped: at max sensitivity an uncapped sprite reaches 27px
+           half-size and the arm dissolves into overlapping blobs — structure
+           first, glow second */
+        const size = Math.min(15, 3 + v * 10 * this.sensitivity + (1 - p.tt) * 4);
         const sprite = this._dot(this._color(a + Math.floor(p.tt * 2)));
         ctx.globalAlpha = clamp((0.42 + v * 0.5) * (1 - p.tt * 0.45), 0.18, 0.9);
         ctx.drawImage(sprite, x - size, y - size, size * 2, size * 2);
@@ -713,7 +733,11 @@ class ExtraModes {
     const cx = w / 2, cy = h / 2;
     const minDim = Math.min(w, h);
     const baseR = minDim * 0.18 * (0.85 + this.sm.level * 0.6);
-    if (this.beat > 0.72 && this.orbSat.length < 40 && Math.random() < 0.55) {
+    /* per-second spawn probability: a flat per-frame chance throws 2.4x as
+       many satellites at 144Hz as at 60Hz (same complement form as the
+       city peak falloff) */
+    if (this.beat > 0.72 && this.orbSat.length < 40
+        && Math.random() < 1 - Math.pow(1 - 0.55, dt60)) {
       const ang = Math.random() * Math.PI * 2;
       this.orbSat.push({
         ang,
@@ -812,8 +836,12 @@ class ExtraModes {
 
   /* ---------------- FLUID METAL — metaball membrane ---------------- */
 
-  _fluid(freq) {
+  _fluid(freq, dt) {
     const { ctx, w, h } = this;
+    /* dt in seconds for the droplet ballistics below; the render loop
+       passes real frame time, tests pass 16ms-style values, and a missing
+       argument falls back to one 60Hz step rather than freezing motion */
+    const dt60 = Number.isFinite(dt) && dt > 0 ? dt * 60 : 1;
     /* Was nine blobs orbiting the centre of the frame, linked by straight
        strokes and ringed by an ellipse — a wireframe network, and the tenth
        mode in this file to put a symmetric cluster in the middle. Metal does
@@ -890,9 +918,12 @@ class ExtraModes {
     ctx.globalAlpha = 0.10 + this.sm.level * 0.10;
     ctx.drawImage(this._soft(this._color(2)), sheenX - sheenR, surfaceY - sheenR * 0.7, sheenR * 2, sheenR * 1.05);
 
-    /* droplets thrown off the crest on beats, falling back under gravity */
+    /* droplets thrown off the crest on beats, falling back under gravity.
+       Spawn probability is per-second, not per-frame: gating on the beat
+       alone threw 2.4x as many droplets at 144Hz as at 60Hz. */
     this.fluidDrops ||= [];
-    if (this.beat > 0.5 && this.fluidDrops.length < 30) {
+    if (this.beat > 0.5 && this.fluidDrops.length < 30
+        && Math.random() < Math.min(1, dt60)) {
       const n = 1 + Math.round(this.beat * 2);
       for (let k = 0; k < n; k++) {
         const i = Math.floor(Math.random() * cols);
@@ -909,9 +940,11 @@ class ExtraModes {
     const g = h * 1.15;
     for (let k = this.fluidDrops.length - 1; k >= 0; k--) {
       const d = this.fluidDrops[k];
-      d.vy += g * 0.016;
-      d.x += d.vx * 0.016;
-      d.y += d.vy * 0.016;
+      /* fixed-step ballistics scaled by frame time: the 0.016 below is one
+         60Hz step, so motion matches at any refresh rate */
+      d.vy += g * 0.016 * dt60;
+      d.x += d.vx * 0.016 * dt60;
+      d.y += d.vy * 0.016 * dt60;
       const si = clamp(Math.round(d.x / step), 0, cols);
       if (d.y >= surf[si] || d.x < -20 || d.x > w + 20) { this.fluidDrops.splice(k, 1); continue; }
       ctx.globalAlpha = 0.55;
@@ -1361,7 +1394,9 @@ class ExtraModes {
     );
     ctx.globalAlpha = 1;
 
-    /* blips: beat drops a heavy contact, spectrum seeds lighter ones */
+    /* blips: beat drops a heavy contact, spectrum seeds lighter ones.
+       The ambient spawn chance is per-second, not per-frame, so high
+       refresh rates do not fill the scope faster. */
     if (this.beat > 0.55 && this.radarBlips.length < 48) {
       this.radarBlips.push({
         ang: this._sweepAng,
@@ -1372,7 +1407,10 @@ class ExtraModes {
         big: true,
       });
     }
-    if (freq && this.radarBlips.length < 64 && Math.random() < 0.35 + this.sm.level * 0.5) {
+    const blipP = 0.35 + this.sm.level * 0.5;
+    const dt60 = Number.isFinite(dt) && dt > 0 ? dt * 60 : 1;
+    if (freq && this.radarBlips.length < 64
+        && Math.random() < 1 - Math.pow(1 - blipP, dt60)) {
       const u = Math.random();
       this.radarBlips.push({
         ang: this._sweepAng - Math.random() * 0.25,
@@ -1670,7 +1708,7 @@ class ExtraModes {
       const nx = cx + Math.cos(ang) * r;
       const ny = cy + Math.sin(ang) * r * 0.62;
       const v = freq ? logSample(freq, (i + 1) / (nodes + 1)) : 0.5;
-      const rr = 2.0 + v * 3.6 * this.sensitivity + this.beat * 1.6;
+      const rr = Math.min(8, 2.0 + v * 3.6 * this.sensitivity + this.beat * 1.6);
       ctx.globalAlpha = clamp(0.26 + v * 0.42, 0, 0.62);
       ctx.drawImage(this._dot(this._color((i + 1) % this.theme.colors.length)), nx - rr, ny - rr, rr * 2, rr * 2);
       /* link line to core center */

@@ -39,8 +39,20 @@ export class BeatTracker {
     this._intervalScratch = new Float32Array(24);
     this._anchor = 0;        /* grid point phase-locked to onsets  */
     this._pendingOnset = null; /* onset detected, not yet audible    */
-
-    this._pendingOnset = null;
+    /* Peak-hold estimate of the ambient flux level. The fixed 0.008 onset
+       floor this scales was measured against loud material; on a quiet
+       acoustic track the kick flux sits around 0.005 and never fired at
+       all, so nothing ever locked and the stage went arrhythmic. A slow
+       peak-hold (not a mean — the mean sits in the valleys between kicks
+       and would drag the gate down into the hats on loud tracks) scales
+       the floor down for quiet music while loud peaks pin it at its old
+       fixed value, keeping locked-tempo behaviour there identical. */
+    this._fluxPeak = 0;
+    /* The adaptive floor itself: starts at the ceiling so a track's first
+       second behaves exactly like the old fixed gate (no 8th-note head
+       start for the octave voter), then relaxes toward the measured room
+       level. Attacks instantly, releases slowly. */
+    this._floor = 0.008;
   }
 
   reset() {
@@ -55,8 +67,8 @@ export class BeatTracker {
     this._fluxHistPos = 0;
     this._lastOnset = -1e9;
     this._intervalCount = 0;
-    this._onsetCount = 0;
-    this._onsetPos = 0;
+    this._fluxPeak = 0;
+    this._floor = 0.008;
   }
 
   /**
@@ -118,17 +130,30 @@ export class BeatTracker {
       : (this._prev = new Uint8Array(spectrum.length));
     prev.set(spectrum);
 
+    /* Peak-hold with a ~2s release: jumps to a new peak instantly, drifts
+       down through quieter stretches. Ratio keeps the gate proportional
+       across 20dB of material; clamps preserve the old fixed behaviour at
+       both ends (loud peaks pin the ceiling, dither never clears the
+       minimum). */
+    const dtPeak = firstCall ? 0 : Math.max(0, dt);
+    this._fluxPeak = Math.max(flux, this._fluxPeak * Math.exp(-dtPeak / 2.0));
+    const target = clamp(this._fluxPeak * 0.25, 0.0022, 0.008);
+    this._floor += (target - this._floor) *
+      (target > this._floor ? 1 : 1 - Math.exp(-dtPeak / 1.5));
+    const floorAbs = this._floor;
+
     /* Adaptive threshold: median + robust MAD noise estimate. Unlike a
        copied/sorted JS array this uses fixed storage, so analysis creates no
        per-frame garbage. Calculate before adding the current sample so a
        strong onset cannot raise its own threshold. */
-    const thresh = this._adaptiveThreshold();
+    const thresh = this._adaptiveThreshold(floorAbs);
     this._fluxHist[this._fluxHistPos] = flux;
     this._fluxHistPos = (this._fluxHistPos + 1) % this._fluxHist.length;
     this._fluxHistCount = Math.min(this._fluxHistCount + 1, this._fluxHist.length);
 
     const gap = this.bpm > 0 ? Math.max(0.12, (60 / this.bpm) * 0.33) : 0.14;
-    const rising = firstCall || flux > this._prevFlux * 1.06 + 0.0015;
+    const riseGate = clamp(this._fluxPeak * 0.06, 0.0004, 0.0015);
+    const rising = firstCall || flux > this._prevFlux * 1.06 + riseGate;
     if (this._prev && flux > thresh && rising && tSec - this._lastOnset >= gap) {
       // with no latency to wait out, flash immediately
       if (lat <= 0) this.pulse = 1;
@@ -156,9 +181,9 @@ export class BeatTracker {
     }
   }
 
-  _adaptiveThreshold() {
+  _adaptiveThreshold(floorAbs = 0.008) {
     const n = this._fluxHistCount;
-    if (n < 8) return 0.008;
+    if (n < 8) return floorAbs;
 
     /* insertion sort is faster than allocating/sorting a new Array at this
        tiny fixed window size, and keeps the RAF path allocation-free. */
@@ -185,7 +210,7 @@ export class BeatTracker {
       this._sortScratch[j] = value;
     }
     const mad = this._sortScratch[n >> 1];
-    return med + Math.max(0.008, med * 0.35, mad * 2.4);
+    return med + Math.max(floorAbs, med * 0.35, mad * 2.4);
   }
 
   _onOnset(t) {

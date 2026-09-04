@@ -56,7 +56,7 @@ describe('sanitizeLevels', () => {
   });
 
   it('always returns every field the renderer reads', () => {
-    const keys = ['bass', 'mid', 'high', 'level', 'beatPulse', 'beatPhase', 'bpm', 'beatConfidence'];
+    const keys = ['bass', 'mid', 'high', 'level', 'beatPulse', 'beatPhase', 'bpm', 'beatConfidence', 'drop', 'width'];
     for (const k of keys) expect(sanitizeLevels({}), k).toHaveProperty(k);
   });
 

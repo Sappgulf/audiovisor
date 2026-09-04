@@ -28,7 +28,7 @@ const num = (v, max = 1) => {
 export const SILENT_LEVELS = Object.freeze({
   bass: 0, mid: 0, high: 0, level: 0,
   beatPulse: 0, beatPhase: 0, bpm: 0, beatConfidence: 0,
-  drop: 0,
+  drop: 0, width: 0,
 });
 
 /**
@@ -51,6 +51,7 @@ export function sanitizeLevels(levels, out) {
   o.bpm = num(levels.bpm, 400);
   o.beatConfidence = num(levels.beatConfidence);
   o.drop = num(levels.drop);
+  o.width = num(levels.width);
   o.chop = !!levels.chop;
   return o;
 }

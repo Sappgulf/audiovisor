@@ -54,6 +54,21 @@ describe('Renderer', () => {
     expect(renderer.mode).toBe('bars');
   });
 
+  it('setMode clears transient effect state from other modes', () => {
+    /* shockwave rings, droplets and nebula blobs decay on their own, but a
+       mode switch and quick return inside their lifetime used to replay
+       stale effects over the new scene */
+    renderer._orbWaves = [{ r: 10, a: 0.4 }];
+    renderer._tensorWaves = [{ r: 5, a: 0.3 }];
+    renderer.fluidDrops = [{ x: 1, y: 2 }];
+    renderer.nebula = [{ ax: 0.1 }];
+    renderer.setMode('void');
+    expect(renderer._orbWaves).toEqual([]);
+    expect(renderer._tensorWaves).toEqual([]);
+    expect(renderer.fluidDrops).toEqual([]);
+    expect(renderer.nebula).toBeNull();
+  });
+
   it('setTheme updates theme and cache sig', () => {
     const t = THEMES.find(th => th.id === 'cyber');
     renderer.setTheme(t);

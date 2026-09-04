@@ -180,6 +180,15 @@ export class Renderer {
     this._scopePts = null;
     this.radarBlips = [];
     this.lavaBlobs = null;
+    /* transient effect state from the extra modes: shockwave rings, fluid
+       droplets and nebula blobs all decay on their own, but switching away
+       and back within their lifetime popped stale effects into the new
+       scene (a shockwave from the last visit replaying over silence). All
+       four rebuild lazily, so clearing is free. */
+    this._orbWaves = [];
+    this._tensorWaves = [];
+    this.fluidDrops = [];
+    this.nebula = null;
   }
   setTheme(t) {
     this.theme = t;
@@ -578,10 +587,10 @@ export class Renderer {
       case 'plasma': this._plasma(freq, dt); break;
       case 'terrain': this._terrain(freq, dt); break;
       case 'city': this._city(freq, dt60); break;
-      case 'nebula': this._nebula(); break;
+      case 'nebula': this._nebula(freq); break;
       case 'spiral': this._spiral(freq); break;
       case 'orb': this._orb(freq, dt60, dt); break;
-      case 'fluid': this._fluid(freq); break;
+      case 'fluid': this._fluid(freq, dt); break;
       case 'tensor': this._tensor(freq, dt, dt60); break;
       case 'prism': this._prism(freq); break;
       case 'void': this._void(freq); break;

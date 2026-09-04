@@ -29,4 +29,16 @@ describe('detectMood', () => {
   it('detects hardcore 185+', () => {
     expect(detectMood({ bpm: 190, bass: 0.5, mid: 0.3, high: 0.4 }).tag).toBe('Hardcore');
   });
+  it('keeps every tag without width (unmeasured sources are unaffected)', () => {
+    expect(detectMood({ bpm: 75, bass: 0.8, mid: 0.3, high: 0.2, width: undefined }).tag).toBe('Lo-Fi');
+    expect(detectMood({ bpm: 124, bass: 0.4, mid: 0.4, high: 0.6, width: undefined }).tag).toBe('EDM');
+  });
+  it('reads spacious bass under 88 as downtempo, not lo-fi', () => {
+    expect(detectMood({ bpm: 75, bass: 0.8, mid: 0.3, high: 0.2, width: 0.6 }).tag).toBe('Downtempo');
+    expect(detectMood({ bpm: 75, bass: 0.8, mid: 0.3, high: 0.2, width: 0.1 }).tag).toBe('Lo-Fi');
+  });
+  it('reads narrow bright 112-128 as house, wide as EDM', () => {
+    expect(detectMood({ bpm: 124, bass: 0.4, mid: 0.4, high: 0.6, width: 0.1 }).tag).toBe('House');
+    expect(detectMood({ bpm: 124, bass: 0.4, mid: 0.4, high: 0.6, width: 0.7 }).tag).toBe('EDM');
+  });
 });
