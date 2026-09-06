@@ -144,6 +144,24 @@ MODES.forEach((m) => {
     thumb.remove();
   });
   btn.addEventListener('click', () => setMode(m.id));
+  btn.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const cards = getModeFilterCards();
+    if (!cards.length) return;
+    if (e.key === 'Home') {
+      modeFilterIndex = 0;
+      cards[0]?.focus({ preventScroll: true });
+      return;
+    }
+    if (e.key === 'End') {
+      modeFilterIndex = cards.length - 1;
+      cards[modeFilterIndex]?.focus({ preventScroll: true });
+      return;
+    }
+    focusModeFilterCard(e.key === 'ArrowDown' ? 1 : -1);
+  });
   modeCatalog.push({ id: m.id, searchText, button: btn });
   modeList.appendChild(btn);
 });
@@ -2077,8 +2095,15 @@ syncDrawer();
 
 /* ---------- keyboard ---------- */
 
+function isModePickerTarget(el) {
+  if (!el || !(el instanceof HTMLElement)) return false;
+  if (el.id === 'mode-filter') return true;
+  return Boolean(el.closest?.('#mode-list'));
+}
+
 window.addEventListener('keydown', (e) => {
   if (isTypingTarget(e.target)) return;
+  if (isModePickerTarget(e.target) || isModePickerTarget(document.activeElement)) return;
   switch (e.code) {
     case 'Space':
       e.preventDefault();
@@ -2897,7 +2922,9 @@ function syncModeFilterTabStops(cards) {
   if (primary) primary.tabIndex = 0;
   if (selected) {
     const idx = visibleCards.indexOf(selected);
-    modeFilterIndex = idx >= 0 ? idx : (visibleCards.length ? 0 : -1);
+    if (modeFilterIndex < 0 || modeFilterIndex >= visibleCards.length) {
+      modeFilterIndex = idx >= 0 ? idx : (visibleCards.length ? 0 : -1);
+    }
   }
 }
 
