@@ -764,17 +764,291 @@ function loadSettings() {
 
 const queuePanel = document.createElement('div');
 queuePanel.className = 'queue-panel is-hidden';
+queuePanel.setAttribute('role', 'dialog');
+queuePanel.setAttribute('aria-label', 'Queue');
+queuePanel.setAttribute('aria-hidden', 'true');
 $('shell').appendChild(queuePanel);
 
 const libraryPanel = document.createElement('div');
 libraryPanel.className = 'library-panel is-hidden';
 libraryPanel.setAttribute('role', 'dialog');
 libraryPanel.setAttribute('aria-label', 'Library');
+libraryPanel.setAttribute('aria-hidden', 'true');
 $('shell').appendChild(libraryPanel);
+
+let queueActiveIndex = 0;
+let libraryActiveIndex = 0;
+
+const getQueueRows = () => queuePanel.querySelectorAll('.queue-row');
+const getLibraryRows = () => libraryPanel.querySelectorAll('.library-row');
+
+function setQueueActive(index, doFocus = false) {
+  const rows = getQueueRows();
+  const list = queuePanel.querySelector('.queue-list');
+  if (!rows.length) {
+    queueActiveIndex = 0;
+    list?.removeAttribute('aria-activedescendant');
+    return;
+  }
+  queueActiveIndex = clampActive(index, rows.length);
+  rows.forEach((row, i) => {
+    row.tabIndex = i === queueActiveIndex ? 0 : -1;
+    row.setAttribute('aria-selected', String(i === queueActiveIndex));
+    if (i === queueActiveIndex && list) list.setAttribute('aria-activedescendant', row.id);
+  });
+  if (doFocus) rows[queueActiveIndex]?.focus();
+}
+
+function setLibraryActive(index, doFocus = false) {
+  const rows = getLibraryRows();
+  const list = libraryPanel.querySelector('.library-list');
+  if (!rows.length) {
+    libraryActiveIndex = 0;
+    list?.removeAttribute('aria-activedescendant');
+    return;
+  }
+  libraryActiveIndex = clampActive(index, rows.length);
+  rows.forEach((row, i) => {
+    row.tabIndex = i === libraryActiveIndex ? 0 : -1;
+    row.setAttribute('aria-selected', String(i === libraryActiveIndex));
+    if (i === libraryActiveIndex && list) list.setAttribute('aria-activedescendant', row.id);
+  });
+  if (doFocus) rows[libraryActiveIndex]?.focus();
+}
+
+function playQueueRow(index) {
+  if (engine.captureActive || engine.micActive || engine.mode !== 'file') return;
+  engine.playTrack(index);
+  renderQueue();
+  setQueueActive(index, true);
+}
+
+async function playLibraryRecord(id) {
+  const rec = await Library.getLibraryEntry(id);
+  if (!rec) return;
+  if (engine.captureActive) await engine.toggleCapture();
+  if (engine.micActive) await engine.toggleMic();
+  if (engine.isExternal()) engine.pause();
+  engine.stopStream();
+  const blob = new Blob([rec.arrayBuffer]);
+  const file = new File([blob], rec.name + '.' + rec.ext.toLowerCase());
+  await engine.addToQueue([file]);
+  if (rec.edits) {
+    for (const [k, v] of Object.entries(rec.edits)) {
+      if (v) engine.setFx(k, true);
+    }
+  }
+  toggleLibrary(false);
+  toast(`Loaded <b>${esc(rec.name)}</b> from library`);
+}
 
 libraryPanel.addEventListener('input', (e) => {
   if ((e.target instanceof HTMLInputElement) && e.target.id === 'lib-search') {
     renderLibrary();
+  }
+});
+
+queuePanel.addEventListener('click', (e) => {
+  const clear = e.target.closest('#queue-clear-btn');
+  const shuffle = e.target.closest('#queue-shuffle-btn');
+  const close = e.target.closest('#queue-close-btn');
+  if (clear || shuffle || close) {
+    if (clear) {
+      if (!engine.queue.length) return;
+      engine.clearQueue();
+      toast('QUEUE <b>CLEARED</b>', { duration: 1200 });
+      renderQueue();
+      setQueueActive(queueActiveIndex, false);
+      return;
+    }
+    if (shuffle) {
+      engine.shuffleQueue();
+      renderQueue();
+      setQueueActive(queueActiveIndex, false);
+      toast('QUEUE <b>SHUFFLED</b>', { duration: 1200 });
+      return;
+    }
+    if (close) {
+      toggleQueue(false);
+      return;
+    }
+  }
+
+  const remove = e.target.closest('.queue-remove');
+  if (remove) {
+    const i = Number(remove.dataset.i);
+    if (!Number.isNaN(i)) {
+      engine.removeFromQueue(i);
+      renderQueue();
+      setQueueActive(clampActive(i, engine.queue.length), false);
+    }
+    return;
+  }
+
+  const row = e.target.closest('.queue-row');
+  if (row) playQueueRow(Number(row.dataset.i));
+});
+
+queuePanel.addEventListener('keydown', (e) => {
+  const rows = getQueueRows();
+  if (e.target.closest('.queue-remove')) return;
+  if (!rows.length) {
+    if (e.key === 'Escape' && !queuePanel.classList.contains('is-hidden')) {
+      e.preventDefault();
+      toggleQueue(false);
+    }
+    return;
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    toggleQueue(false);
+    return;
+  }
+  if (e.key === 'Home') {
+    e.preventDefault();
+    e.stopPropagation();
+    setQueueActive(0, true);
+    return;
+  }
+  if (e.key === 'End') {
+    e.preventDefault();
+    e.stopPropagation();
+    setQueueActive(rows.length - 1, true);
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    e.stopPropagation();
+    setQueueActive(queueActiveIndex + 1, true);
+    return;
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    e.stopPropagation();
+    setQueueActive(queueActiveIndex - 1, true);
+    return;
+  }
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    e.stopPropagation();
+    playQueueRow(queueActiveIndex);
+    return;
+  }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    e.preventDefault();
+    e.stopPropagation();
+    const i = rows[queueActiveIndex]?.dataset.i;
+    if (i != null) {
+      engine.removeFromQueue(Number(i));
+      renderQueue();
+      setQueueActive(clampActive(Number(i), engine.queue.length), true);
+    }
+  }
+});
+
+libraryPanel.addEventListener('click', (e) => {
+  const close = e.target.closest('#lib-close');
+  if (close) {
+    toggleLibrary(false);
+    return;
+  }
+  const btn = e.target.closest('.lib-play, .lib-export, .lib-del');
+  if (btn) {
+    const id = btn.dataset.id;
+    if (btn.classList.contains('lib-play')) {
+      void playLibraryRecord(id);
+    } else if (btn.classList.contains('lib-export')) {
+      void (async () => {
+        const rec = await Library.getLibraryEntry(id);
+        if (!rec || !rec.arrayBuffer) return;
+        toast('Rendering <b>remix</b>…', { duration: 1600 });
+        try {
+          const buf = await engine.ctx.decodeAudioData(rec.arrayBuffer.slice(0));
+          const blob = await Library.renderRemixToWav(buf, rec.edits || engine.fx);
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${rec.name}-remix.wav`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+          toast('Remix <b>exported</b> as WAV', { duration: 2200 });
+        } catch { toast('<b>Export failed</b>', { duration: 2000 }); }
+      })();
+    } else if (btn.classList.contains('lib-del')) {
+      void (async () => {
+        await Library.removeFromLibrary(id);
+        renderLibrary();
+        setLibraryActive(0, false);
+      })();
+    }
+    return;
+  }
+  const row = e.target.closest('.library-row');
+  if (row) {
+    const idx = Number(row.dataset.index);
+    if (!Number.isNaN(idx)) setLibraryActive(idx, true);
+    void playLibraryRecord(row.dataset.id);
+  }
+});
+
+libraryPanel.addEventListener('keydown', (e) => {
+  const rows = getLibraryRows();
+  if (e.target.closest('#lib-search')) return;
+  if (e.target.closest('.lib-play, .lib-export, .lib-del')) return;
+  if (!rows.length) {
+    if (e.key === 'Escape' && !libraryPanel.classList.contains('is-hidden')) {
+      e.preventDefault();
+      toggleLibrary(false);
+    }
+    return;
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    toggleLibrary(false);
+    return;
+  }
+  if (e.key === 'Home') {
+    e.preventDefault();
+    e.stopPropagation();
+    setLibraryActive(0, true);
+    return;
+  }
+  if (e.key === 'End') {
+    e.preventDefault();
+    e.stopPropagation();
+    setLibraryActive(rows.length - 1, true);
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    e.stopPropagation();
+    setLibraryActive(libraryActiveIndex + 1, true);
+    return;
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    e.stopPropagation();
+    setLibraryActive(libraryActiveIndex - 1, true);
+    return;
+  }
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    e.stopPropagation();
+    const id = rows[libraryActiveIndex]?.dataset.id;
+    if (id) void playLibraryRecord(id);
+    return;
+  }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    e.preventDefault();
+    e.stopPropagation();
+    const id = rows[libraryActiveIndex]?.dataset.id;
+    if (id) {
+      void (async () => {
+        await Library.removeFromLibrary(id);
+        renderLibrary();
+        setLibraryActive(libraryActiveIndex, true);
+      })();
+    }
   }
 });
 
@@ -793,8 +1067,8 @@ function renderQueue() {
   if (!q.length) {
     html += `<div class="queue-empty mono">DROP AUDIO FILES TO BUILD A QUEUE</div>`;
   } else {
-    html += `<div class="queue-list">` + q.map((t, i) => `
-      <div class="queue-row${i === engine.queueIndex ? ' is-active' : ''}" data-i="${i}">
+    html += `<div class="queue-list" role="listbox" aria-label="Queue tracks">` + q.map((t, i) => `
+      <div class="queue-row${i === engine.queueIndex ? ' is-active' : ''}" data-i="${i}" data-index="${i}" role="option" id="queue-row-${i}" tabindex="-1" aria-selected="false">
         <span class="mono queue-idx">${i === engine.queueIndex ? '▶' : String(i + 1).padStart(2, '0')}</span>
         <span class="queue-name">${esc(t.meta.name)}</span>
         <span class="mono queue-dur">${fmtTime(t.meta.duration)}</span>
@@ -803,42 +1077,23 @@ function renderQueue() {
   }
   queuePanel.innerHTML = html;
   queuePanel.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
-
-  queuePanel.querySelectorAll('.queue-row').forEach((row) => {
-    row.addEventListener('click', (e) => {
-      if (e.target.closest('.queue-remove')) return;
-      if (engine.captureActive || engine.micActive || engine.mode !== 'file') return;
-      engine.playTrack(Number(row.dataset.i));
-      renderQueue();
-    });
-  });
-  queuePanel.querySelectorAll('.queue-remove').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const i = Number(btn.dataset.i);
-      engine.removeFromQueue(i);
-      renderQueue();
-    });
-  });
-  queuePanel.querySelector('#queue-clear-btn')?.addEventListener('click', () => {
-    if (!q.length) return;
-    engine.clearQueue();
-    toast('QUEUE <b>CLEARED</b>', { duration: 1200 });
-    renderQueue();
-  });
-  queuePanel.querySelector('#queue-shuffle-btn')?.addEventListener('click', () => {
-    engine.shuffleQueue();
-    renderQueue();
-    toast('QUEUE <b>SHUFFLED</b>', { duration: 1200 });
-  });
-  queuePanel.querySelector('#queue-close-btn')?.addEventListener('click', () => toggleQueue(false));
+  if (q.length) setQueueActive(clampActive(queueActiveIndex, q.length), false);
 }
 
 function toggleQueue(force) {
   const show = force ?? queuePanel.classList.contains('is-hidden');
   queuePanel.classList.toggle('is-hidden', !show);
+  queuePanel.setAttribute('aria-hidden', String(!show));
   setToggle($('queue-btn'), show);
-  if (show) renderQueue();
+  if (show) {
+    queueActiveIndex = clampActive(engine.queueIndex, engine.queue.length);
+    renderQueue();
+    requestAnimationFrame(() => {
+      const rows = getQueueRows();
+      if (!rows.length) return;
+      rows[queueActiveIndex]?.focus();
+    });
+  }
 }
 
 $('queue-btn').addEventListener('click', () => toggleQueue());
@@ -856,8 +1111,8 @@ async function renderLibrary() {
   if (!filteredMeta.length) {
     html += `<div class="library-empty mono">${baseMeta.length ? 'NO MATCHING TRACKS — WIDEN YOUR SEARCH' : 'NO SAVED TRACKS — PLAY A TRACK THEN HIT SAVE'}</div>`;
   } else {
-    html += `<div class="library-list">` + filteredMeta.map(m => `
-      <div class="library-row ${m.edits ? 'is-remix' : ''}" data-id="${m.id}">
+    html += `<div class="library-list" role="listbox" aria-label="Saved library tracks">` + filteredMeta.map((m, i) => `
+      <div class="library-row ${m.edits ? 'is-remix' : ''}" data-id="${m.id}" data-index="${i}" role="option" id="lib-row-${i}" tabindex="-1" aria-selected="false">
         <div style="flex:1; min-width:0">
           <div class="library-name">${esc(m.name)} ${m.edits ? '<span style="font-size:9px; color:var(--accent); margin-left:6px">REMIX</span>' : ''}</div>
           <div class="mono library-meta">${esc(m.ext)} · ${(m.duration||0).toFixed(1)}s${m.edits ? ' · ' + Object.keys(m.edits).filter(k=>m.edits[k]).join(', ') : ''}</div>
@@ -882,47 +1137,12 @@ async function renderLibrary() {
       }
     });
   }
-  libraryPanel.querySelector('#lib-close')?.addEventListener('click', () => toggleLibrary(false));
-  libraryPanel.querySelectorAll('.lib-play').forEach(b => b.addEventListener('click', async () => {
-    const rec = await Library.getLibraryEntry(b.dataset.id);
-    if (!rec) return;
-    if (engine.captureActive) await engine.toggleCapture();
-    if (engine.micActive) await engine.toggleMic();
-    if (engine.isExternal()) engine.pause();
-    engine.stopStream();
-    // reconstruct file-like for engine
-    const blob = new Blob([rec.arrayBuffer]);
-    const file = new File([blob], rec.name + '.' + rec.ext.toLowerCase());
-    // add to queue and play, then apply edits if any
-    await engine.addToQueue([file]);
-    if (rec.edits) {
-      for (const [k,v] of Object.entries(rec.edits)) if (v) engine.setFx(k, true);
-    }
-    toggleLibrary(false);
-    toast(`Loaded <b>${esc(rec.name)}</b> from library`);
-  }));
-  libraryPanel.querySelectorAll('.lib-export').forEach(b => b.addEventListener('click', async () => {
-    const rec = await Library.getLibraryEntry(b.dataset.id);
-    if (!rec || !rec.arrayBuffer) return;
-    toast('Rendering <b>remix</b>…', { duration: 1600 });
-    try {
-      const buf = await engine.ctx.decodeAudioData(rec.arrayBuffer.slice(0));
-      const blob = await Library.renderRemixToWav(buf, rec.edits || engine.fx);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `${rec.name}-remix.wav`; a.click();
-      setTimeout(()=>URL.revokeObjectURL(url), 4000);
-      toast('Remix <b>exported</b> as WAV', { duration: 2200 });
-    } catch { toast('<b>Export failed</b>', { duration: 2000 }); }
-  }));
-  libraryPanel.querySelectorAll('.lib-del').forEach(b => b.addEventListener('click', async () => {
-    await Library.removeFromLibrary(b.dataset.id);
-    renderLibrary();
-  }));
+  if (filteredMeta.length) setLibraryActive(0, false);
 }
 function toggleLibrary(force) {
   const show = force ?? libraryPanel.classList.contains('is-hidden');
   libraryPanel.classList.toggle('is-hidden', !show);
+  libraryPanel.setAttribute('aria-hidden', String(!show));
   setToggle($('library-btn'), show);
   if (show) {
     renderLibrary().then(() => {
@@ -930,6 +1150,7 @@ function toggleLibrary(force) {
       // open at the library search field for quick filtering
       sInput?.focus();
       sInput?.setSelectionRange(sInput.value.length, sInput.value.length);
+      setTimeout(() => setLibraryActive(0, false), 0);
     });
   }
   if (show) { queuePanel.classList.add('is-hidden'); setToggle($('queue-btn'), false); }
@@ -2314,6 +2535,17 @@ document.getElementById('tour-replay')?.addEventListener('click', () => { toast(
 const cmdPalette = document.getElementById('cmd-palette');
 const cmdInput = document.getElementById('cmd-input');
 const cmdList = document.getElementById('cmd-list');
+const cmdStatus = document.createElement('div');
+cmdStatus.className = 'cmd-status';
+cmdStatus.id = 'cmd-status';
+cmdStatus.setAttribute('role', 'status');
+cmdStatus.setAttribute('aria-live', 'polite');
+cmdList?.insertAdjacentElement('afterend', cmdStatus);
+cmdInput?.setAttribute('role', 'combobox');
+cmdInput?.setAttribute('aria-controls', 'cmd-list');
+cmdInput?.setAttribute('aria-autocomplete', 'list');
+cmdInput?.setAttribute('aria-expanded', 'false');
+cmdInput?.setAttribute('aria-describedby', 'cmd-status');
 let cmdActive = 0;
 function buildCmds() {
   const cmds = [];
@@ -2358,14 +2590,31 @@ let cmdVisible = [];
 function renderCmds(filter = '') {
   cmdVisible = filterCommands(allCmds, filter);
   cmdActive = clampActive(cmdActive, cmdVisible.length);
-  cmdList.innerHTML = cmdVisible.map((c, i) => `<div class="cmd-item ${i===cmdActive?'is-active':''}" data-i="${i}"><span>${esc(c.label)}</span><kbd>↵</kbd></div>`).join('') || '<div style="padding:12px; font-size:11px; color:var(--text-40)">No matches</div>';
-  cmdList.querySelectorAll('.cmd-item').forEach(el => el.addEventListener('click', () => { const c = cmdVisible[Number(el.dataset.i)]; if (c) { c.action(); closeCmd(); }}));
+  const count = cmdVisible.length;
+  cmdList.setAttribute('role', 'listbox');
+  cmdList.setAttribute('aria-label', 'Commands');
+  cmdList.innerHTML = count
+    ? cmdVisible
+      .map((c, i) => `<div class="cmd-item ${i === cmdActive ? 'is-active' : ''}" id="cmd-item-${i}" role="option" aria-selected="${i === cmdActive}" tabindex="-1" data-i="${i}"><span>${esc(c.label)}</span><kbd>↵</kbd></div>`)
+      .join('')
+    : '<div class="cmd-empty">No matches</div>';
+  if (count) cmdList.setAttribute('aria-activedescendant', `cmd-item-${cmdActive}`);
+  else cmdList.removeAttribute('aria-activedescendant');
+  cmdStatus.textContent = count ? `${count} commands available` : 'No matches';
+  cmdInput?.setAttribute('aria-expanded', String(Boolean(count)));
 }
+cmdList?.addEventListener('click', (e) => {
+  const item = e.target.closest('.cmd-item');
+  if (!item) return;
+  const c = cmdVisible[Number(item.dataset.i)];
+  if (c) { c.action(); closeCmd(); }
+});
 function openCmd() { cmdReturnFocus = document.activeElement; cmdPalette.classList.remove('is-hidden'); cmdPalette.setAttribute('aria-hidden', 'false'); cmdInput.value = ''; cmdActive = 0; renderCmds(''); cmdInput.focus(); }
 function closeCmd() {
   if (cmdPalette.contains(document.activeElement)) document.activeElement.blur();
   cmdPalette.classList.add('is-hidden');
   cmdPalette.setAttribute('aria-hidden', 'true');
+  cmdInput?.setAttribute('aria-expanded', 'false');
   const restore = cmdReturnFocus;
   cmdReturnFocus = null;
   restore?.focus?.();
@@ -2375,6 +2624,8 @@ cmdInput?.addEventListener('input', () => { cmdActive = 0; renderCmds(cmdInput.v
 cmdInput?.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown') { e.preventDefault(); cmdActive = clampActive(cmdActive + 1, cmdVisible.length); renderCmds(cmdInput.value); }
   else if (e.key === 'ArrowUp') { e.preventDefault(); cmdActive = clampActive(cmdActive - 1, cmdVisible.length); renderCmds(cmdInput.value); }
+  else if (e.key === 'Home') { e.preventDefault(); cmdActive = 0; renderCmds(cmdInput.value); }
+  else if (e.key === 'End') { e.preventDefault(); cmdActive = Math.max(cmdVisible.length - 1, 0); renderCmds(cmdInput.value); }
   else if (e.key === 'Enter') { e.preventDefault(); const c = cmdVisible[cmdActive]; if (c) { c.action(); closeCmd(); } }
   else if (e.key === 'Escape') closeCmd();
 });
