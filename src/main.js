@@ -85,6 +85,7 @@ const state = {
   rayQuality: 'high',
   fx: { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false, widener: false },
 };
+let modeFilterIndex = -1;
 
 /* ---------- toasts ---------- */
 
@@ -2883,7 +2884,6 @@ window.addEventListener('resize', () => moveInk(drawerTabs.find((b) => b.getAttr
 
 const modeFilter = document.getElementById('mode-filter');
 const modeEmpty = document.getElementById('mode-empty');
-let modeFilterIndex = -1;
 
 function getModeFilterCards() {
   return modeCatalog.filter((entry) => !entry.button.classList.contains('is-filtered')).map((entry) => entry.button);
