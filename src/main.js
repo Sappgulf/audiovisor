@@ -772,6 +772,12 @@ libraryPanel.setAttribute('role', 'dialog');
 libraryPanel.setAttribute('aria-label', 'Library');
 $('shell').appendChild(libraryPanel);
 
+libraryPanel.addEventListener('input', (e) => {
+  if ((e.target instanceof HTMLInputElement) && e.target.id === 'lib-search') {
+    renderLibrary();
+  }
+});
+
 function renderQueue() {
   const q = engine.queue;
   const total = q.reduce((acc, t) => acc + (t.meta?.duration || 0), 0);
@@ -839,13 +845,18 @@ $('queue-btn').addEventListener('click', () => toggleQueue());
 $('save-library-btn')?.addEventListener('click', saveToLibrary);
 
 async function renderLibrary() {
-  let meta = await Library.listLibraryMeta();
-  let html = `<div class="library-head"><span class="ic ic-lime" data-icon="layers"></span><span class="mono library-title">LIBRARY · ${meta.length}</span><button class="icon-x" id="lib-close" title="Close"><span class="ic ic-sm" data-icon="close"></span></button></div>
+  const wasSearchFocused = libraryPanel.contains(document.activeElement) && document.activeElement.id === 'lib-search';
+  const baseMeta = await Library.listLibraryMeta();
+  const q = (libraryPanel.querySelector('#lib-search')?.value || '').trim().toLowerCase();
+  const filteredMeta = q
+    ? baseMeta.filter((m) => m.name.toLowerCase().includes(q) || (m.ext || '').toLowerCase().includes(q))
+    : baseMeta;
+  let html = `<div class="library-head"><span class="ic ic-lime" data-icon="layers"></span><span class="mono library-title">LIBRARY · ${filteredMeta.length}</span><button class="icon-x" id="lib-close" title="Close"><span class="ic ic-sm" data-icon="close"></span></button></div>
   <div style="padding:8px 12px; border-bottom:1px solid var(--border-soft)"><input id="lib-search" class="connect-input" placeholder="Search library…" style="width:100%; padding:7px 10px; font-size:11px"/></div>`;
-  if (!meta.length) {
-    html += `<div class="library-empty mono">NO SAVED TRACKS — PLAY A TRACK THEN HIT SAVE</div>`;
+  if (!filteredMeta.length) {
+    html += `<div class="library-empty mono">${baseMeta.length ? 'NO MATCHING TRACKS — WIDEN YOUR SEARCH' : 'NO SAVED TRACKS — PLAY A TRACK THEN HIT SAVE'}</div>`;
   } else {
-    html += `<div class="library-list">` + meta.map(m => `
+    html += `<div class="library-list">` + filteredMeta.map(m => `
       <div class="library-row ${m.edits ? 'is-remix' : ''}" data-id="${m.id}">
         <div style="flex:1; min-width:0">
           <div class="library-name">${esc(m.name)} ${m.edits ? '<span style="font-size:9px; color:var(--accent); margin-left:6px">REMIX</span>' : ''}</div>
@@ -858,20 +869,18 @@ async function renderLibrary() {
         </div>
       </div>`).join('') + `</div>`;
   }
-  // filter by search
-  const q = (document.getElementById('lib-search')?.value || '').toLowerCase();
-  // eslint-disable-next-line no-useless-assignment
-  if (q) meta = meta.filter(m => m.name.toLowerCase().includes(q) || (m.ext||'').toLowerCase().includes(q));
   libraryPanel.innerHTML = html;
   libraryPanel.querySelectorAll('[data-icon]').forEach(el => setIcon(el, el.dataset.icon));
-  // re-attach search listener
   const sInput = libraryPanel.querySelector('#lib-search');
-  if (sInput) {
-    sInput.value = q;
-    sInput.addEventListener('input', () => renderLibrary());
-    // focus and keep cursor at end
-    sInput.focus();
-    sInput.setSelectionRange(sInput.value.length, sInput.value.length);
+  if (sInput) sInput.value = q;
+  if (wasSearchFocused) {
+    requestAnimationFrame(() => {
+      const freshInput = libraryPanel.querySelector('#lib-search');
+      if (freshInput) {
+        freshInput.focus();
+        freshInput.setSelectionRange(freshInput.value.length, freshInput.value.length);
+      }
+    });
   }
   libraryPanel.querySelector('#lib-close')?.addEventListener('click', () => toggleLibrary(false));
   libraryPanel.querySelectorAll('.lib-play').forEach(b => b.addEventListener('click', async () => {
@@ -915,7 +924,14 @@ function toggleLibrary(force) {
   const show = force ?? libraryPanel.classList.contains('is-hidden');
   libraryPanel.classList.toggle('is-hidden', !show);
   setToggle($('library-btn'), show);
-  if (show) renderLibrary();
+  if (show) {
+    renderLibrary().then(() => {
+      const sInput = libraryPanel.querySelector('#lib-search');
+      // open at the library search field for quick filtering
+      sInput?.focus();
+      sInput?.setSelectionRange(sInput.value.length, sInput.value.length);
+    });
+  }
   if (show) { queuePanel.classList.add('is-hidden'); setToggle($('queue-btn'), false); }
 }
 $('library-btn').addEventListener('click', () => toggleLibrary());
