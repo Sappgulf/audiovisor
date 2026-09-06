@@ -528,6 +528,7 @@ function setModeStory(id) {
 }
 
 function setMode(id) {
+  if (!MODES.some((m) => m.id === id)) return;
   /* Each mode has its own cost, and the tier adapted for the last one says
      nothing about this one — without this, stepping down for a heavy mode
      left every later mode stuck at that tier. */
@@ -552,6 +553,7 @@ function setMode(id) {
     setToggle(c, on, 'is-active');
     c.setAttribute('aria-pressed', String(on));
   });
+  syncModeFilterTabStops();
   pulseStage();
   saveSettings();
 }
@@ -628,6 +630,7 @@ function applyNamePalette(name) {
 }
 
 function setTheme(id) {
+  if (id !== 'auto' && !THEMES.some((t) => t.id === id)) return;
   state.themeId = id;
   /* switching to Auto with a palette already in hand (art seen earlier this
      session) applies it immediately instead of waiting for the next load */
@@ -2009,14 +2012,25 @@ function updateFavicon() {
 
 /* ---------- resize + adaptive quality ---------- */
 
-if (typeof ResizeObserver !== 'undefined') {
-  new ResizeObserver(() => {
+let resizeRaf = 0;
+function scheduleStageResize() {
+  if (resizeRaf) return;
+  resizeRaf = requestAnimationFrame(() => {
+    resizeRaf = 0;
     renderer.resize();
     ray.resize(renderer.w, renderer.h);
     if (engine.buffer && engine.mode === 'file') drawWaveform(engine.buffer);
+  });
+}
+
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => {
+    scheduleStageResize();
   }).observe($('stage'));
 } else {
-  window.addEventListener('resize', () => { renderer.resize(); ray.resize(renderer.w, renderer.h); });
+  window.addEventListener('resize', () => {
+    scheduleStageResize();
+  });
 }
 
 /* ---------- render loop ---------- */
@@ -2608,6 +2622,18 @@ function getModeFilterCards() {
   return modeCatalog.filter((entry) => !entry.button.classList.contains('is-filtered')).map((entry) => entry.button);
 }
 
+function syncModeFilterTabStops(cards) {
+  const visibleCards = cards || getModeFilterCards();
+  const selected = visibleCards.find((card) => card.dataset.modeId === state.modeId);
+  visibleCards.forEach((card) => { card.tabIndex = -1; });
+  const primary = selected || visibleCards[0];
+  if (primary) primary.tabIndex = 0;
+  if (selected) {
+    const idx = visibleCards.indexOf(selected);
+    modeFilterIndex = idx >= 0 ? idx : (visibleCards.length ? 0 : -1);
+  }
+}
+
 function applyModeFilter() {
   if (!modeFilter) return [];
   const q = modeFilter.value.trim().toLowerCase();
@@ -2618,7 +2644,12 @@ function applyModeFilter() {
     if (hit) shown++;
   });
   modeEmpty?.classList.toggle('is-hidden', shown > 0);
-  return getModeFilterCards();
+  const cards = getModeFilterCards();
+  if (!cards.length) modeFilterIndex = -1;
+  else if (modeFilterIndex < 0 || modeFilterIndex >= cards.length) modeFilterIndex = cards.findIndex((c) => c.dataset.modeId === state.modeId);
+  if (modeFilterIndex < 0) modeFilterIndex = 0;
+  syncModeFilterTabStops(cards);
+  return cards;
 }
 
 function focusModeFilterCard(step) {
@@ -2631,7 +2662,7 @@ function focusModeFilterCard(step) {
   } else {
     modeFilterIndex = 0;
   }
-  cards[modeFilterIndex].focus();
+  cards[modeFilterIndex]?.focus({ preventScroll: true });
 }
 
 modeFilter?.addEventListener('input', () => {
@@ -2643,7 +2674,11 @@ modeFilter?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     const cards = getModeFilterCards();
     if (!cards.length) return;
-    const idx = Math.max(0, Math.min(modeFilterIndex, cards.length - 1));
+    let idx = modeFilterIndex;
+    if (idx < 0 || idx >= cards.length) {
+      idx = cards.findIndex((c) => c.dataset.modeId === state.modeId);
+    }
+    if (idx < 0) idx = 0;
     const target = cards[idx] || cards[0];
     if (target) target.click();
     return;
@@ -2653,6 +2688,17 @@ modeFilter?.addEventListener('keydown', (e) => {
     if (modeFilterIndex < 0) modeFilterIndex = e.key === 'ArrowDown' ? -1 : 0;
     focusModeFilterCard(e.key === 'ArrowDown' ? 1 : -1);
   }
+});
+modeList?.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'Home' && e.key !== 'End') return;
+  const cards = getModeFilterCards();
+  if (!cards.length) return;
+  e.preventDefault();
+  if (e.key === 'Home') modeFilterIndex = 0;
+  else if (e.key === 'End') modeFilterIndex = cards.length - 1;
+  else if (e.key === 'ArrowDown') focusModeFilterCard(1);
+  else if (e.key === 'ArrowUp') focusModeFilterCard(-1);
+  if (modeFilterIndex >= 0 && modeFilterIndex < cards.length) cards[modeFilterIndex]?.focus({ preventScroll: true });
 });
 
 /* ---------- keyboard shortcuts overlay ---------- */
