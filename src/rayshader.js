@@ -45,7 +45,14 @@ uniform float uSeed;
 
 /* ---------------- audio taps ---------------- */
 
-float spec(float x) { return texture(uSpec, vec2(clamp(x, 0.0, 1.0), 0.5)).r; }
+float spec(float x) {
+  float v = texture(uSpec, vec2(clamp(x, 0.0, 1.0), 0.5)).r;
+  /* Bass-Focus slider tilts the spectrum toward the low end. Centred so the
+     0.5 default is exactly neutral and no existing look moves until the
+     user touches the slider; the tilt factor stays in [0.5, 1.5]. */
+  float tilt = (uBassFocus - 0.5) * 2.0;
+  return v * (1.0 + tilt * (0.5 - x));
+}
 /* uWave carries three rows — mono, L, R — so every mode keeps reading the
    same mono trace while the scope can separate the channels. Row centres of
    a 3-row texture sit at 1/6, 3/6, 5/6. */
@@ -164,7 +171,7 @@ float scBars(vec3 p) {
   float cx = (slot + 0.5) * 0.46 - 5.98;
   float e = pow(spec(slot / 26.0), 1.35) * uSens;
   e = e / (1.0 + 0.6 * e);              // soft knee — a loud low end shouldn't wall off the stage
-  float h = 0.1 + 2.6 * e * (1.0 + uBeat * 0.3);
+  float h = 0.1 + 2.6 * e * (1.0 + uBeat * 0.3 + uDrop * 0.45);
   vec3 b = vec3(0.15, h, 0.15);
   float d = sdRBox(q - vec3(cx, h, 0.0), b, 0.045);
   d = max(d, abs(q.x) - 6.1);
@@ -292,7 +299,7 @@ float scTunnel(vec3 p) {
   float cell = floor(z / 1.1);
   float lz = mod(z, 1.1) - 0.55;
   float band = spec(fract(cell * 0.083));
-  float r = 2.3 - band * 0.7 * uSens - uBeat * 0.12;
+  float r = 2.3 - band * 0.7 * uSens - uBeat * 0.12 - uDrop * 0.2;
   float wob = sin(atan2s(p.y, p.x) * 6.0 + cell * 0.7 + uTime) * 0.09 * (0.3 + uMid);
   float ring = length(vec2(length(p.xy) - r + wob, lz)) - (0.045 + band * 0.09);
   float d = ring;
@@ -459,11 +466,12 @@ float scPrism(vec3 p) {
 
 /* 16 void — event horizon shell + accretion ring */
 float scVoid(vec3 p) {
-  float d = sdSphere(p, 1.05 + uBass * 0.05);
+  /* the horizon tightens as the drop lands — collapse, not just throb */
+  float d = sdSphere(p, 1.05 + uBass * 0.05 - uDrop * 0.12);
   g_id = 12.0; g_aux = 0.0;
   vec3 q = p; q.y *= 16.0;                       // thin disc, not a lens
   q.xz *= rot(uTime * 0.35);
-  float disc = max(sdTorus(q, vec2(2.4 + uBeat * 0.12, 1.1)), -sdSphere(p, 1.45));
+  float disc = max(sdTorus(q, vec2(2.4 + uBeat * 0.12 - uDrop * 0.3, 1.1)), -sdSphere(p, 1.45));
   // 0 at the inner edge (hottest) → 1 at the rim
   if (disc < d) { d = disc * 0.5; g_id = 19.0; g_aux = clamp((length(p.xz) - 1.45) / 2.2, 0.0, 1.0); }
   return d;
@@ -482,7 +490,7 @@ float scBloom(vec3 p) {
     vec3 off = (h - 0.5) * 1.0;
     off.y += sin(uTime * 0.4 + h.y * TAU) * 0.2;
     float fade = smoothstep(7.0, 2.0, length(id * c - vec3(0.0, 0.0, -2.0)));
-    float s = sdSphere(p - (id * c + off), max((0.13 + e * 0.34 * uSens + uBeat * 0.05) * fade, 0.001));
+    float s = sdSphere(p - (id * c + off), max((0.13 + e * 0.34 * uSens + uBeat * 0.05 + uDrop * 0.08) * fade, 0.001));
     if (s < d) { d = s; g_id = 4.0; g_aux = fract(h.y * 2.9); }
   }
   return d;
@@ -493,7 +501,7 @@ float scFractal(vec3 p) {
   vec3 z = p;
   float dr = 1.0, r = 0.0;
   float trap = 1e9;
-  float power = 7.5 + uBass * 4.0 + sin(uTime * 0.2) * 1.5;
+  float power = 7.5 + uBass * 4.0 + uDrop * 2.0 + sin(uTime * 0.2) * 1.5;
   for (int i = 0; i < 11; i++) {
     r = length(z);
     trap = min(trap, r);
@@ -699,7 +707,9 @@ Mat matOf(float id, float aux, vec3 p) {
     /* the newest edge answers treble: a hat lands and the waterfall's front
        lip lights up even where that bin's column isn't tall yet */
     float age = clamp((p.z + 5.0) / 10.0, 0.0, 1.0);
-    m.emis = cc * (0.18 + pow(aux, 2.1) * 1.15)
+    /* the terrace answers the kick and the drop, not just the waterfall:
+       beat lifts the whole relief, the drop surges it harder */
+    m.emis = cc * (0.18 + pow(aux, 2.1) * 1.15) * (1.0 + uBeat * 0.35 + uDrop * 0.5)
            + palf(0.82) * pow(1.0 - age, 5.0) * uHigh * 0.55;
   } else if (id < 6.5) {                // structural strut / bezel
     m.alb = palf(0.3) * 0.25; m.rough = 0.3; m.metal = 0.8;
@@ -724,7 +734,7 @@ Mat matOf(float id, float aux, vec3 p) {
     float lit = step(0.28, hash13(floor(wp)));   // some windows are dark
     float win = wy * max(wx, wz) * lit;
     m.alb = vec3(0.02); m.rough = 0.22; m.metal = 0.5;
-    m.emis = palf(aux) * win * (0.5 + aux * 0.9 + uBeat * 0.35);
+    m.emis = palf(aux) * win * (0.5 + aux * 0.9 + uBeat * 0.35 + uDrop * 0.4);
   } else if (id < 9.5) {                // wet asphalt
     m.alb = vec3(0.012); m.rough = 0.14; m.metal = 0.9;
   } else if (id < 10.5) {               // liquid chrome
@@ -741,7 +751,7 @@ Mat matOf(float id, float aux, vec3 p) {
     vec3 cc = palf(fract(aux * 3.2 + 0.15 * sin(p.y * 2.0) + uTime * 0.03));
     m.alb = cc * (0.35 + 0.5 * (1.0 - aux));
     m.rough = 0.22 + aux * 0.2; m.metal = 0.8;
-    m.emis = cc * (0.15 + pow(1.0 - aux, 2.0) * 0.9 + uBeat * 0.35);
+    m.emis = cc * (0.15 + pow(1.0 - aux, 2.0) * 0.9 + uBeat * 0.35 + uDrop * 0.4);
   } else if (id < 14.5) {               // radar dome glass
     m.alb = vec3(0.9); m.rough = 0.06; m.metal = 0.0; m.trans = 1.0;
     m.emis = palf(0.3) * 0.08;
@@ -783,6 +793,7 @@ Mat matOf(float id, float aux, vec3 p) {
     m.emis = palf(pow(rr, 1.15))
       * (grooves * (0.05 + band * 0.10)
          + sweep * grooves * band * (1.3 + uBeat * 0.9)
+         + grooves * uHigh * 0.22
          + uBeat * 0.10);
   } else if (id < 24.5) {               // record label
     vec3 cc = palf(0.5);

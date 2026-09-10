@@ -222,9 +222,9 @@ button:focus-visible, input:focus-visible {
 /* ---------- Top bar ---------- */
 
 .topbar {
-  height: 56px;
+  height: 48px;
   margin: 18px auto 0;
-  width: min(960px, calc(100vw - 32px));
+  width: min(1200px, calc(100vw - 48px));
   padding: 0 10px 0 18px;
   display: flex;
   align-items: center;
@@ -238,6 +238,14 @@ button:focus-visible, input:focus-visible {
   box-shadow: 0 8px 32px rgba(0,0,0,0.24), 0 1px 0 rgba(255,250,243,0.06) inset;
   flex-shrink: 0;
   z-index: 30;
+}
+
+/* Cinematic console: the chrome recedes so the stage owns the screen, and
+   returns the moment the pointer reaches for it. Hover-only so touch
+   devices (no hover) keep full-opacity chrome. */
+@media (hover: hover) {
+  .topbar { opacity: 0.62; transition: opacity 0.3s var(--ease); }
+  .topbar:hover, .topbar:focus-within { opacity: 1; }
 }
 
 .brand { display: flex; align-items: center; gap: 12px; }
@@ -2567,8 +2575,59 @@ html, body {
 
 @media (min-width: 1180px) {
   /* 960px was never enough for one row; this is the width the contents
-     actually need, and it still leaves the transport inset from the edges */
+     actually need, and it still leaves the transport inset from the edges.
+     (Cinematic console below re-widths it as a floating console; the 1180px
+     floor here keeps the one-row wrap contract in tests/pwa.test.js.) */
   .transport { width: min(1180px, calc(100vw - 32px)); }
+}
+
+/* ==========================================================================
+   Cinematic console (desktop only — phones keep the sheet/console flow)
+   ==========================================================================
+   V2 design: edge-to-edge stage, full-height 300px dock drawer, floating
+   transport console offset for the drawer. Scoped to min-width:641px so the
+   phone sheet, safe-area and wrap rules above keep working untouched, and
+   placed after them so the console width wins the cascade. Cinema mode is
+   unaffected: .shell.is-cinema selectors carry higher specificity.
+   ========================================================================== */
+@media (min-width: 641px) {
+  .workspace { padding: 0; }
+  .stage {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .drawer {
+    top: 74px;
+    right: 0;
+    bottom: 0;
+    width: 300px;
+    border-radius: 0;
+    border-top: none;
+    border-right: none;
+    border-bottom: none;
+  }
+  .drawer-scroll { width: 300px; }
+  /* the console floats over the stage bottom, shifted left by half the
+     drawer so it reads centred on the visible stage */
+  .transport {
+    position: absolute;
+    left: 50%;
+    bottom: 20px;
+    transform: translateX(calc(-50% - 150px));
+    width: min(900px, calc(100vw - 364px));
+    margin: 0;
+    border-radius: 20px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6), 0 1px 0 rgba(255,250,243,0.06) inset;
+  }
+  /* the console now owns the bottom-centre, so the caption and toasts ride
+     above it instead of underneath it */
+  .stage-story { bottom: 108px; }
+  .toasts { bottom: 108px; }
 }
 
 /* ==========================================================================

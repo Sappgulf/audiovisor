@@ -1160,14 +1160,19 @@ class ExtraModes {
   _void(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h / 2;
-    const base = Math.min(w, h) * 0.11 * (1 + this.sm.bass * 0.3);
+    const drop = this.beatInfo?.drop || 0;
+    /* the horizon tightens as the drop lands — collapse, not just throb */
+    const base = Math.min(w, h) * 0.11 * (1 + this.sm.bass * 0.3 - drop * 0.18);
     ctx.globalCompositeOperation = 'lighter';
     const rings = this.quality === 'low' ? 22 : 36;
     for (let i = 0; i < rings; i++) {
       const t = i / rings;
       const r = base * 1.7 + Math.pow(t, 1.2) * Math.min(w, h) * 0.38;
       const v = freq ? logSample(freq, t) : 0.5;
-      const wob = Math.sin(t * 18 + this.t * 2.2) * v * 6;
+      /* treble warps the rings — hats ripple the horizon where bass only
+         breathes it. This is the one mode where high-band energy bends
+         geometry instead of just lighting it. */
+      const wob = Math.sin(t * 18 + this.t * 2.2) * v * (6 + this.sm.high * 10);
       /* 36 rings drawn additively, and the radius curve packs them tightest
          near the core — so the inner rings piled on top of each other and
          burned out the centre. Fade the alpha in toward the middle, where
@@ -1190,7 +1195,7 @@ class ExtraModes {
     ctx.beginPath();
     ctx.arc(cx, cy, base, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = hexRgba(this._color(0), 0.85 + this.beat * 0.2);
+    ctx.strokeStyle = hexRgba(this._color(0), 0.85 + this.beat * 0.2 + drop * 0.15);
     ctx.lineWidth = 1.8;
     ctx.beginPath();
     ctx.arc(cx, cy, base * 1.02, 0, Math.PI * 2);
@@ -1201,13 +1206,14 @@ class ExtraModes {
 
   _bloomField(freq) {
     const { ctx, w, h } = this;
+    const drop = this.beatInfo?.drop || 0;
     const cols = this.quality === 'low' ? 10 : 16;
     const rows = this.quality === 'low' ? 6 : 9;
     const cw = w / cols;
     const rh = h / rows;
     if (this.quality !== 'low') {
       ctx.globalCompositeOperation = 'lighter';
-      const meshA = 0.03 + this.sm.level * 0.05;
+      const meshA = 0.03 + this.sm.level * 0.05 + drop * 0.03;
       /* Spread the grid across the whole spectrum instead of cycling the
          same 64 positions every few cells: the field then shows real
          spectral structure rather than 144 cells all lit the same. */
@@ -1252,7 +1258,7 @@ class ExtraModes {
            by keeping most cells near silent — with a real log mapping every
            cell carries signal and the field blew out. */
         const cell = Math.min(cw, rh);
-        const s = Math.min(cell * 1.25, 10 + amp * 22 * this.sensitivity + this.beat * 6);
+        const s = Math.min(cell * 1.25, 10 + amp * 22 * this.sensitivity + this.beat * 6 + drop * 10);
         const c = this._color((x + y) % this.theme.colors.length);
         /* soft bokeh pool under every bloom */
         ctx.globalCompositeOperation = 'lighter';
@@ -1266,8 +1272,9 @@ class ExtraModes {
         /* crisp core with alpha falloff */
         ctx.globalAlpha = 0.20 + amp * 0.45;
         ctx.drawImage(this._dot(c), px - s * 0.85, py - s * 0.85, s * 1.7, s * 1.7);
-        /* bright center popper on loud cells */
-        if (amp > 0.6) {
+        /* bright center popper on loud cells — the kick lowers the bar so
+           the whole field erupts instead of waiting for a loud bin */
+        if (amp > 0.6 - this.beat * 0.15) {
           const hr = s * 0.3;
           ctx.globalAlpha = (amp - 0.6) * 1.2;
           ctx.drawImage(this._soft(this._color((x + y + 1) % this.theme.colors.length)), px - hr, py - hr, hr * 2, hr * 2);
@@ -1281,6 +1288,7 @@ class ExtraModes {
   _fractal(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h / 2;
+    const drop = this.beatInfo?.drop || 0;
     const base = Math.min(w, h) * 0.12;
     const depth = this.quality === 'low' ? 4 : 6;
     const drawBranch = (x, y, len, ang, d, colIdx) => {
@@ -1294,16 +1302,17 @@ class ExtraModes {
       ctx.moveTo(x, y);
       ctx.lineTo(nx, ny);
       ctx.stroke();
-      const spread = 0.55 + this.sm.bass * 0.3;
+      const spread = 0.55 + this.sm.bass * 0.3 + drop * 0.35;
       drawBranch(nx, ny, len * 0.68, ang - spread, d - 1, colIdx + 1);
       drawBranch(nx, ny, len * 0.68, ang + spread, d - 1, colIdx + 2);
     };
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < (this.quality === 'low' ? 3 : 5); i++) {
-      const ang = (i / 5) * Math.PI * 2 + this.t * 0.2;
+      /* treble spins the bloom — the one mode whose rotation answers highs */
+      const ang = (i / 5) * Math.PI * 2 + this.t * (0.2 + this.sm.high * 0.5);
       drawBranch(cx, cy, base, ang, depth, i);
     }
-    const cr = base * 0.35 * (1 + this.beat * 0.8);
+    const cr = base * 0.35 * (1 + this.beat * 0.8 + drop * 0.6);
     ctx.globalAlpha = 0.9;
     ctx.drawImage(this._dot(this._color(0)), cx - cr, cy - cr, cr * 2, cr * 2);
     ctx.globalAlpha = 1;
@@ -1734,7 +1743,11 @@ class ExtraModes {
     const cx = w / 2, cy = h / 2;
     const minDim = Math.min(w, h);
     const R = minDim * 0.40;
-    const rot = this.t * (0.18 + this.sm.level * 0.9) + this.beat * 0.2;
+    const drop = this.beatInfo?.drop || 0;
+    /* the platter drags under the drop — pitch sags with the slam, then
+       recovers. Grooves are circularly symmetric so the rate change reads
+       as weight, not a skip. */
+    const rot = this.t * (0.18 + this.sm.level * 0.9) * (1 - drop * 0.3) + this.beat * 0.2;
     const c0 = this._color(0), c1 = this._color(1);
     void dt;
     ctx.globalCompositeOperation = 'source-over';
@@ -1774,7 +1787,7 @@ class ExtraModes {
     ctx.rotate(rot * 1.4);
     const sheen = ctx.createLinearGradient(-R, 0, R, 0);
     sheen.addColorStop(0, 'rgba(0,0,0,0)');
-    sheen.addColorStop(0.5, hexRgba(c0, 0.10 + this.sm.mid * 0.12));
+    sheen.addColorStop(0.5, hexRgba(c0, 0.10 + this.sm.mid * 0.12 + this.sm.high * 0.10));
     sheen.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = sheen;
     ctx.fillRect(-R, -R, R * 2, R * 2);
