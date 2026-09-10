@@ -2582,15 +2582,18 @@ html, body {
 }
 
 /* ==========================================================================
-   Cinematic console (desktop only — phones keep the sheet/console flow)
+   Cinematic console (wide desktop only — tablet keeps the card layout)
    ==========================================================================
    V2 design: edge-to-edge stage, full-height 300px dock drawer, floating
-   transport console offset for the drawer. Scoped to min-width:641px so the
-   phone sheet, safe-area and wrap rules above keep working untouched, and
-   placed after them so the console width wins the cascade. Cinema mode is
-   unaffected: .shell.is-cinema selectors carry higher specificity.
+   transport console offset for the drawer. Scoped to min-width:1180px: the
+   641–1179 band keeps the centred card + overlay drawer + wrapping
+   in-flow transport, because a 300px dock plus a floating console leaves a
+   768px stage buried (story under the console, dropzone under the drawer).
+   Placed after the width rules above so the console width wins the cascade.
+   Cinema mode is unaffected: .shell.is-cinema selectors carry higher
+   specificity.
    ========================================================================== */
-@media (min-width: 641px) {
+@media (min-width: 1180px) {
   .workspace { padding: 0; }
   .stage {
     width: 100%;
@@ -2624,6 +2627,12 @@ html, body {
     border-radius: 20px;
     box-shadow: 0 20px 50px rgba(0,0,0,0.6), 0 1px 0 rgba(255,250,243,0.06) inset;
   }
+  /* a closed drawer hands the full width back, so the console recentres */
+  .shell:has(.drawer.is-closed) .transport { transform: translateX(-50%); }
+  /* the library floats above the drawer (z 55 over 40) but opens at the
+     shell edge, half-buried behind the dock — park it left of the drawer
+     while the drawer is open */
+  .shell:has(.drawer:not(.is-closed)) .library-panel { right: 320px; }
   /* the console now owns the bottom-centre, so the caption and toasts ride
      above it instead of underneath it */
   .stage-story { bottom: 108px; }

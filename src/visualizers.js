@@ -15,6 +15,14 @@ const MODE_BLOOM = { spectro: 0.28, gpu: 0.34, terrain: 0.62 };
 const CORE_MODES = new Set(['bars', 'waves', 'scope', 'particles']);
 const FALLBACK_MODE = 'bars';
 
+/* Backing-store ceiling for the software rasterizer (CSS px * scale^2).
+   Mirrors the ray stage's per-tier maxPx: a full-bleed desktop stage is ~2x
+   the pixels of the old card, and at dpr 2 that melted weak machines. Kept
+   at the fullscreen-1080p line (2.07M CSS px) so every realistic stage still
+   rasterizes at or above 1:1 — only oversampling is trimmed, and phones and
+   small windows keep full-dpr detail. */
+const MAX_BACKING_PX = 2.1e6;
+
 let extrasReady = false;
 let extrasPending = null;
 
@@ -152,7 +160,20 @@ export class Renderer {
     // NaN width that coerces to a zero-size canvas; see src/levels.js
     this.w = safeDimension(rect.width);
     this.h = safeDimension(rect.height);
-    const scale = this.quality === 'low' ? 1 : this.dpr;
+    let scale = this.quality === 'low' ? 1 : this.dpr;
+    /* Cap the backing store the way the ray stage caps its march target
+       (raystage maxPx): software raster cost scales with backing pixels, and
+       a full-bleed desktop stage is ~2x the pixels of the old card — at
+       dpr 2 that is ~4M pixels repainted every frame plus bloom/trail
+       passes. Small stages keep full-dpr crispness; only large ones scale
+       down, and the CSS size (hit-testing, layout) never changes. */
+    const px = this.w * this.h * scale * scale;
+    /* low quality is exactly CSS pixels by contract — only rein in dpr
+       scaling, never soften below 1:1 */
+    if (scale > 1 && px > MAX_BACKING_PX) scale *= Math.sqrt(MAX_BACKING_PX / px);
+    /* the effective backing scale — render() and the trail composite must
+       use this, not this.dpr, or a capped stage draws zoomed and clips */
+    this._scale = scale;
     this.canvas.width = safeDimension(this.w * scale);
     this.canvas.height = safeDimension(this.h * scale);
     this._floorGrads = null;
@@ -382,7 +403,7 @@ export class Renderer {
     const dt60 = dt * 60;
     this._buildCache();
 
-    const scale = this.quality === 'low' ? 1 : this.dpr;
+    const scale = this._scale || this.dpr;
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
@@ -517,7 +538,7 @@ export class Renderer {
         this.trailCtx = this.trailCv.getContext('2d');
       }
       const tc = this.trailCtx;
-      const s = this.quality === 'low' ? 1 : this.dpr;
+      const s = this._scale || this.dpr;
       tc.setTransform(1, 0, 0, 1, 0, 0);
       tc.globalCompositeOperation = 'destination-out';
       tc.fillStyle = 'rgba(0,0,0,0.24)';

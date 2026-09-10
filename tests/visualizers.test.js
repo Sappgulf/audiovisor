@@ -190,3 +190,52 @@ describe('band envelope shape', () => {
     expect(settle(r, 0.5, 60)).toBeLessThanOrEqual(0.5 + 1e-6);
   });
 });
+
+describe('backing store cap', () => {
+  /* The full-bleed stage is ~2x the pixels of the old card; at dpr 2 that is
+     ~4M software-rastered pixels a frame. resize() caps the store the way
+     the ray stage caps its march target, so weak machines stay fast while
+     small stages keep full-dpr crispness. */
+  let Renderer;
+  beforeEach(async () => {
+    ensureGlobals();
+    Renderer = (await import('../src/visualizers.js')).Renderer;
+  });
+
+  it('caps a huge stage instead of scaling by dpr squared', () => {
+    const canvas = makeFakeCanvas(3000, 2000);
+    const r = new Renderer(canvas);
+    r.dpr = 2;
+    r.resize();
+    expect(canvas.width * canvas.height).toBeLessThanOrEqual(2.11e6);
+    expect(r._scale).toBeLessThan(2);
+  });
+
+  it('leaves ordinary stages at full dpr', () => {
+    const canvas = makeFakeCanvas(640, 480);
+    const r = new Renderer(canvas);
+    r.dpr = 2;
+    r.resize();
+    expect(canvas.width).toBe(1280);
+    expect(canvas.height).toBe(960);
+    expect(r._scale).toBe(2);
+  });
+
+  it('keeps a desktop full-bleed stage at or above 1:1', () => {
+    const canvas = makeFakeCanvas(1140, 830);
+    const r = new Renderer(canvas);
+    r.dpr = 2;
+    r.resize();
+    expect(r._scale).toBeGreaterThanOrEqual(1);
+    expect(canvas.width * canvas.height).toBeLessThanOrEqual(2.11e6);
+  });
+
+  it('keeps low quality at exactly CSS pixels, even when huge', () => {
+    const canvas = makeFakeCanvas(2000, 1200);
+    const r = new Renderer(canvas);
+    r.setQuality('low');
+    r.resize();
+    expect(canvas.width).toBe(2000);
+    expect(canvas.height).toBe(1200);
+  });
+});
