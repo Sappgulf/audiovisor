@@ -10,7 +10,7 @@
 export const PALETTE_DEFAULT_LIMIT = 12;
 
 /**
- * @param {{label:string, keys:string}[]} cmds
+ * @param {{label:string, action?:Function, keys?:string}[]} cmds
  * @param {string} query empty query shows the first `limit` commands
  * @returns {object[]} the exact list the UI should render and index into
  */

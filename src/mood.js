@@ -1,4 +1,8 @@
 // Genre/Mood detector — tempo + spectral balance heuristics
+/**
+ * @param {{ bpm?: number, bass?: number, mid?: number, high?: number, width?: number }} [levels]
+ * @returns {{ tag: string } | null}
+ */
 export function detectMood({ bpm = 0, bass = 0, mid = 0, high = 0, width } = {}) {
   void mid;
   if (!bpm || bpm <= 0) return null;

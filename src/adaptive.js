@@ -24,6 +24,18 @@
 
 export const TIERS = ['low', 'medium', 'high', 'ultra'];
 
+/**
+ * Human-facing description of each tier. The raytrace stage owns the real
+ * numbers (src/raystage.js QUALITY); this is the copy the settings panel
+ * shows, kept next to TIERS so the list cannot drift from the cycle order.
+ */
+export const TIER_INFO = {
+  low: { label: 'Low', blurb: 'Half-resolution, no reflections — phones and integrated GPUs.' },
+  medium: { label: 'Medium', blurb: '0.7x resolution with reflections — a safe desktop default.' },
+  high: { label: 'High', blurb: '0.8x resolution, 2 samples per pixel — balanced quality.' },
+  ultra: { label: 'Ultra', blurb: 'Full resolution, 4 samples per pixel — discrete GPUs.' },
+};
+
 export const WINDOW = 20;
 export const FAST_WINDOW = 4;
 

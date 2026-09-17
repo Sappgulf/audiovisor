@@ -28,5 +28,15 @@ export default defineConfig({
        are slow computations, not hangs, so give them room. */
     testTimeout: 30000,
     hookTimeout: 30000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text-summary', 'lcov'],
+      /* Coverage is a report, not yet a gate — the render/shader suites do a
+         lot of real work that is hard to attribute to a single module, so a
+         threshold here would fail on noise. Raise a floor once the numbers
+         have settled. */
+      include: ['src/**/*.js'],
+      exclude: ['src/dom-shim.d.ts'],
+    },
   },
 });

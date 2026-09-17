@@ -178,6 +178,36 @@ keyed on viewport height, 641-1179px (tablet through narrow desktop), and
 | `F` | True fullscreen (cinema — chrome auto-hides) |
 | `C` | Chop N Screwed |
 
+## Plugins
+
+Register a custom Canvas2D stage mode at runtime. The mode is added to the
+picker, keyboard cycling and command palette; plugin modes are Canvas2D-only,
+so the raytraced stage steps aside while one is active.
+
+```js
+AUDIOVISOR.registerMode({
+  id: 'my-mode',
+  name: 'My Mode',
+  icon: 'sparkles',                 // any icon in src/icons.js
+  draw(renderer, freq, wave, dt, dt60) {
+    // renderer.ctx / renderer.w / renderer.h / renderer.theme / renderer.quality
+    // freq: Uint8Array spectrum (0..255), wave: Uint8Array waveform (0..255)
+    // dt: real delta seconds, dt60: 60Hz-normalized delta
+  },
+});
+```
+
+`AUDIOVISOR.modes()` lists what has been registered. A duplicate or built-in
+id throws.
+
+## MIDI
+
+Click the **MIDI** chip in the Look tab (or run *Toggle MIDI input* from the
+command palette) to opt in. Continuous controllers 1/71/74/76/77 drive
+sensitivity, smoothing, bass focus, bloom and colour pop; the ten pads from
+note 36 toggle the FX chain; the twelve from note 48 select modes. The
+mapping lives in `src/midi.js` (`CC_MAP`, `FX_NOTE_BASE`, `MODE_NOTE_BASE`).
+
 ## Dev
 
 ```bash
@@ -192,8 +222,11 @@ Requires Node 20.19+ / 22.12+ (Vite 8); Node 24 recommended (see `.nvmrc`, CI ru
 ```bash
 npm test        # vitest — engine, beat tracker, synth feed, PKCE, utils,
                 #          settings schema, palette, per-mode stage render,
-                #          pointer drags, sheet gestures, PWA/responsive contract
+                #          pointer drags, sheet gestures, PWA/responsive contract,
+                #          plugin registry, MIDI mapping, offline tempo analysis
+npm run coverage # the same suite with a v8 coverage report
 npm run lint    # eslint
+npm run typecheck # tsc --noEmit (opt-in JSDoc checking on the newer modules)
 npm run size    # bundle budget (needs a build first)
 npm run shots    # render every stage mode (Canvas2D) to /tmp/audiovisor-shots
 npm run analyze  # exposure report per mode: mean luminance, clipping, saturation

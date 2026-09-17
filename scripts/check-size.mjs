@@ -15,13 +15,22 @@ import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 
 const BUDGETS = {
-  entry: 53 * 1024,    // initial JS chunk, gzipped
+  /* v8.13: the main.js split into ~40 focused modules adds factory-wrapper
+     overhead, and the plugin API + MIDI input add a little more. All in the
+     entry because the modules are statically imported. Worth it: the entry
+     is still a small payload and the codebase is navigable. */
+  entry: 57 * 1024,    // initial JS chunk, gzipped
   css: 12 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is
      unchanged; only the total went up with the features. That is the point
-     of splitting — the boot payload is the number that matters. */
-  total: 92 * 1024,    // all JS chunks, gzipped
+     of splitting — the boot payload is the number that matters.
+
+     v8.13: the main.js split into focused modules adds a small amount of
+     module-wrapper overhead to the entry, and the offline tempo analysis
+     worker adds a lazy dsp-worker chunk. Worth it: the boot payload is
+     still small and main.js went from 3096 to under 900 lines. */
+  total: 101 * 1024,   // all JS chunks, gzipped
 };
 
 const DIST = 'dist/assets';

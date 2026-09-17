@@ -4,6 +4,7 @@ import { beatEnergy } from './beatenergy.js';
 import { sanitizeLevels, usableSpectrum, safeDimension } from './levels.js';
 import { motionScale } from './motion.js';
 import { isLowPowerDevice } from './adaptive.js';
+import { getPluginMode, isPluginMode } from './plugins.js';
 
 /* modes whose scenes are broad bright plates rather than thin bright
    marks; full-strength bloom clips them (see _bloom) */
@@ -187,7 +188,7 @@ export class Renderer {
 
   setMode(m) {
     this.mode = m;
-    if (!CORE_MODES.has(m) && !extrasReady) {
+    if (!CORE_MODES.has(m) && !extrasReady && !isPluginMode(m)) {
       loadExtraModes(Renderer).catch(() => {});
     }
     this.history = [];
@@ -594,6 +595,12 @@ export class Renderer {
   }
 
   _scene(freq, wave, dt, dt60) {
+    /* Registered plugin modes are always available and take precedence. */
+    const plugin = getPluginMode(this.mode);
+    if (plugin) {
+      plugin.draw(this, freq, wave, dt, dt60);
+      return;
+    }
     /* a non-core mode selected before modes-extra.js resolves would hit an
        undefined method, so draw bars until the chunk is actually installed */
     const mode = (CORE_MODES.has(this.mode) || extrasReady) ? this.mode : FALLBACK_MODE;
