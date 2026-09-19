@@ -99,7 +99,10 @@ const state = {
   themeId: 'brass',
   autopilot: false,
   autopilotTimer: null,
-  drawerOpen: typeof window !== 'undefined' ? window.innerWidth > 640 : true,
+  // The stage is the product's first impression. Start in the visual workspace
+  // and let the inspector open on demand; opening a dense control dock on boot
+  // made the empty state feel like a settings screen.
+  drawerOpen: false,
   // what the user asked for, persisted; whether it's actually running is
   // ray.ok, which can flip on a GPU context loss
   raytraceWanted: true,
@@ -269,6 +272,7 @@ function setMode(id) {
   renderer.setMode(id);
   ray.setMode(id);
   picker.setActiveMode(id);
+  syncStageContext();
   pulseStage();
   saveSettings();
 }
@@ -292,12 +296,30 @@ function activeTheme() {
   return THEMES.find((t) => t.id === state.themeId);
 }
 
+function syncStageContext() {
+  const mode = MODES.find((m) => m.id === state.modeId);
+  const theme = activeTheme();
+  const modeLabel = $('active-mode-label');
+  const themeLabel = $('active-theme-label');
+  const modeIcon = $('active-mode-icon');
+  const context = $('stage-context');
+  if (modeLabel) modeLabel.textContent = mode?.name || 'Stage';
+  if (themeLabel) themeLabel.textContent = theme?.name || 'Warm Brass';
+  if (modeIcon) setIcon(modeIcon, mode?.icon || 'activity');
+  if (context) {
+    const label = `${mode?.name || 'Stage'} · ${theme?.name || 'Warm Brass'}`;
+    context.title = label;
+    context.setAttribute('aria-label', label);
+  }
+}
+
 function applyAutoPalette(colors, announce) {
   autoTheme = paletteToTheme(colors);
   if (state.themeId !== 'auto') return;
   renderer.setTheme(autoTheme);
   ray.setTheme(autoTheme);
   applyAccent(autoTheme);
+  syncStageContext();
   updateFavicon();
   /* deliberately no updateTrackUI() here: re-rendering the art element would
      reload the same cover, fire onArtworkLoaded again, and re-apply the same
@@ -340,6 +362,7 @@ function applyNamePalette(name) {
   renderer.setTheme(autoTheme);
   ray.setTheme(autoTheme);
   applyAccent(autoTheme);
+  syncStageContext();
   updateFavicon();
   toast(`AUTO <b>theme</b> — ${base.name}`);
 }
@@ -359,6 +382,7 @@ function setTheme(id) {
      recoloured the visualiser and left every chip, tab and slider brass */
   applyAccent(theme);
   picker.setActiveTheme(id);
+  syncStageContext();
   updateFavicon();
   if (engine.track && !engine.isExternalMode()) {
     if (trackArtEl) trackArtEl._artName = null;
@@ -498,6 +522,7 @@ function applyArtColors(colors) {
 
 function updateTrackUI() {
   const input = engine.activeInput;
+  trackInfoEl.classList.toggle('has-track', input !== 'none');
 
   const connect = connectLoader.getConnect();
   if ((input === 'spotify' || input === 'apple') && connect?.currentTrack) {
@@ -687,6 +712,14 @@ const about = createAboutPanel({
 
 createDrawer({ state });
 
+// The empty state offers a clear path into the mode browser without requiring
+// users to understand the settings dock first.
+$('explore-modes')?.addEventListener('click', () => {
+  if (!state.drawerOpen) $('nav-settings')?.click();
+  $('tab-look')?.click();
+  requestAnimationFrame(() => $('mode-filter')?.focus({ preventScroll: true }));
+});
+
 /* ---------- keyboard ---------- */
 
 createKeyboardShortcuts({
@@ -755,6 +788,7 @@ setModeStory(state.modeId);
    and it breaks silently the day the default theme changes. Derive the accent
    from whatever theme is actually active once settings have been restored. */
 applyAccent(activeTheme());
+syncStageContext();
 
 /* Seed every toggle's reported state from the class it is already wearing.
    Without this a control announces nothing at all until the first time it

@@ -18,6 +18,7 @@ export function createDrawer({ state, doc = document }) {
   const win = doc.defaultView || window;
   const drawer = $('drawer');
   const sheetScrim = $('sheet-scrim');
+  let returnFocus = null;
 
   /** True while the drawer is presented as a bottom sheet rather than a panel. */
   const isSheet = () => win.matchMedia('(max-width: 640px)').matches;
@@ -50,13 +51,23 @@ export function createDrawer({ state, doc = document }) {
 
   function setDrawerOpen(open) {
     if (state.drawerOpen === open) return;
+    if (open && doc.activeElement instanceof HTMLElement) returnFocus = doc.activeElement;
     state.drawerOpen = open;
     syncDrawer();
+    if (!open) {
+      const restore = returnFocus;
+      const restoreFocus = () => {
+        if (restore?.isConnected && !restore.hasAttribute('disabled')) restore.focus();
+      };
+      if (win.requestAnimationFrame) win.requestAnimationFrame(restoreFocus);
+      else restoreFocus();
+    }
   }
   function toggleDrawer() { setDrawerOpen(!state.drawerOpen); }
 
   $('nav-settings').addEventListener('click', toggleDrawer);
   $('drawer-toggle')?.addEventListener('click', toggleDrawer);
+  $('drawer-close')?.addEventListener('click', () => setDrawerOpen(false));
   // tapping the dimmed area behind a sheet closes it, as every sheet does
   sheetScrim?.addEventListener('click', () => setDrawerOpen(false));
   // drag the grabber down to dismiss

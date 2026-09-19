@@ -25,7 +25,15 @@ const server = await createServer({ root: process.cwd(), server: { port: 0, stri
 await server.listen();
 const base = server.resolvedUrls.local[0];
 const browser = await chromium.launch({ args: ['--use-angle=metal'] });
-const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+/* The app's PWA registration intentionally reloads once when a new worker
+   takes control. This sweep is about renderer output, so block service
+   workers in its isolated context to keep that lifecycle event from racing
+   the screenshot evaluate call. */
+const context = await browser.newContext({
+  serviceWorkers: 'block',
+  viewport: { width: 1280, height: 800 },
+});
+const page = await context.newPage();
 await page.goto(base, { waitUntil: 'load', timeout: 30000 });
 await page.waitForTimeout(2500);
 
@@ -71,5 +79,6 @@ const sheet = await page.evaluate(async (shots) => {
 writeFileSync(`${OUT}/sheet.png`, Buffer.from(sheet.split(',')[1], 'base64'));
 
 console.log(`${shots.length} modes -> ${OUT}/ (sheet.png)`);
+await context.close();
 await browser.close();
 await server.close();

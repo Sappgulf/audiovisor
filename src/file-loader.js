@@ -31,7 +31,8 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
     if (engine.captureActive) await engine.toggleCapture();
     if (engine.isExternal()) engine.pause();
     engine.stopStream();
-    $('status-text').textContent = 'Engine: Decoding';
+    $('status-text').textContent = 'Decoding';
+    $('status-pill')?.setAttribute('title', 'Decoding');
     try {
       const errors = await engine.addToQueue(audioFiles);
       if (!engine.hasTrack) {
@@ -52,7 +53,8 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
         : (loaded > 1 ? `Loaded <b>${loaded} tracks</b> — queue playing` : `Loaded <b>${engine.track.name}</b>`));
     } catch (err) {
       console.error(err);
-      $('status-text').textContent = 'Engine: Decode Failed';
+      $('status-text').textContent = 'Decode failed';
+      $('status-pill')?.setAttribute('title', 'Decode failed');
       toast('<b>Decode failed</b> — file may be corrupted', { duration: 3000 });
     }
   }

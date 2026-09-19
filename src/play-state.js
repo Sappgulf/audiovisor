@@ -41,16 +41,17 @@ export function createPlayState({ engine, panels, setIcon, setToggle, getDropzon
     setToggle($('capture-btn'), engine.captureActive);
     setToggle($('mic-btn'), engine.micActive);
 
-    let text = 'Engine: Idle';
+    let text = 'Ready · Add audio';
     switch (engine.activeInput) {
-      case 'mic': text = playing || engine.micActive ? 'Engine: Live · MIC' : 'Engine: MIC'; break;
-      case 'capture': text = 'Engine: Live · CAPTURE'; break;
+      case 'mic': text = playing || engine.micActive ? 'Live · Mic' : 'Mic ready'; break;
+      case 'capture': text = 'Live · Capture'; break;
       case 'spotify': text = playing ? 'SPOTIFY · Live' : 'SPOTIFY · Paused'; break;
       case 'apple': text = playing ? 'APPLE MUSIC · Live' : 'APPLE MUSIC · Paused'; break;
       case 'stream': text = playing ? 'STREAM · Live' : 'STREAM · Paused'; break;
-      case 'track': text = playing ? 'Engine: Live' : 'Engine: Paused'; break;
+      case 'track': text = playing ? 'Live · Track' : 'Paused · Track'; break;
     }
     $('status-text').textContent = text;
+    $('status-pill')?.setAttribute('title', text);
     refreshStatusDot();
     syncDropzone();
   }
@@ -62,7 +63,9 @@ export function createPlayState({ engine, panels, setIcon, setToggle, getDropzon
   }
 
   function syncDropzone() {
-    getDropzone().classList.toggle('is-hidden', engine.activeInput !== 'none');
+    const idle = engine.activeInput === 'none';
+    getDropzone().classList.toggle('is-hidden', !idle);
+    $('stage')?.classList.toggle('is-empty', idle);
   }
 
   engine.on('state', refreshStatus);

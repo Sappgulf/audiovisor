@@ -433,15 +433,15 @@ button:focus-visible, input:focus-visible {
   justify-content: center;
   overflow: hidden;
   min-height: 0;
-  padding: 18px 16px 12px;
+  padding: 18px 20px 14px;
   background: transparent;
 }
 
 .stage {
   flex: none;
   width: min(1600px, 100%);
-  aspect-ratio: 21 / 9;
-  max-height: min(62vh, 560px);
+  aspect-ratio: 16 / 9;
+  max-height: min(70vh, 720px);
   position: relative;
   overflow: hidden;
   display: flex;
@@ -449,10 +449,12 @@ button:focus-visible, input:focus-visible {
   justify-content: center;
   /* pure black ground: every mode paints its world on opaque canvases above
      this, and anything brighter only reads as a haze behind the renderer */
-  background: #000;
+  background:
+    radial-gradient(70% 90% at 50% 56%, rgba(var(--accent-rgb), 0.05), transparent 68%),
+    #020202;
   border: 1px solid rgba(255,235,205,0.07);
   border-top: 1px solid rgba(255,250,243,0.08);
-  border-radius: 16px;
+  border-radius: 24px;
   box-shadow: 0 24px 64px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.4), 0 1px 0 rgba(255,250,243,0.05) inset;
 }
 .stage::before {
@@ -510,6 +512,92 @@ button:focus-visible, input:focus-visible {
   line-height: 1.45;
   max-width: 280px;
 }
+
+.stage.is-empty .stage-story {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.stage-context {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(360px, calc(100% - 36px));
+  padding: 8px 12px;
+  border: 1px solid rgba(255,235,205,0.11);
+  border-radius: 999px;
+  background: rgba(15, 14, 13, 0.68);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18), 0 1px 0 rgba(255,250,243,0.06) inset;
+  color: var(--text-60);
+  transition: opacity 0.35s var(--ease), transform 0.35s var(--ease);
+  pointer-events: none;
+}
+.stage-context-eyebrow {
+  color: var(--accent);
+  font-size: 8px;
+  letter-spacing: 0.16em;
+}
+.stage-context strong {
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stage-context-rule {
+  width: 1px;
+  height: 12px;
+  background: var(--border-strong);
+}
+.stage-context-theme {
+  color: var(--text-40);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+.idle-visual {
+  position: absolute;
+  inset: 13% 13% 13%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(7px, 1.1vw, 18px);
+  opacity: 0.34;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse at center, #000 0 48%, transparent 78%);
+  transition: opacity 0.6s var(--ease), transform 0.6s var(--ease);
+}
+.idle-visual span {
+  width: clamp(7px, 1vw, 14px);
+  height: var(--idle-height, 24%);
+  border-radius: 999px;
+  background: linear-gradient(to top, transparent, var(--accent), rgba(255,250,243,0.8));
+  box-shadow: 0 0 22px var(--accent-glow);
+  transform-origin: center;
+  animation: idle-spectrum 2.8s var(--ease) infinite alternate;
+  animation-delay: calc(var(--idle-index, 0) * -0.18s);
+}
+.idle-visual span:nth-child(2) { --idle-height: 42%; --idle-index: 1; }
+.idle-visual span:nth-child(3) { --idle-height: 68%; --idle-index: 2; }
+.idle-visual span:nth-child(4) { --idle-height: 34%; --idle-index: 3; }
+.idle-visual span:nth-child(5) { --idle-height: 82%; --idle-index: 4; }
+.idle-visual span:nth-child(6) { --idle-height: 48%; --idle-index: 5; }
+.idle-visual span:nth-child(7) { --idle-height: 62%; --idle-index: 6; }
+.idle-visual span:nth-child(8) { --idle-height: 30%; --idle-index: 7; }
+.idle-visual span:nth-child(9) { --idle-height: 52%; --idle-index: 8; }
+@keyframes idle-spectrum {
+  from { transform: scaleY(0.45); opacity: 0.38; }
+  to { transform: scaleY(1); opacity: 0.9; }
+}
+:root.stage-live .idle-visual { opacity: 0; transform: scale(0.94); }
 
 #viz-canvas {
   position: absolute;
@@ -662,6 +750,131 @@ button:focus-visible, input:focus-visible {
 .drop-title { font-size: 13px; color: var(--text-strong); letter-spacing: 0.14em; font-weight: 600; margin-bottom: 9px; }
 .drop-sub { font-size: 12px; line-height: 1.55; color: var(--text-60); max-width: 34ch; }
 
+/* Empty state: a launch surface with one clear action, not a placeholder
+   floating on top of the renderer. The stage stays visually alive behind it,
+   while the card carries enough contrast to work with blur disabled on touch. */
+.dropzone {
+  position: relative;
+  width: min(520px, calc(100% - 48px));
+  padding: 34px 38px 26px;
+  border: 1px solid rgba(var(--accent-rgb), 0.2);
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, rgba(var(--accent-rgb), 0.1), transparent 42%),
+    rgba(16, 14, 13, 0.9);
+  box-shadow: 0 24px 64px rgba(0,0,0,0.34), 0 0 0 1px rgba(255,250,243,0.04) inset;
+  overflow: hidden;
+}
+.dropzone::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border: 1px dashed rgba(255,235,205,0.16);
+  border-radius: 22px;
+  pointer-events: none;
+}
+.dropzone::after {
+  content: '';
+  position: absolute;
+  top: -90px;
+  left: 50%;
+  width: 260px;
+  height: 180px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(var(--accent-rgb), 0.14), transparent 68%);
+  pointer-events: none;
+}
+.drop-eyebrow {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-bottom: 18px;
+  color: var(--accent);
+  font-size: 8px;
+  letter-spacing: 0.2em;
+}
+.drop-icon-circle {
+  position: relative;
+  z-index: 1;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 18px;
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: radial-gradient(circle at 35% 30%, var(--accent-dim), transparent 70%), rgba(255,250,243,0.035);
+  box-shadow: 0 0 0 8px rgba(var(--accent-rgb),0.04), 0 0 30px rgba(var(--accent-rgb),0.12);
+}
+.drop-title {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 10px;
+  color: var(--text-strong);
+  font-family: var(--font-display);
+  font-size: clamp(21px, 3vw, 29px);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+}
+.drop-sub {
+  position: relative;
+  z-index: 1;
+  max-width: 35ch;
+  color: var(--text-60);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.drop-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+.drop-actions .browse-btn { margin-top: 0; }
+.drop-secondary {
+  min-height: 38px;
+  padding: 9px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-60);
+  background: rgba(255,250,243,0.04);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  transition: color 0.18s var(--ease), border-color 0.18s var(--ease), background 0.18s var(--ease), transform 0.18s var(--ease);
+}
+.drop-secondary:hover {
+  color: var(--text-strong);
+  border-color: var(--accent-line);
+  background: var(--accent-dim);
+  transform: translateY(-1px);
+}
+.drop-meta {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+  color: var(--text-40);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.drop-meta-sep {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.75;
+}
+
 /* ---------- Drawer ---------- */
 
 /* The stage behind these two is a full-rate animating canvas whenever
@@ -694,6 +907,53 @@ button:focus-visible, input:focus-visible {
   overflow: hidden;
   transition: transform 0.36s var(--ease-out), opacity 0.28s var(--ease);
   transform-origin: top right;
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  background: linear-gradient(135deg, rgba(var(--accent-rgb),0.07), transparent 70%);
+  flex-shrink: 0;
+}
+.drawer-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.drawer-kicker {
+  color: var(--accent);
+  font-size: 8px;
+  letter-spacing: 0.18em;
+}
+.drawer-heading strong {
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.drawer-close {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-40);
+  background: rgba(255,250,243,0.035);
+  transition: color 0.18s var(--ease), border-color 0.18s var(--ease), background 0.18s var(--ease), transform 0.18s var(--ease);
+}
+.drawer-close .ic { width: 14px; height: 14px; }
+.drawer-close:hover {
+  color: var(--text-strong);
+  border-color: var(--accent-line);
+  background: var(--accent-dim);
+  transform: rotate(4deg);
 }
 .drawer.is-closed {
   transform: translateX(12px) scale(0.98);
@@ -1538,8 +1798,8 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 /* ---------- Responsive ---------- */
 
 @media (max-width: 1024px) {
-  .drawer { width: 260px; }
-  .drawer-scroll { width: 260px; padding: 20px 16px; }
+  .drawer { width: min(320px, calc(100vw - 24px)); }
+  .drawer-scroll { width: 100%; padding: 20px 16px; }
   .transport { gap: 18px; padding: 0 16px; height: 76px; }
   .track-info { width: 200px; }
   .pill-nav { display: none; }
@@ -2692,4 +2952,138 @@ html, body {
   .transport { background: rgba(26, 24, 22, 0.94); }
   .drawer { background: rgba(30, 28, 26, 0.97); }
   .dropzone { background: rgba(18, 17, 16, 0.55); }
+}
+
+@media (max-width: 640px) {
+  .stage-context {
+    top: 14px;
+    right: 14px;
+    gap: 7px;
+    padding: 7px 9px;
+  }
+  .stage-context-eyebrow,
+  .stage-context-theme { font-size: 7px; }
+  .stage-context strong { font-size: 10px; }
+  .stage-context-rule { height: 10px; }
+
+  .dropzone {
+    width: min(520px, calc(100% - 32px));
+    padding: 28px 22px 22px;
+    border-radius: 22px;
+  }
+  .dropzone::before { border-radius: 20px; }
+  .drop-eyebrow { margin-bottom: 14px; }
+  .drop-icon-circle { width: 56px; height: 56px; margin-bottom: 16px; }
+  .drop-title { font-size: clamp(22px, 7vw, 28px); }
+  .drop-sub { font-size: 11px; }
+  .drop-actions { flex-direction: column; gap: 8px; margin-top: 18px; }
+  .drop-actions .browse-btn,
+  .drop-secondary { width: min(220px, 100%); }
+  .drop-meta { margin-top: 17px; font-size: 7px; gap: 6px; }
+  .drop-meta-sep { display: none; }
+  .drop-meta span { display: none; }
+  .drop-meta span:first-child,
+  .drop-meta span:last-child { display: inline; }
+
+  .drawer-head { padding: 10px 14px 9px; }
+  .drawer-heading strong { font-size: 14px; }
+}
+
+/* ==========================================================================
+   Visual-first chrome
+   ========================================================================== */
+
+/* Keep the full semantic shell for keyboard and assistive-tech users while
+   letting the canvas carry the first impression. */
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* The generated sonic landscape is the idle state. Let the existing renderer
+   whisper through it rather than covering it with a rectangular launch card. */
+.stage.is-empty {
+  background:
+    linear-gradient(180deg, rgba(2,2,2,0.34), rgba(2,2,2,0.08) 48%, rgba(2,2,2,0.62)),
+    url('/idle-sonic.webp') center / cover no-repeat,
+    #020202;
+}
+.stage.is-empty .stage-canvas,
+.stage.is-empty #viz-canvas {
+  opacity: 0.3;
+  mix-blend-mode: screen;
+}
+.stage.is-empty .idle-visual { opacity: 0; }
+
+.dropzone {
+  width: min(238px, 52%);
+  aspect-ratio: 1;
+  height: auto;
+  padding: 0;
+  border: 1px solid rgba(var(--accent-rgb), 0.34);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(var(--accent-rgb), 0.15), transparent 58%),
+    rgba(9, 8, 7, 0.5);
+  box-shadow: 0 0 0 1px rgba(255,250,243,0.05) inset;
+  transition: transform 0.36s var(--ease-out), border-color 0.24s var(--ease);
+}
+.dropzone::before {
+  border-radius: 50%;
+}
+.dropzone:hover,
+.dropzone.drag-over,
+.dropzone:focus-within {
+  border-color: rgba(var(--accent-rgb), 0.68);
+  transform: scale(1.035);
+}
+.drop-visual {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.drop-icon-circle {
+  width: 76px;
+  height: 76px;
+  margin: 0;
+}
+.drop-actions {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  margin: 0;
+}
+.dropzone .browse-btn,
+.dropzone .drop-secondary {
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.track-info:not(.has-track) .track-name { display: none; }
+
+@media (max-width: 640px) {
+  .dropzone { width: 184px; }
+  .drop-icon-circle { width: 64px; height: 64px; }
+  .drop-actions { bottom: 14px; }
+  .dropzone .browse-btn,
+  .dropzone .drop-secondary { width: 36px; height: 36px; min-height: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropzone { transition: none; }
 }

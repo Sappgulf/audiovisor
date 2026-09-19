@@ -51,17 +51,26 @@
 
     <div class="shell" id="shell">
       <header class="topbar">
-        <div class="brand">
+        <div class="brand" aria-label="Audiovisor">
           <div class="logo-mark"><div class="logo-diamond"></div></div>
-          <h1 class="wordmark">Audiovisor</h1>
+          <h1 class="wordmark sr-only">Audiovisor</h1>
         </div>
 
         <nav class="pill-nav" aria-label="Primary">
-          <button class="nav-link is-active" data-nav="stage" id="nav-stage" aria-current="page">Stage</button>
+          <button class="nav-link is-active" data-nav="stage" id="nav-stage" aria-current="page" title="Stage">
+            <span class="ic nav-icon" data-icon="activity" aria-hidden="true"></span>
+            <span class="nav-label sr-only">Stage</span>
+          </button>
           <div class="nav-sep" aria-hidden="true"></div>
-          <button class="nav-link" data-nav="settings" id="nav-settings" aria-expanded="true" aria-controls="drawer">Settings</button>
+          <button class="nav-link" data-nav="settings" id="nav-settings" aria-expanded="false" aria-controls="drawer" title="Settings">
+            <span class="ic nav-icon" data-icon="sliders" aria-hidden="true"></span>
+            <span class="nav-label sr-only">Settings</span>
+          </button>
           <div class="nav-sep" aria-hidden="true"></div>
-          <button class="nav-link" data-nav="about" id="nav-about" aria-haspopup="dialog" aria-expanded="false">About</button>
+          <button class="nav-link" data-nav="about" id="nav-about" aria-haspopup="dialog" aria-expanded="false" title="About">
+            <span class="ic nav-icon" data-icon="sparkles" aria-hidden="true"></span>
+            <span class="nav-label sr-only">About</span>
+          </button>
         </nav>
 
         <div class="topbar-right">
@@ -74,21 +83,21 @@
           <button class="mic-btn" id="voice-btn" title="Voice AI — hum to synth" aria-label="Voice AI">
             <span class="ic" data-icon="user"></span>
           </button>
-          <button class="mic-btn compact-only" id="drawer-toggle" title="Settings" aria-label="Toggle settings panel" aria-expanded="true" aria-controls="drawer">
+          <button class="mic-btn" id="drawer-toggle" title="Settings" aria-label="Toggle settings panel" aria-expanded="false" aria-controls="drawer">
             <span class="ic" data-icon="sliders"></span>
           </button>
           <button class="mic-btn" id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
             <span class="ic" data-icon="keyboard"></span>
           </button>
-          <div class="status-pill" id="status-pill">
+          <div class="status-pill" id="status-pill" title="Player status">
             <span class="status-dot"></span>
-            <span class="mono status-text" id="status-text">Engine: Idle</span>
+            <span class="mono status-text sr-only" id="status-text">Engine: Idle</span>
           </div>
         </div>
       </header>
 
       <div class="workspace">
-        <main class="stage" id="stage">
+        <main class="stage is-empty" id="stage">
           <!-- The stage is a decorative rendering of audio that is already playing;
                announcing three unlabelled canvases adds noise without adding
                information, so they are hidden from assistive tech. The BPM
@@ -100,8 +109,8 @@
           <div class="horizon" id="horizon"></div>
 
           <div class="stage-overlays">
-            <div class="data-chip" id="bpm-chip">
-              <span class="mono chip-label">BPM</span>
+            <div class="data-chip" id="bpm-chip" title="Tempo">
+              <span class="mono chip-label sr-only">BPM</span>
               <span class="mono chip-value" id="bpm-value">--.--</span>
             </div>
             <div class="data-chip chip-accent is-hidden" id="bass-chip">
@@ -114,7 +123,18 @@
             </div>
           </div>
 
-          <div class="stage-story" id="stage-story" aria-live="polite" aria-atomic="true">
+          <div class="stage-context" id="stage-context" aria-label="Current visual setup">
+            <span class="ic stage-context-icon" id="active-mode-icon" data-icon="bars" aria-hidden="true"></span>
+            <strong class="sr-only" id="active-mode-label">Spectrum Bars</strong>
+            <span class="stage-context-rule sr-only" aria-hidden="true"></span>
+            <span class="mono stage-context-theme sr-only" id="active-theme-label">Warm Brass</span>
+          </div>
+
+          <div class="idle-visual" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+
+          <div class="stage-story sr-only" id="stage-story" aria-live="polite" aria-atomic="true">
             <span class="mono stage-story-chapter" id="mode-story-chapter">01 / FIRST LIGHT</span>
             <strong class="stage-story-title" id="mode-story-title">Build the skyline</strong>
             <span class="stage-story-copy" id="mode-story-copy">Pillars rise where the kick lands, turning rhythm into architecture.</span>
@@ -122,10 +142,22 @@
 
           <div class="dropzone-wrap" id="dropzone">
             <div class="dropzone">
-              <div class="drop-icon-circle"><span class="ic" data-icon="music"></span></div>
-              <p class="mono drop-title">Drag &amp; Drop Audio to Begin</p>
-              <p class="drop-sub">MP3, WAV, FLAC, OGG — guest mode or sign in to Spotify / Apple Music</p>
-              <label class="browse-btn" for="file-input" id="browse-label" role="button" tabindex="0" aria-label="Browse audio files">Browse files</label>
+              <span class="drop-title sr-only">Choose an audio track</span>
+              <p class="drop-sub sr-only">Drop an audio file or choose one to start the visualizer.</p>
+              <div class="drop-visual" aria-hidden="true">
+                <div class="drop-icon-circle"><span class="ic" data-icon="music"></span></div>
+              </div>
+              <div class="drop-actions">
+                <label class="browse-btn icon-btn" for="file-input" id="browse-label" role="button" tabindex="0" title="Choose an audio track" aria-label="Choose an audio track">
+                  <span class="ic" data-icon="plus" aria-hidden="true"></span>
+                  <span class="sr-only">Choose an audio track</span>
+                </label>
+                <button class="drop-secondary icon-btn" id="explore-modes" type="button" title="Explore visual modes" aria-label="Explore visual modes">
+                  <span class="ic" data-icon="orbit" aria-hidden="true"></span>
+                  <span class="sr-only">Explore visual modes</span>
+                </button>
+              </div>
+              <p class="drop-meta sr-only"><span>MP3 / WAV / FLAC / OGG</span><span class="drop-meta-sep" aria-hidden="true"></span><span>23 modes · 25 themes</span><span class="drop-meta-sep" aria-hidden="true"></span><span>Runs locally</span></p>
             </div>
           </div>
 
@@ -133,27 +165,44 @@
         </main>
 
         <div class="sheet-scrim" id="sheet-scrim" hidden></div>
-        <aside class="drawer" id="drawer" aria-label="Settings panel">
+        <aside class="drawer is-closed" id="drawer" aria-label="Settings panel" inert>
           <!-- bottom-sheet grabber; visible only at phone widths, where the
                drawer becomes a sheet and can be dragged down to dismiss -->
           <div class="sheet-handle" id="sheet-handle" aria-hidden="true"><span></span></div>
+          <div class="drawer-head">
+            <div class="drawer-heading sr-only">
+              <span class="mono drawer-kicker">CONTROL ROOM</span>
+              <strong>Shape the scene</strong>
+            </div>
+            <button class="drawer-close" id="drawer-close" type="button" aria-label="Close settings panel">
+              <span class="ic" data-icon="close"></span>
+            </button>
+          </div>
           <div class="drawer-tabbar" role="tablist" aria-label="Settings sections">
-            <button class="drawer-tab" id="tab-source" data-tab="source" role="tab" aria-controls="panel-source" aria-selected="false">Source</button>
-            <button class="drawer-tab" id="tab-look" data-tab="look" role="tab" aria-controls="panel-look" aria-selected="false">Look</button>
-            <button class="drawer-tab" id="tab-audio" data-tab="audio" role="tab" aria-controls="panel-audio" aria-selected="false">Audio</button>
-            <button class="drawer-tab" id="tab-studio" data-tab="studio" role="tab" aria-controls="panel-studio" aria-selected="false">Studio</button>
+            <button class="drawer-tab" id="tab-source" data-tab="source" role="tab" aria-controls="panel-source" aria-selected="false" title="Source">
+              <span class="ic" data-icon="music2" aria-hidden="true"></span><span class="sr-only">Source</span>
+            </button>
+            <button class="drawer-tab" id="tab-look" data-tab="look" role="tab" aria-controls="panel-look" aria-selected="false" title="Look">
+              <span class="ic" data-icon="orbit" aria-hidden="true"></span><span class="sr-only">Look</span>
+            </button>
+            <button class="drawer-tab" id="tab-audio" data-tab="audio" role="tab" aria-controls="panel-audio" aria-selected="false" title="Audio">
+              <span class="ic" data-icon="activity" aria-hidden="true"></span><span class="sr-only">Audio</span>
+            </button>
+            <button class="drawer-tab" id="tab-studio" data-tab="studio" role="tab" aria-controls="panel-studio" aria-selected="false" title="Studio">
+              <span class="ic" data-icon="sparkles" aria-hidden="true"></span><span class="sr-only">Studio</span>
+            </button>
             <div class="drawer-tab-ink" id="drawer-tab-ink" aria-hidden="true"></div>
           </div>
           <div class="drawer-scroll">
           <div class="drawer-panel" id="panel-source" data-panel="source" role="tabpanel" aria-labelledby="tab-source">
             <section>
-              <h3 class="section-title">Connect</h3>
+              <h3 class="section-title sr-only">Connect</h3>
 
               <div id="connect-root"></div>
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title">Social Feed</h3>
+              <h3 class="section-title sr-only">Social Feed</h3>
 
               <div id="social-feed" style="display:flex; flex-direction:column; gap:8px; max-height:160px; overflow-y:auto"></div>
               <div style="display:flex; gap:6px; margin-top:8px">
@@ -164,7 +213,7 @@
           </div>
           <div class="drawer-panel" id="panel-look" data-panel="look" role="tabpanel" aria-labelledby="tab-look">
             <section>
-              <h3 class="section-title">Stage Mode</h3>
+              <h3 class="section-title sr-only">Stage Mode</h3>
 
               <input id="mode-filter" class="connect-input drawer-filter" type="search" placeholder="Filter modes…" aria-label="Filter stage modes" autocomplete="off" />
               <div class="mode-list" id="mode-list"></div>
@@ -181,13 +230,13 @@
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title">Theme Mood</h3>
+              <h3 class="section-title sr-only">Theme Mood</h3>
 
               <div class="theme-row" id="theme-row"></div>
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title">Autopilot</h3>
+              <h3 class="section-title sr-only">Autopilot</h3>
 
               <div class="fx-row">
                 <button class="fx-chip" id="autopilot-chip" data-fx="autopilot"><span class="chip-txt">Auto</span></button>
@@ -198,26 +247,26 @@
           </div>
           <div class="drawer-panel" id="panel-audio" data-panel="audio" role="tabpanel" aria-labelledby="tab-audio">
             <section>
-              <h3 class="section-title">Engine Control</h3>
+              <h3 class="section-title sr-only">Engine Control</h3>
 
               <div class="sliders" id="sliders"></div>
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title">EQ — 5 Band</h3>
+              <h3 class="section-title sr-only">EQ — 5 Band</h3>
 
               <div class="eq-bands" id="eq-bands"></div>
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title">FX Chain</h3>
+              <h3 class="section-title sr-only">FX Chain</h3>
 
               <div class="fx-row" id="fx-row"></div>
             </section>
           </div>
           <div class="drawer-panel" id="panel-studio" data-panel="studio" role="tabpanel" aria-labelledby="tab-studio">
             <section>
-              <h3 class="section-title">AI Remix Studio</h3>
+              <h3 class="section-title sr-only">AI Remix Studio</h3>
 
               <div class="fx-row" id="ai-stems"></div>
               <div class="fx-row" id="ai-presets" style="margin-top:8px"></div>
@@ -225,7 +274,7 @@
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title">Collab &amp; Share</h3>
+              <h3 class="section-title sr-only">Collab &amp; Share</h3>
 
               <div class="fx-row" style="margin-bottom:10px">
                 <button class="fx-chip" id="share-btn"><span class="ic ic-sm" data-icon="link"></span><span class="chip-txt">Copy Link</span></button>
@@ -240,7 +289,7 @@
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title">System</h3>
+              <h3 class="section-title sr-only">System</h3>
 
               <div class="fx-row" style="margin-bottom:10px">
                 <button class="mini-btn" id="settings-export">Export</button>
@@ -260,15 +309,15 @@
           <button class="ghost-btn" id="save-library-btn" title="Save to library (with edits)" aria-label="Save to library" style="position:absolute; top:6px; right:6px; width:26px; height:26px; z-index:2;"><span class="ic ic-sm" data-icon="layers"></span></button>
           <div class="track-art" id="track-art"><span class="ic" data-icon="music2"></span></div>
           <div class="track-meta">
-            <span class="mono track-label">Now Playing</span>
+            <span class="mono track-label sr-only">Now Playing</span>
             <span class="track-name" id="track-name">Waiting for input...</span>
-            <span class="mono track-spec" id="track-spec">44.1kHz / STEREO</span>
+            <span class="mono track-spec sr-only" id="track-spec">44.1kHz / STEREO</span>
           </div>
         </div>
 
         <label class="add-btn" id="add-btn" for="file-input" role="button" tabindex="0" title="Add audio files" aria-label="Add audio files">
           <span class="ic ic-sm" data-icon="plus"></span>
-          <span class="add-label">Add</span>
+          <span class="add-label sr-only">Add</span>
         </label>
 
         <div class="transport-controls">

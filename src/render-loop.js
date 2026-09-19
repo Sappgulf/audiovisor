@@ -139,8 +139,11 @@ export function createRenderLoop({
     /* Plugin modes are Canvas2D-only, so the raytraced stage steps aside
        while one is selected. */
     const rtOn = state.raytraceWanted && ray.ok && !raySuspended && !isPluginMode(state.modeId);
-    // surface a GPU context loss instead of silently swapping renderers
-    if (state.raytraceWanted && !ray.ok && !ray.loading && !rayDropped) {
+    // Surface a runtime GPU context loss instead of silently swapping
+    // renderers. A browser without WebGL2 is an expected capability fallback,
+    // not an error to put over the first-run experience; the effective backend
+    // is still reported in the Look panel.
+    if (state.raytraceWanted && !ray.ok && !ray.loading && ray.lost && !rayDropped) {
       rayDropped = true;
       toast(ray.lost
         ? 'GPU context lost — <b>Canvas2D stage</b> until it recovers'

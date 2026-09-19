@@ -2,6 +2,10 @@
 import { setIcon } from './icons.js';
 import { modeArt } from './mode-art.js';
 
+export function modeAssetPath(id, animated = false) {
+  return `/modes/${id}${animated ? '-anim' : ''}.webp`;
+}
+
 /**
  * Mode cards, theme swatches and the mode filter.
  *
@@ -30,6 +34,8 @@ export function createModePicker({
   function buildCard(m) {
     const btn = doc.createElement('button');
     const art = modeArt(m.id);
+    const image = art.image || modeAssetPath(m.id);
+    const animation = art.animation || modeAssetPath(m.id, true);
     const searchText = `${m.name} ${m.id} ${art.chapter} ${art.title} ${art.story}`.toLowerCase();
     const active = m.id === getModeId();
     btn.className = 'mode-card' + (active ? ' is-active' : '');
@@ -47,11 +53,13 @@ export function createModePicker({
     btn.innerHTML = `
     <div class="mode-preview">
       <span class="ic" data-icon="${m.icon}"></span>
-    <img class="mode-thumb" src="${art.image}" alt="" aria-hidden="true"
+    <img class="mode-thumb" src="${image}" alt="" aria-hidden="true"
            loading="lazy" decoding="async" width="176" height="108">
+      <span class="mode-thumb-anim" aria-hidden="true"></span>
     </div>
-    <span class="mode-name">${m.name}</span>`;
+    <span class="mode-name sr-only">${m.name}</span>`;
     const thumb = btn.querySelector('.mode-thumb');
+    const anim = /** @type {HTMLElement | null} */ (btn.querySelector('.mode-thumb-anim'));
     thumb.addEventListener('load', () => btn.classList.add('has-thumb'));
     thumb.addEventListener('error', () => {
       /* drop the class too, or the card keeps hiding the fallback icon and
@@ -59,6 +67,18 @@ export function createModePicker({
       btn.classList.remove('has-thumb');
       thumb.remove();
     });
+    const activateAnimation = () => {
+      if (anim && !btn.dataset.animLoaded) {
+        anim.style.backgroundImage = `url("${animation}")`;
+        btn.dataset.animLoaded = 'true';
+      }
+      btn.classList.add('is-anim');
+    };
+    const deactivateAnimation = () => btn.classList.remove('is-anim');
+    btn.addEventListener('pointerenter', activateAnimation);
+    btn.addEventListener('pointerleave', deactivateAnimation);
+    btn.addEventListener('focus', activateAnimation);
+    btn.addEventListener('blur', deactivateAnimation);
     btn.addEventListener('click', () => onPickMode(m.id));
     btn.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
