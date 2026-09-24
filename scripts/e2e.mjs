@@ -60,7 +60,7 @@ page.on('requestfailed', (r) => { if (local(r.url())) tag('requestfailed')(`${r.
 
 const step = async (name, fn) => {
   const before = problems.length;
-  try { await fn(); } catch (e) { problems.push(`[step:${name}] ${e.message.split('\n')[0]}`); }
+  try { await fn(); } catch (e) { problems.push(`[step:${name}] ${e.message.split('\n').filter((l) => /intercepts|waiting|Timeout|visible|stable/.test(l)).slice(-3).join(' | ')}`); }
   const n = problems.length - before;
   console.log(`${n ? '✖' : '✓'} ${name}${n ? `\n    ${problems.slice(before).join('\n    ')}` : ''}`);
 };
@@ -107,7 +107,9 @@ await step('audio is playing', async () => {
 });
 
 const blank = [];
-for (const [i, m] of MODES.entries()) {
+// E2E_QUICK=1 skips the per-mode renders when iterating on controls
+const SWEEP = process.env.E2E_QUICK ? [] : MODES;
+for (const [i, m] of SWEEP.entries()) {
   await step(`mode ${m.id}`, async () => {
     await page.evaluate((id) => window.__av.renderer.setMode(id), m.id);
     await page.waitForTimeout(450);
@@ -118,7 +120,7 @@ for (const [i, m] of MODES.entries()) {
 }
 await step('raytrace on', async () => { await page.keyboard.press('KeyR'); await page.waitForTimeout(800); });
 const rayBlank = [];
-for (const m of MODES) {
+for (const m of SWEEP) {
   await step(`ray ${m.id}`, async () => {
     await page.evaluate((id) => (window.__av.ray?.setMode?.(id), window.__av.renderer.setMode(id)), m.id);
     await page.waitForTimeout(350);
