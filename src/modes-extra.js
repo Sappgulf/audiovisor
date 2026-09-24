@@ -731,7 +731,8 @@ class ExtraModes {
     const PTS = this.quality === 'low' ? 90 : 170;
     const rot = this.t * (0.08 + this.sm.level * 0.8) - this.beat * 0.25;
     const inner = minDim * 0.03;
-    const outer = minDim * 0.44;
+    const outer = Math.min(w * 0.4, minDim * 0.62);
+    const TILT = 0.6;
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 16; i++) {
       const ang = this.t * (0.05 + i * 0.007) * (i % 2 ? 1 : -1) + i * 1.7;
@@ -755,7 +756,9 @@ class ExtraModes {
         const tt = i / PTS;
         const theta = baseAng + tt * 4.6 * dir + rot * (1 - tt * 0.35);
         const r = inner + Math.pow(tt, 1.35) * outer;
-        return { x: cx + Math.cos(theta) * r, y: cy + Math.sin(theta) * r, theta, tt };
+        // r is read by the star pass below; without it every star was NaN and never drew
+        // the disc is tilted into perspective, like the field stars behind it
+        return { x: cx + Math.cos(theta) * r, y: cy + Math.sin(theta) * r * TILT, theta, tt, r };
       };
       ctx.beginPath();
       for (let i = 0; i <= PTS; i++) {
@@ -763,23 +766,27 @@ class ExtraModes {
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
       }
-      ctx.strokeStyle = hexRgba(c, 0.3 + this.sm.level * 0.25);
-      ctx.lineWidth = Math.max(1.2, minDim * 0.007 * (1 + this.sm.bass));
+      // a faint dust lane under the stars, not a drawn line
+      ctx.strokeStyle = hexRgba(c, 0.06 + this.sm.level * 0.08);
+      ctx.lineWidth = Math.max(2, minDim * 0.02 * (1 + this.sm.bass * 0.5));
       ctx.stroke();
       for (let i = 0; i < PTS; i++) {
         const p = pt(i);
         const idx = logFreqIndex((i * 5 + a * 11) % P, P, freq.length);
         const v = freq[idx] / 255;
         const jitter = Math.sin(i * 12.9898 + this.t * 2.2 + a) * 0.05;
-        const spread = ((Math.sin(i * 7.13 + a * 3.3) + Math.cos(i * 3.71)) / 2) * 0.06 * (0.4 + v);
+        const spread = ((Math.sin(i * 7.13 + a * 3.3) + Math.cos(i * 3.71)) / 2) * 0.09 * (0.5 + v);
         const x = p.x + Math.cos(p.theta) * jitter * p.r + Math.cos(p.theta + Math.PI / 2) * spread * outer;
-        const y = p.y + Math.sin(p.theta) * jitter * p.r + Math.sin(p.theta + Math.PI / 2) * spread * outer;
+        const y = p.y + (Math.sin(p.theta) * jitter * p.r + Math.sin(p.theta + Math.PI / 2) * spread * outer) * TILT;
         /* capped: at max sensitivity an uncapped sprite reaches 27px
            half-size and the arm dissolves into overlapping blobs — structure
            first, glow second */
-        const size = Math.min(15, 3 + v * 10 * this.sensitivity + (1 - p.tt) * 4);
+        /* Tuned while a missing field kept every star from drawing, so the
+           old sizes (up to 15px at 0.9 alpha) fused the arms into blobs the
+           moment they appeared. A galaxy arm is many small stars. */
+        const size = Math.min(6, 1.2 + v * 3.6 * this.sensitivity + (1 - p.tt) * 1.6);
         const sprite = this._dot(this._color(a + Math.floor(p.tt * 2)));
-        ctx.globalAlpha = clamp((0.42 + v * 0.5) * (1 - p.tt * 0.45), 0.18, 0.9);
+        ctx.globalAlpha = clamp((0.2 + v * 0.45) * (1 - p.tt * 0.5), 0.08, 0.6);
         ctx.drawImage(sprite, x - size, y - size, size * 2, size * 2);
       }
     }
