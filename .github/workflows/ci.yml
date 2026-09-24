@@ -41,3 +41,9 @@ jobs:
 
       - name: Bundle budget
         run: npm run size
+
+      - name: Install Chromium for e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end smoke (every mode, panel and shortcut)
+        run: npm run e2e

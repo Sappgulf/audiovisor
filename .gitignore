@@ -15,3 +15,4 @@ coverage
 sheet*.png
 sheet*.b64.txt
 /tmp-*
+e2e-out
