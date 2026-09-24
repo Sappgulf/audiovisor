@@ -862,10 +862,20 @@ export class Renderer {
       const v = logSample(freq, i / N) * this.sensitivity;
       const weight = 1 + this.bassFocus * 2.2 * (1 - i / N);
       const bounce = 1 + this.beat * 0.34 * (1 - i / N);
-      /* Soft knee: linear to 0.7, then eased toward 0.95. A hard 1.25 cap
-         let loud bass push bars past the top of the canvas, where every
-         kick rendered as the same flat slab clipped under the header. */
-      const raw = clamp(v * weight * bounce, 0.008, 4);
+      amps[i] = clamp(v * weight * bounce, 0.008, 4);
+    }
+    /* Automatic gain: bass focus × sensitivity pushes the whole low third
+       of a real mix past full scale, which drew as a row of identical
+       pinned slabs. Scale by a slow-release peak so the loudest bar sits
+       near the top and the rest keep their shape; the soft knee then only
+       catches transients above that peak. */
+    let framePeak = 0;
+    for (let i = 0; i < N; i++) framePeak = Math.max(framePeak, amps[i]);
+    this._barsPeak = Math.max(framePeak, 0.35, (this._barsPeak || framePeak) * Math.pow(0.995, dt60));
+    const agc = 0.82 / this._barsPeak;
+    for (let i = 0; i < N; i++) {
+      /* soft knee: linear to 0.7, eased toward 0.95 — never past the top */
+      const raw = amps[i] * agc;
       amps[i] = raw <= 0.7 ? raw : 0.7 + 0.25 * Math.tanh((raw - 0.7) / 0.25);
       if (amps[i] >= this.peaks[i]) { this.peaks[i] = amps[i]; this.peakVels[i] = 0; }
       else { this.peakVels[i] += 3.2 * dt; this.peaks[i] = Math.max(amps[i], this.peaks[i] - this.peakVels[i] * dt); }
@@ -1104,15 +1114,45 @@ export class Renderer {
          in-phase (mono) signal collapses to a vertical line and stereo
          width reads as horizontal spread. The delayed-self-correlation
          trace below is what runs when no L/R tap exists (synth feeds,
-         mono streams) — same phosphor, honest data in both cases. */
+         mono streams) — same phosphor, honest data in both cases.
+
+         Most mixes sit near mono and well under full scale, so taken
+         literally this drew a short vertical stub that read as a dot.
+         Two corrections keep it a figure: an auto-gain that fits the
+         recent peak to the ring, and — in proportion to how mono the
+         signal is — a phase-space term (mid against a delayed copy of
+         itself) that opens the line into a Lissajous loop. A genuinely
+         wide mix still reads as width. */
       const n = Math.min(this.stereoL.length, this.stereoR.length);
       const step = Math.max(1, Math.floor(n / N));
+      let peak = 1e-4, dpeak = 1e-5, side = 0, mid = 0;
+      const L = this.stereoL, Rr = this.stereoR;
+      const midAt = (k) => (L[k] + Rr[k]) * 0.5;
       for (let i = 0; i < N; i++) {
-        const si = Math.min(n - 1, i * step);
-        const l = this.stereoL[si];
-        const r = this.stereoR[si];
-        pts[i * 2] = ((r - l) / Math.SQRT2) * (R * 0.5);
-        pts[i * 2 + 1] = (-(l + r) / Math.SQRT2) * (R * 0.5);
+        const si = Math.min(n - 2, Math.max(1, i * step));
+        const l = L[si], r = Rr[si];
+        peak = Math.max(peak, Math.abs(l), Math.abs(r));
+        dpeak = Math.max(dpeak, Math.abs(midAt(si + 1) - midAt(si - 1)));
+        side += (l - r) * (l - r);
+        mid += (l + r) * (l + r);
+      }
+      const decay = Math.pow(0.97, dt60);
+      this._scopePeak = Math.max(peak, (this._scopePeak || peak) * decay);
+      this._scopeDPeak = Math.max(dpeak, (this._scopeDPeak || dpeak) * decay);
+      const gain = (R * 0.9) / Math.max(0.05, this._scopePeak);
+      const width = Math.sqrt(side / Math.max(1e-6, mid));
+      /* the mid signal against its own slope: 90° apart at every
+         frequency, so a tone opens into an ellipse and a chord into a
+         braid — a fixed-delay partner only did that for one pitch */
+      const open = clamp(1 - width * 4, 0, 1) * 0.85;
+      const dgain = (R * 0.9) / Math.max(1e-4, this._scopeDPeak);
+      for (let i = 0; i < N; i++) {
+        const si = Math.min(n - 2, Math.max(1, i * step));
+        const l = L[si], r = Rr[si];
+        const m = midAt(si), dm = midAt(si + 1) - midAt(si - 1);
+        const gx = ((r - l) / Math.SQRT2) * gain, gy = (-(l + r) / Math.SQRT2) * gain;
+        pts[i * 2] = gx * (1 - open) + dm * dgain * open;
+        pts[i * 2 + 1] = gy * (1 - open) - m * gain * open;
       }
     } else {
       for (let i = 0; i < N; i++) {
@@ -1142,7 +1182,7 @@ export class Renderer {
          over white wherever the figure crosses itself — the trail went
          flat white instead of reading as phosphor. Set so accumulation
          settles just about at full scale. */
-      sctx.strokeStyle = hexRgba(this._color(s), 0.26);
+      sctx.strokeStyle = hexRgba(this._color(s), 0.18);
       sctx.lineWidth = 1.6;
       sctx.stroke();
     }
@@ -1153,7 +1193,7 @@ export class Renderer {
       else sctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
     }
     sctx.closePath();
-    sctx.strokeStyle = hexRgba(c1, 0.32);
+    sctx.strokeStyle = hexRgba(c1, 0.14);
     sctx.lineWidth = 3.6;
     sctx.stroke();
     sctx.restore();

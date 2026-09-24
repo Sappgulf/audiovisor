@@ -137,12 +137,16 @@ class ExtraModes {
       this.specCv.height = Math.max(2, Math.round(h));
       this.specCtx = this.specCv.getContext('2d');
       this._specAcc = 0;
+      this._specAvg = new Float32Array(this.specCv.height);
       this._buildSpectroLut();
       this.specCtx.imageSmoothingEnabled = false;
       this.specCtx.fillStyle = '#0b0a09';
       this.specCtx.fillRect(0, 0, this.specCv.width, this.specCv.height);
     }
-    const colW = this.quality === 'low' ? 3 : 2;
+    /* Column width follows the canvas: at a fixed 2px the waterfall took
+       ~30s to cross a 1080p stage, so the first half-minute of the mode
+       was mostly black. Sized so any width fills in about six seconds. */
+    const colW = Math.max(this.quality === 'low' ? 3 : 2, Math.round(this.specCv.width / 180));
     const W = this.specCv.width;
     const H = this.specCv.height;
     const COLINT = 0.032;
@@ -164,7 +168,14 @@ class ExtraModes {
            the colour ramp and stay distinguishable. */
         const g = (freq[bin] / 255) * this.sensitivity;
         let v = g > 0 ? 1 - Math.exp(-g * 1.15) : 0;
-        v = v < 0.04 ? 0 : v;
+        /* Adaptive contrast: each row keeps a slow average of itself, and
+           only energy above that average climbs the colour ramp. Busy
+           mixes otherwise sit mid-scale everywhere and the waterfall reads
+           as one flat orange wash; this makes notes and hits stand out of a
+           dark field, the way a real spectrogram's dynamic range does. */
+        const avg = this._specAvg[y] += (v - this._specAvg[y]) * 0.02;
+        v = clamp((v - avg * 0.72) / Math.max(0.12, 1 - avg * 0.72), 0, 1);
+        v = v < 0.04 ? 0 : Math.pow(v, 0.85);
         /* onsets print brighter: the fresh column carries the beat, so kick
            drums land in the waterfall as bright stripes instead of the
            history showing no trace of the rhythm */
@@ -179,6 +190,18 @@ class ExtraModes {
       this.specCtx.putImageData(img, W - colW, 0);
     }
     ctx.drawImage(this.specCv, 0, 0, w, h);
+    /* octave guides — the same log mapping the columns use, so a line sits
+       exactly on its band; they also give the unfilled stage a scale to
+       read against instead of flat black */
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = hexRgba(this._color(1), 0.07);
+    const nyq = 22050, binHz = nyq / freq.length;
+    for (let hz = 62.5; hz < nyq * 0.72; hz *= 2) {
+      const tt = Math.pow(Math.max(0, (hz / binHz - 2) / (freq.length * 0.72)), 1 / 1.7);
+      if (tt <= 0 || tt >= 1) continue;
+      ctx.fillRect(0, Math.round((1 - tt) * h), w, 1);
+    }
+    ctx.globalCompositeOperation = 'source-over';
     const scanX = w - ((this.t * 140) % (w + 80));
     ctx.globalCompositeOperation = 'lighter';
     const beam = ctx.createLinearGradient(scanX - 30, 0, scanX, 0);
