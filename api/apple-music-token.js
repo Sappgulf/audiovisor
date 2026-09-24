@@ -16,8 +16,9 @@ function hostOrigin(req) {
 function isAllowedOrigin(req) {
   const origin = req.headers.origin;
   if (!origin) return true;
-  const configured = process.env.APPLE_MUSIC_ORIGIN;
-  return origin === (configured || hostOrigin(req));
+  const configured = String(process.env.APPLE_MUSIC_ORIGIN || '')
+    .split(',').map((o) => o.trim()).filter(Boolean);
+  return configured.length ? configured.includes(origin) : origin === hostOrigin(req);
 }
 
 function createDeveloperToken() {
@@ -36,7 +37,13 @@ function createDeveloperToken() {
 
   const now = Math.floor(Date.now() / 1000);
   const header = base64url(JSON.stringify({ alg: 'ES256', kid: keyId, typ: 'JWT' }));
-  const payload = base64url(JSON.stringify({ iss: teamId, iat: now, exp: now + TOKEN_TTL_SECONDS }));
+  /* The token is public by design, so pin it to our own origins when they
+     are configured: Apple rejects an origin-claimed token used elsewhere. */
+  const origins = String(process.env.APPLE_MUSIC_ORIGIN || '')
+    .split(',').map((o) => o.trim()).filter(Boolean);
+  const claims = { iss: teamId, iat: now, exp: now + TOKEN_TTL_SECONDS };
+  if (origins.length) claims.origin = origins;
+  const payload = base64url(JSON.stringify(claims));
   const unsigned = `${header}.${payload}`;
   const signer = createSign('SHA256');
   signer.update(unsigned);
@@ -67,8 +74,12 @@ export default function handler(req, res) {
     res.status(200).json(cached);
   } catch (err) {
     const permanent = err && err.permanent === true;
+    /* Only the configuration message is ours to show; a signing failure
+       carries OpenSSL detail about the key that has no business in a
+       browser. */
+    if (!permanent) console.error('apple-music-token:', err);
     res.status(permanent ? 501 : 503).json({
-      error: err.message || 'Apple Music token unavailable',
+      error: permanent ? err.message : 'Apple Music token unavailable',
       configured: !permanent,
     });
   }

@@ -21,7 +21,13 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
   const fileInput = $('file-input');
   const dropzone = $('dropzone');
 
-  async function loadFiles(files) {
+  /**
+   * @param {FileList | File[]} files
+   * @param {{ playNew?: boolean }} [opts] jump to the first added track.
+   *   Dropping a file on the stage means "play this"; the Add buttons mean
+   *   "queue this", and keep whatever is already playing.
+   */
+  async function loadFiles(files, { playNew = false } = {}) {
     if (!files || !files.length) return;
     const audioFiles = [...files].filter((f) => f.type.startsWith('audio/') || /\.(mp3|wav|flac|ogg|m4a|aac|opus|webm)$/i.test(f.name));
     if (!audioFiles.length) {
@@ -34,15 +40,18 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
     $('status-text').textContent = 'Decoding';
     $('status-pill')?.setAttribute('title', 'Decoding');
     try {
+      const hadTrack = engine.hasTrack;
+      const firstNew = engine.queue.length;
       const errors = await engine.addToQueue(audioFiles);
       if (!engine.hasTrack) {
         toast('<b>Decode failed</b> — no playable files', { duration: 3000 });
         return;
       }
       dropzone.classList.add('is-hidden');
+      if (playNew && hadTrack && engine.queue.length > firstNew) engine.playTrack(firstNew);
+      else engine.play();
       // never let a UI hiccup abort the load: the audio decoded fine by here
       try { updateTrackUI(); } catch (err) { console.error('track UI failed', err); }
-      engine.play();
       ensureAudible();
       const loaded = audioFiles.length - errors.length;
       if (engine.evicted) {
@@ -104,7 +113,7 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
   (doc.defaultView || window).addEventListener('drop', (e) => {
     e.preventDefault();
     dropzone.querySelector('.dropzone').classList.remove('drag-over');
-    loadFiles(e.dataTransfer.files);
+    loadFiles(e.dataTransfer.files, { playNew: true });
   });
 
   return { loadFiles, openFilePicker, dropzone };

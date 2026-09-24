@@ -253,7 +253,15 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
 
   libraryPanel.addEventListener('keydown', (e) => {
     const rows = getLibraryRows();
-    if (e.target.closest('#lib-search')) return;
+    if (e.target.closest('#lib-search')) {
+      /* The panel opens with focus here, so Escape has to work from the
+         search field: the first press clears a filter, the next closes. */
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      if (e.target.value) { e.target.value = ''; e.target.dispatchEvent(new Event('input', { bubbles: true })); }
+      else toggleLibrary(false);
+      return;
+    }
     if (e.target.closest('.lib-play, .lib-export, .lib-del')) return;
     if (!rows.length) {
       if (e.key === 'Escape' && !libraryPanel.classList.contains('is-hidden')) {

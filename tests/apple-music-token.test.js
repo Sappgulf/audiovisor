@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { generateKeyPairSync } from 'node:crypto';
 import handler from '../api/apple-music-token.js';
 
 function response() {
@@ -80,5 +81,40 @@ describe('Apple Music token endpoint', () => {
     handler({ method: 'GET', headers: { host: 'audiovisor.example' } }, res);
     expect(res.out.statusCode).toBe(503);
     expect(res.out.body.configured).toBe(true);
+  });
+});
+
+describe('Apple Music token hardening', () => {
+  const fresh = async () => {
+    vi.resetModules();
+    return (await import('../api/apple-music-token.js')).default;
+  };
+  const pem = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+
+  it('pins the token to every configured origin', async () => {
+    Object.assign(process.env, {
+      APPLE_MUSIC_TEAM_ID: 'TEAM', APPLE_MUSIC_KEY_ID: 'KEY', APPLE_MUSIC_PRIVATE_KEY: pem,
+      APPLE_MUSIC_ORIGIN: 'https://a.example, https://b.example',
+    });
+    const handle = await fresh();
+    const res = response();
+    handle({ method: 'GET', headers: { origin: 'https://b.example' } }, res);
+    expect(res.out.statusCode).toBe(200);
+    const claims = JSON.parse(Buffer.from(res.out.body.token.split('.')[1], 'base64url').toString());
+    expect(claims.origin).toEqual(['https://a.example', 'https://b.example']);
+  });
+
+  it('does not leak signing errors to the browser', async () => {
+    Object.assign(process.env, {
+      APPLE_MUSIC_TEAM_ID: 'TEAM', APPLE_MUSIC_KEY_ID: 'KEY', APPLE_MUSIC_PRIVATE_KEY: 'not a key',
+    });
+    delete process.env.APPLE_MUSIC_ORIGIN;
+    const handle = await fresh();
+    const res = response();
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    handle({ method: 'GET', headers: {} }, res);
+    spy.mockRestore();
+    expect(res.out.statusCode).toBe(503);
+    expect(res.out.body.error).toBe('Apple Music token unavailable');
   });
 });
