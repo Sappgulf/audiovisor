@@ -16,3 +16,6 @@ sheet*.png
 sheet*.b64.txt
 /tmp-*
 e2e-out
+
+# local scratch scripts
+scripts/_*.mjs
