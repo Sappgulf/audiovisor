@@ -170,8 +170,13 @@ float scBars(vec3 p) {
   slot = clamp(slot, 0.0, 25.0);
   float cx = (slot + 0.5) * 0.46 - 5.98;
   float e = pow(spec(slot / 26.0), 1.35) * uSens;
-  e = e / (1.0 + 0.6 * e);              // soft knee — a loud low end shouldn't wall off the stage
-  float h = 0.1 + 2.6 * e * (1.0 + uBeat * 0.3 + uDrop * 0.45);
+  /* The slab spans 0..2h, and the frame top sits near y=4.5 at the bars.
+     The old knee (e/(1+0.6e), times beat and drop) let h reach ~8, so any
+     loud low end rendered as a wall of identical slabs cut off by the top
+     of the frame. Saturate the whole product instead: quiet bars keep
+     their height, loud ones approach — never pass — h=1.85. */
+  float k = 1.3 * e * (1.0 + uBeat * 0.3 + uDrop * 0.45);
+  float h = 0.08 + 1.77 * (k / (1.0 + k));
   vec3 b = vec3(0.15, h, 0.15);
   float d = sdRBox(q - vec3(cx, h, 0.0), b, 0.045);
   d = max(d, abs(q.x) - 6.1);

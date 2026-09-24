@@ -258,7 +258,8 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
          search field: the first press clears a filter, the next closes. */
       if (e.key !== 'Escape') return;
       e.preventDefault();
-      if (e.target.value) { e.target.value = ''; e.target.dispatchEvent(new Event('input', { bubbles: true })); }
+      const field = /** @type {HTMLInputElement} */ (e.target);
+      if (field.value) { field.value = ''; field.dispatchEvent(new Event('input', { bubbles: true })); }
       else toggleLibrary(false);
       return;
     }

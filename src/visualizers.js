@@ -862,7 +862,11 @@ export class Renderer {
       const v = logSample(freq, i / N) * this.sensitivity;
       const weight = 1 + this.bassFocus * 2.2 * (1 - i / N);
       const bounce = 1 + this.beat * 0.34 * (1 - i / N);
-      amps[i] = clamp(v * weight * bounce, 0.008, 1.25);
+      /* Soft knee: linear to 0.7, then eased toward 0.95. A hard 1.25 cap
+         let loud bass push bars past the top of the canvas, where every
+         kick rendered as the same flat slab clipped under the header. */
+      const raw = clamp(v * weight * bounce, 0.008, 4);
+      amps[i] = raw <= 0.7 ? raw : 0.7 + 0.25 * Math.tanh((raw - 0.7) / 0.25);
       if (amps[i] >= this.peaks[i]) { this.peaks[i] = amps[i]; this.peakVels[i] = 0; }
       else { this.peakVels[i] += 3.2 * dt; this.peaks[i] = Math.max(amps[i], this.peaks[i] - this.peakVels[i] * dt); }
       colors[i] = this._color(Math.floor((i / N) * this.theme.colors.length + hueFlow) % this.theme.colors.length);
