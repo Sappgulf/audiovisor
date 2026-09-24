@@ -62,7 +62,7 @@ const step = async (name, fn) => {
   const before = problems.length;
   try { await fn(); } catch (e) { problems.push(`[step:${name}] ${e.message.split('\n')[0]}`); }
   const n = problems.length - before;
-  console.log(`${n ? '✖' : '✓'} ${name}${n ? `  (${n} issue${n > 1 ? 's' : ''})` : ''}`);
+  console.log(`${n ? '✖' : '✓'} ${name}${n ? `\n    ${problems.slice(before).join('\n    ')}` : ''}`);
 };
 
 // Fraction of the stage that is lit, read from a real screenshot: WebGL
