@@ -368,15 +368,34 @@ class ExtraModes {
       ctx.fillRect(s.x, s.y, s.r, s.r);
     }
     ctx.globalAlpha = 1;
+    /* Aurora curtains. These were gradients filled into rectangles, and
+       the rectangles' sides printed as hard vertical edges in the sky. A
+       curtain is a band of thin vertical rays whose height follows a slow
+       wave and whose brightness fades out at both ends, so nothing in it
+       has an edge; the mids make it ripple. */
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineWidth = Math.max(1, w / 420);
     for (let i = 0; i < 2; i++) {
-      const ax = w * (0.25 + i * 0.35) + Math.sin(this.t * 0.14 + i * 2.2) * w * 0.14;
-      const ah = depth * (0.24 + i * 0.1);
-      const aur = ctx.createLinearGradient(0, horizon - ah, 0, horizon);
-      aur.addColorStop(0, 'rgba(0,0,0,0)');
-      aur.addColorStop(1, hexRgba(this._color(1 + i), 0.10 + this.sm.level * 0.06 + this.beat * 0.04));
-      ctx.fillStyle = aur;
-      ctx.fillRect(ax, horizon - ah, w * 0.34, ah);
+      const cx0 = w * (0.3 + i * 0.4) + Math.sin(this.t * 0.11 + i * 2.2) * w * 0.1;
+      const span = w * (0.34 + i * 0.06);
+      const RAYS = this.quality === 'low' ? 26 : 48;
+      const col = this._color(1 + i);
+      for (let k = 0; k < RAYS; k++) {
+        const u = k / (RAYS - 1);
+        const x = cx0 - span / 2 + u * span + Math.sin(u * 7 + this.t * 0.6 + i) * w * 0.012;
+        const env = Math.sin(Math.PI * u);                     // fades at both ends
+        const ah = depth * (0.16 + 0.12 * env) * (0.8 + 0.35 * Math.sin(u * 5.3 + this.t * (0.5 + this.sm.mid)) + this.sm.mid * 0.3);
+        const y0 = horizon - depth * 0.05 - ah;
+        const g = ctx.createLinearGradient(0, y0, 0, y0 + ah);
+        const a = env * env * (0.05 + this.sm.level * 0.05 + this.beat * 0.03);
+        g.addColorStop(0, 'rgba(0,0,0,0)');
+        g.addColorStop(0.7, hexRgba(col, a));
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.strokeStyle = g;
+        ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 + ah); ctx.stroke();
+      }
     }
+    ctx.globalCompositeOperation = 'source-over';
     if (this.beat > 0.7) {
       if (!this._meteor) this._meteor = { x: w * 0.12, y: horizon * 0.18 };
       const m = this._meteor;
@@ -398,7 +417,7 @@ class ExtraModes {
     ctx.drawImage(this._dot(this._color(1)), w / 2 - sunR, sunY - sunR, sunR * 2, sunR * 2);
     ctx.globalAlpha = 1;
     const sky = ctx.createLinearGradient(0, horizon - depth * 0.45, 0, horizon);
-    sky.addColorStop(0, hexRgba(this._color(0), this.beat * 0.08));
+    sky.addColorStop(0, 'rgba(0,0,0,0)');   // no hard top edge on the beat
     sky.addColorStop(0.55, hexRgba(this._color(0), 0.05 + this.sm.level * 0.05));
     sky.addColorStop(1, hexRgba(this._color(0), 0.10 + this.sm.bass * 0.10 + this.beat * 0.10));
     ctx.fillStyle = sky;
@@ -534,6 +553,20 @@ class ExtraModes {
       c.v += (target - c.v) * (target > c.v ? Math.min(1, dt60 * 0.55) : fall);
       c.peak = Math.max(c.peak * fallPeak, c.v);
     }
+    /* light pollution: the city lights its own sky, and louder is brighter */
+    {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.translate(w / 2, baseline);
+      ctx.scale(w * 0.62, h * 0.42);
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+      glow.addColorStop(0, hexRgba(this._color(0), 0.16 + this.sm.level * 0.12 + this.beat * 0.05));
+      glow.addColorStop(0.5, hexRgba(this._color(1), 0.05 + this.sm.level * 0.04));
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(-1, -1, 2, 1);
+      ctx.restore();
+    }
     ctx.fillStyle = this._shadow(this._color(0), 0.07, 5);
     for (let i = 0; i < N; i += 2) {
       const src = this.cityCols[(i * 7 + 3) % N];
@@ -549,8 +582,14 @@ class ExtraModes {
     const tall = [];
     for (let i = 0; i < N; i++) {
       const col = this.cityCols[i];
-      const bh = Math.max(8, (0.06 + col.v * 0.64) * maxH);
-      const bodyW = bw * 0.68;
+      /* Architecture first, music second. Heights straight off the
+         spectrum made this a bar chart with windows. Each tower now has a
+         fixed silhouette from its seed — so the skyline is recognisably a
+         city — and the band only lifts it a little; what the music really
+         drives is how many windows are lit. */
+      const arch = (col.seed % 97) / 97;
+      const bh = Math.max(8, (0.2 + arch * arch * 0.62 + col.v * 0.18) * maxH);
+      const bodyW = bw * (0.52 + ((col.seed * 7) % 41) / 100);
       const x = i * bw + (bw - bodyW) / 2;
       const y = baseline - bh;
       const c = colors[i % colors.length];
@@ -562,18 +601,13 @@ class ExtraModes {
       ctx.globalAlpha = 1;
       ctx.fillStyle = hexRgba(c, 0.9);
       ctx.fillRect(x, y, bodyW, 2);
-      if (col.peak > 0.04) {
-        const py = baseline - col.peak * maxH - 4;
-        ctx.globalAlpha = 0.45;
-        ctx.fillRect(x, py, bodyW, 1.5);
-        ctx.globalAlpha = 1;
-      }
       const wxMax = Math.max(1, Math.floor((bodyW - 5) / 5));
-      const rows = Math.min(14, Math.floor((bh - 10) / 10));
+      const rows = Math.min(40, Math.floor((bh - 10) / 10));
       for (let wy = 0; wy < rows; wy++) {
         for (let wx = 0; wx < wxMax; wx++) {
           const hsh = (((Math.sin(col.seed + wx * 37 + wy * 101) + 1) / 2) * 43758.5453) % 1;
-          if (hsh < 0.42) continue;
+          // the band's energy decides how many windows are lit
+          if (hsh > 0.18 + col.v * 0.78) continue;
           const flick = 0.55 + 0.45 * Math.sin(this.t * (0.8 + hsh * 2.2) + col.seed + wx);
           const a = (0.14 + 0.6 * col.v) * (0.3 + 0.7 * hsh) * flick;
           if (a < 0.06) continue;
@@ -581,7 +615,11 @@ class ExtraModes {
           ctx.fillRect(x + 3 + wx * 5, y + 7 + wy * 10, 2.5, 3.5);
         }
       }
-      tall.push({ x: x + bodyW / 2, y: y });
+      if (arch > 0.72) {                         // antenna on the landmark towers
+        ctx.fillStyle = hexRgba(c, 0.5);
+        ctx.fillRect(x + bodyW / 2 - 0.75, y - maxH * 0.1, 1.5, maxH * 0.1);
+        tall.push({ x: x + bodyW / 2, y: y - maxH * 0.1 });
+      } else tall.push({ x: x + bodyW / 2, y: y });
     }
     tall.sort((a, b) => b.y - a.y);
     const beaconC = this._color(0);
@@ -1014,6 +1052,22 @@ class ExtraModes {
       return boost;
     };
 
+    /* Spacetime fabric. The mesh used to lift a fixed 26px off the
+       spectrum — invisible on a real screen — and read as a faint static
+       grid. It is now a membrane with a gravity well at its heart that the
+       bass sinks, spectrum ripples radiating from it, and the beat
+       shockwaves, all scaled to the stage. Terrain already owns scrolling
+       ridgelines; this owns curvature. */
+    const wx0 = w / 2 + Math.sin(this.t * 0.23) * w * 0.08, wy0 = h * 0.6;
+    const wellDepth = h * 0.2 * (0.25 + this.sm.bass * 0.9 + this.beat * 0.35);
+    const disp = (px, py, v) => {
+      const dx = (px - wx0) / w, dy = (py - wy0) / h;
+      const d2 = dx * dx + dy * dy * 2.2, d = Math.sqrt(d2);
+      const well = wellDepth * Math.exp(-d2 * 14);
+      const ripple = Math.sin(d * 46 - this.t * 3.2) * v * h * 0.022 * this.sensitivity * Math.exp(-d * 2.2);
+      return well + ripple + waveBoost(px, py) * -h * 0.05;
+    };
+
     ctx.globalCompositeOperation = 'lighter';
     /* horizontal wires with frequency displacement */
     for (let y = 0; y <= rows; y++) {
@@ -1023,14 +1077,13 @@ class ExtraModes {
         const v = freq ? logSample(freq, u) : 0;
         const px = x * cw;
         const py = rowY(y);
-        const off = Math.sin(u * 6 + this.t * 1.4 + y * 0.22) * v * 26 * this.sensitivity
-          + waveBoost(px, py) * -14;
+        const off = disp(px, py, v);
         const pull = (px - w / 2) * (1 - spread(y));
         if (x === 0) ctx.moveTo(px + pull, py + off);
         else ctx.lineTo(px + pull, py + off);
       }
       const depth = y / rows;
-      ctx.strokeStyle = hexRgba(this._color(y % this.theme.colors.length), 0.10 + depth * 0.16);
+      ctx.strokeStyle = hexRgba(this._color(y % this.theme.colors.length), 0.14 + depth * 0.26);
       ctx.lineWidth = 0.7 + depth * 0.9;
       ctx.stroke();
     }
@@ -1039,15 +1092,15 @@ class ExtraModes {
       ctx.beginPath();
       for (let y = 0; y <= rows; y++) {
         const u = x / cols;
-        const v = freq ? logSample(freq, y / rows) : 0;
+        const v = freq ? logSample(freq, u) : 0;
         const px = x * cw;
         const py = rowY(y);
-        const off = Math.sin(u * 6 + this.t * 1.4 + y * 0.22) * v * 26 * this.sensitivity;
+        const off = disp(px, py, v);
         const pull = (px - w / 2) * (1 - spread(y));
         if (y === 0) ctx.moveTo(px + pull, py + off);
         else ctx.lineTo(px + pull, py + off);
       }
-      ctx.strokeStyle = hexRgba(this._color(x % this.theme.colors.length), 0.07);
+      ctx.strokeStyle = hexRgba(this._color(x % this.theme.colors.length), 0.12);
       ctx.lineWidth = 0.7;
       ctx.stroke();
     }
@@ -1059,7 +1112,7 @@ class ExtraModes {
         const v = freq ? logSample(freq, u * ((gy % 3) + 1) / 3) : 0.2;
         const px = gx * cw;
         const py = rowY(gy);
-        const off = Math.sin(u * 6 + this.t * 1.4 + gy * 0.22) * v * 26 * this.sensitivity;
+        const off = disp(px, py, v);
         const pull = (px - w / 2) * (1 - spread(gy));
         const a = clamp(0.08 + v * 0.40 + this.beat * v * 0.35, 0, 0.62);
         const r = nodeR + v * 2.6 + this.beat * 1.2;
@@ -1067,6 +1120,13 @@ class ExtraModes {
         ctx.drawImage(this._dot(this._color((gx + gy) % this.theme.colors.length)), px + pull - r, py + off - r, r * 2, r * 2);
       }
     }
+    /* the mass at the bottom of the well — what the fabric is bending around */
+    const mr = h * (0.035 + this.sm.bass * 0.03 + this.beat * 0.015);
+    const my = wy0 + wellDepth * 0.92;
+    ctx.globalAlpha = 0.5 + this.sm.bass * 0.4;
+    ctx.drawImage(this._dot(this._color(0)), wx0 - mr * 3, my - mr * 3, mr * 6, mr * 6);
+    ctx.globalAlpha = 0.95;
+    ctx.drawImage(this._dot(this._color(1)), wx0 - mr, my - mr, mr * 2, mr * 2);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -1520,11 +1580,67 @@ class ExtraModes {
     ctx.globalCompositeOperation = 'lighter';
 
     /* the lamp's heat source: a pool at the base, brightest on bass */
-    const pool = ctx.createLinearGradient(0, h * 0.70, 0, h);
-    pool.addColorStop(0, 'rgba(0,0,0,0)');
-    pool.addColorStop(1, hexRgba(this._color(0), 0.10 + this.sm.bass * 0.18));
+    /* An elliptical glow, not a gradient-filled rectangle: the rectangle's
+       vertical sides printed as hard edges on the dark stage. */
+    ctx.save();
+    ctx.translate(colX, h);
+    ctx.scale(colW * 0.8, h * 0.34);
+    const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    pool.addColorStop(0, hexRgba(this._color(0), 0.16 + this.sm.bass * 0.22));
+    pool.addColorStop(0.55, hexRgba(this._color(0), 0.05 + this.sm.bass * 0.06));
+    pool.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = pool;
-    ctx.fillRect(colX - colW * 0.72, h * 0.70, colW * 1.44, h * 0.30);
+    ctx.fillRect(-1, -1, 2, 1);
+    ctx.restore();
+
+    /* the vessel: without it the wax reads as floating bokeh. A tapered
+       glass silhouette — narrow neck, full belly — with a faint rim
+       highlight down each side, a dark cap and a warm-lit base. Drawn
+       under the wax so blobs sit inside the glass. */
+    {
+      const top = h * 0.08, bot = h * 0.9, neck = colW * 0.2, belly = colW * 0.46;
+      const edge = (u) => {                       // half-width at 0..1 down the glass
+        // straight taper out to the belly at 72%, then a short pinch into the base
+        if (u < 0.72) { const k = u / 0.72; return neck + (belly - neck) * (k * k * (3 - 2 * k) * 0.35 + k * 0.65); }
+        const k = (u - 0.72) / 0.28; return belly - (belly - belly * 0.82) * k * k;
+      };
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.beginPath();
+      const STEPS = 28;
+      for (let k = 0; k <= STEPS; k++) {
+        const u = k / STEPS, y = top + (bot - top) * u;
+        if (k === 0) ctx.moveTo(colX - edge(u), y); else ctx.lineTo(colX - edge(u), y);
+      }
+      for (let k = STEPS; k >= 0; k--) {
+        const u = k / STEPS; ctx.lineTo(colX + edge(u), top + (bot - top) * u);
+      }
+      ctx.closePath();
+      const glass = ctx.createLinearGradient(colX - belly, 0, colX + belly, 0);
+      glass.addColorStop(0, hexRgba(this._color(0), 0.10));
+      glass.addColorStop(0.18, hexRgba(this._color(0), 0.025));
+      glass.addColorStop(0.82, hexRgba(this._color(0), 0.025));
+      glass.addColorStop(1, hexRgba(this._color(0), 0.08));
+      ctx.fillStyle = glass;
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = hexRgba(this._color(0), 0.16 + this.sm.bass * 0.10);
+      ctx.stroke();
+      // cap and base: dark metal, the base lit from the bulb inside
+      const capW = neck * 1.25, baseW = belly * 0.92;
+      ctx.fillStyle = 'rgba(14,13,12,0.92)';
+      this._rr ? this._rr(ctx, colX - capW, top - h * 0.05, capW * 2, h * 0.05, 4) : ctx.rect(colX - capW, top - h * 0.05, capW * 2, h * 0.05);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(colX - edge(1) - 2, bot); ctx.lineTo(colX + edge(1) + 2, bot);
+      ctx.lineTo(colX + baseW, h); ctx.lineTo(colX - baseW, h); ctx.closePath();
+      const baseG = ctx.createLinearGradient(0, bot, 0, h);
+      baseG.addColorStop(0, hexRgba(this._color(0), 0.30 + this.sm.bass * 0.25));
+      baseG.addColorStop(0.25, 'rgba(20,18,16,0.95)');
+      baseG.addColorStop(1, 'rgba(8,8,8,0.95)');
+      ctx.fillStyle = baseG;
+      ctx.fill();
+      ctx.globalCompositeOperation = 'lighter';
+    }
 
     /* --- convection ---
        Modelling this as emergent heat exchange looked right on paper and
@@ -1551,7 +1667,10 @@ class ExtraModes {
       b.heat = rising ? 0.45 + eased * 0.55 : 0.45 - (1 - eased) * 0.30;
 
       const sway = Math.sin(this.t * b.wob * 0.5 + b.ph) * 0.10;
-      const px = colX + (b.u + sway) * colW;
+      /* the glass narrows toward the neck, so the wax's lateral room does
+         too — blobs drift inside the lamp instead of through its walls */
+      const room = 0.42 + 0.58 * clamp((b.y - 0.08) / 0.7, 0, 1);
+      const px = colX + (b.u + sway) * colW * 0.62 * room;
       const py = b.y * h;
       const v = freq ? logSample(freq, (b.ph % 1)) : 0.4;
       /* Sized off min(w, h) this fell apart on wide, short frames: the
