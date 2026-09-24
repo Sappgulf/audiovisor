@@ -917,7 +917,9 @@ class ExtraModes {
        surface, so this is a molten pour: a liquid mass with a wave-driven
        surface, a hot crest, and droplets thrown off on beats. */
     const surfaceY = h * 0.62;
-    const amp = Math.min(h * 0.16, h * (0.045 + this.sm.bass * 0.11 + this.beat * 0.05));
+    /* a pool, not a hill: one wide swell as tall as this read as a single
+       mountain; the surface stays near level and rolls */
+    const amp = Math.min(h * 0.085, h * (0.024 + this.sm.bass * 0.055 + this.beat * 0.028));
     const cols = this.quality === 'low' ? 48 : 128;
     const step = w / cols;
 
@@ -933,7 +935,7 @@ class ExtraModes {
          has no corners: the bands drive broad, rounded swells instead, and
          the per-column energy is smoothed across neighbours. */
       surf[i] = surfaceY
-        + Math.sin(u * 3.4 + this.t * 0.62) * amp
+        + Math.sin(u * 3.4 + this.t * 0.62) * amp * 0.8
         + Math.sin(u * 7.9 - this.t * 0.95) * amp * 0.46 * (0.4 + this.sm.mid)
         + Math.sin(u * 12.6 + this.t * 1.35) * amp * 0.20 * (0.3 + this.sm.high)
         - v * amp * 0.34 * this.sensitivity;
@@ -952,8 +954,8 @@ class ExtraModes {
        real value contrast rather than one more additive glow */
     ctx.globalCompositeOperation = 'source-over';
     const body = ctx.createLinearGradient(0, surfaceY - amp * 1.6, 0, h);
-    body.addColorStop(0, hexRgba(this._color(0), 0.62));
-    body.addColorStop(0.35, hexRgba(this._color(1), 0.34));
+    body.addColorStop(0, hexRgba(this._color(0), 0.42));
+    body.addColorStop(0.35, hexRgba(this._color(1), 0.18));
     body.addColorStop(1, this._shadow(this._color(1), 0.16, 4));
     ctx.fillStyle = body;
     ctx.beginPath();
@@ -965,6 +967,25 @@ class ExtraModes {
     ctx.fill();
 
     ctx.globalCompositeOperation = 'lighter';
+
+    /* Reflection bands inside the mass. A flat fill read as a sand dune;
+       what makes a liquid read as metal is the environment reflected in it,
+       stretched along the surface. Each band follows the surface shape,
+       flattening and fading with depth, and they breathe with the level. */
+    const BANDS = this.quality === 'low' ? 4 : 7;
+    for (let k = 1; k <= BANDS; k++) {
+      const depth = k / BANDS;
+      const off = h * 0.035 * k * (1 + depth * 0.9) * (0.9 + this.sm.level * 0.25);
+      const follow = 1 - depth * 0.75;              // deeper bands flatten out
+      ctx.beginPath();
+      for (let i = 0; i <= cols; i++) {
+        const y = surfaceY + (surf[i] - surfaceY) * follow + off;
+        if (i === 0) ctx.moveTo(0, y); else ctx.lineTo(i * step, y);
+      }
+      ctx.strokeStyle = hexRgba(this._color(k % 2 ? 2 : 0), (0.16 + this.sm.level * 0.10) * (1 - depth) ** 1.4);
+      ctx.lineWidth = 1 + (1 - depth) * 1.6;
+      ctx.stroke();
+    }
 
     /* specular crest: brightest where the surface is flattest, which is what
        makes a liquid read as metal rather than as a coloured shape */
@@ -1335,12 +1356,45 @@ class ExtraModes {
       }
       ctx.globalCompositeOperation = 'source-over';
     }
+    /* Columns are frequency, rows are time. Mapping the whole spectrum
+       down the rows put the loud bass permanently at the top and the quiet
+       treble at the bottom — a fixed gradient, not a response. Now each
+       row is a snapshot of the spectrum: a fresh one enters at the bottom
+       every ~0.14s and the field climbs, so the grid is a rising record of
+       the last second of music, normalised per row so every row has its
+       own highlights. */
+    const total = cols * rows;
+    if (!this._bloomHist || this._bloomHist.length !== total) {
+      this._bloomHist = new Float32Array(total);
+      this._bloomAcc = 0;
+      this._bloomLast = this.t;
+    }
+    const hist = this._bloomHist;
+    this._bloomAcc += Math.max(0, this.t - this._bloomLast);
+    this._bloomLast = this.t;
+    const ROW_DT = 0.14;
+    if (this._bloomAcc >= ROW_DT) {
+      this._bloomAcc %= ROW_DT;
+      hist.copyWithin(0, cols);                  // every row moves up one
+      const base = (rows - 1) * cols;
+      let mean = 0, peak = 1e-3;
+      for (let x = 0; x < cols; x++) {
+        const v = freq ? logSample(freq, (x + 0.5) / cols) : 0.5;
+        hist[base + x] = v; mean += v; peak = Math.max(peak, v);
+      }
+      mean /= cols;
+      const floor = mean * 0.6, span = Math.max(0.08, peak - floor);
+      for (let x = 0; x < cols; x++) hist[base + x] = clamp((hist[base + x] - floor) / span, 0, 1) * 0.92;
+    }
+    /* how far the field has risen since the last row landed, so it glides */
+    const rise = (this._bloomAcc / ROW_DT) * rh;
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const idx = y * cols + x;
-        const amp = freq ? logSample(freq, idx / (cols * rows - 1)) : 0.5;
+        const age = 1 - y / (rows - 1);            // 0 newest (bottom) .. 1 oldest (top)
+        const amp = hist[idx] * (1 - age * 0.55);
         const px = x * cw + cw / 2 + Math.sin(this.t * 0.6 + idx) * 4;
-        const py = y * rh + rh / 2 + Math.cos(this.t * 0.5 + idx * 1.3) * 4;
+        const py = y * rh + rh / 2 - rise + Math.cos(this.t * 0.5 + idx * 1.3) * 4;
         /* Bound the bloom to its cell. Radius scaled with amplitude and
            sensitivity unbounded, so at full energy one sprite spanned most
            of the frame; 144 of them in additive mode then merged into a
