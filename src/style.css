@@ -3007,18 +3007,9 @@ html, body {
   border: 0 !important;
 }
 
-/* The generated sonic landscape is the idle state. Let the existing renderer
-   whisper through it rather than covering it with a rectangular launch card. */
+/* No splash art: an empty stage is plain black behind the chosen mode. */
 .stage.is-empty {
-  background:
-    linear-gradient(180deg, rgba(2,2,2,0.34), rgba(2,2,2,0.08) 48%, rgba(2,2,2,0.62)),
-    url('/idle-sonic.webp') center / cover no-repeat,
-    #020202;
-}
-.stage.is-empty .stage-canvas,
-.stage.is-empty #viz-canvas {
-  opacity: 0.3;
-  mix-blend-mode: screen;
+  background: #020202;
 }
 .stage.is-empty .idle-visual { opacity: 0; }
 
@@ -3086,4 +3077,17 @@ html, body {
 
 @media (prefers-reduced-motion: reduce) {
   .dropzone { transition: none; }
+}
+
+/* Blank stage until the user chooses a mode — no idle art, drop target or
+   canvases. Cleared by setMode() on the first user pick. */
+:root.mode-unchosen .stage,
+:root.mode-unchosen .stage.is-empty {
+  background: #000;
+}
+:root.mode-unchosen .stage::before,
+:root.mode-unchosen .stage::after,
+:root.mode-unchosen .stage > * {
+  visibility: hidden;
+  opacity: 0;
 }

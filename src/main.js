@@ -255,8 +255,11 @@ function setModeStory(id) {
   $('mode-story-copy').textContent = story.story;
 }
 
-function setMode(id) {
+function setMode(id, { restore = false } = {}) {
   if (!MODES.some((m) => m.id === id)) return;
+  /* The stage stays blank until the user picks a mode themselves; restoring
+     the saved mode on load must not reveal it. */
+  if (!restore) document.documentElement.classList.remove('mode-unchosen');
   /* Each mode has its own cost, and the tier adapted for the last one says
      nothing about this one — without this, stepping down for a heavy mode
      left every later mode stuck at that tier. The render loop also skips the
@@ -448,7 +451,7 @@ const SETTINGS_VOCAB = {
 function applySettings(s, { eq = false } = {}) {
   if (typeof s.raytrace === 'boolean') setRaytrace(s.raytrace, { quiet: true });   // stored intent, not availability
   if (s.rayQuality) setRayQuality(s.rayQuality, { quiet: true });
-  if (s.mode) setMode(s.mode);
+  if (s.mode) setMode(s.mode, { restore: true });
   if (s.theme) setTheme(s.theme);
   for (const [key, val] of Object.entries(s.sliders || {})) {
     const input = sliderEls[key];
