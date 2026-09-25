@@ -14,6 +14,7 @@ const appleInstances = [];
 
 vi.mock('../src/spotify.js', () => ({
   storedClientId: () => 'test-client-id',
+  builtInClientId: () => '',
   redirectUri: () => 'http://localhost/callback',
   SpotifyClient: class {
     constructor() {

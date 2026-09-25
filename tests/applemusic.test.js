@@ -1,6 +1,6 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import {
-  appleArtworkUrl, mapApplePlaylist, mapAppleTrack, developerToken, _resetTokenCache,
+  appleArtworkUrl, mapApplePlaylist, mapAppleTrack, developerToken, _resetTokenCache, AppleMusicClient,
 } from '../src/applemusic.js';
 
 describe('Apple Music mapping', () => {
@@ -108,5 +108,35 @@ describe('developer token fetching', () => {
   it('surfaces the server message rather than a generic one', async () => {
     respond(501, { error: 'Apple Music server credentials are not configured' });
     await expect(developerToken()).rejects.toThrow('Apple Music server credentials are not configured');
+  });
+});
+
+describe('AppleMusicClient (MusicKit v3 API)', () => {
+  function client(api, extra = {}) {
+    const c = new AppleMusicClient();
+    c.music = { isAuthorized: true, storefrontId: 'gb', api, setQueue: vi.fn(async () => {}), play: vi.fn(async () => {}), ...extra };
+    c.configure = async () => c.music;
+    return c;
+  }
+
+  it('loads library playlists through api.music', async () => {
+    const music = vi.fn(async () => ({ data: { data: [{ id: 'p.1', attributes: { name: 'Mix', trackCount: 4 } }] } }));
+    const pls = await client({ music }).playlists();
+    expect(music).toHaveBeenCalledWith('/v1/me/library/playlists', { limit: 100 });
+    expect(pls).toEqual([expect.objectContaining({ id: 'p.1', name: 'Mix', trackCount: 4 })]);
+  });
+
+  it('searches the catalog in the listener storefront', async () => {
+    const music = vi.fn(async () => ({ data: { results: { songs: { data: [{ id: 's1', attributes: { name: 'Song', artistName: 'Band', durationInMillis: 1000 } }] } } } }));
+    const songs = await client({ music }).searchSongs('band', 5);
+    expect(music).toHaveBeenCalledWith('/v1/catalog/gb/search', { term: 'band', types: 'songs', limit: 5 });
+    expect(songs[0]).toMatchObject({ id: 's1', name: 'Song', artists: 'Band' });
+  });
+
+  it('queues songs from a start position', async () => {
+    const c = client({ music: vi.fn() });
+    await c.playSongs(['a', 'b'], 1);
+    expect(c.music.setQueue).toHaveBeenCalledWith({ songs: ['a', 'b'], startPosition: 1 });
+    expect(c.music.play).toHaveBeenCalled();
   });
 });

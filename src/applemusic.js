@@ -70,6 +70,9 @@ function loadMusicKit() {
 }
 
 function responseItems(response) {
+  /* MusicKit v3 wraps the Apple Music API body in `data`, so the resource
+     list sits at response.data.data; v1-style responses put it at .data. */
+  if (Array.isArray(response?.data?.data)) return response.data.data;
   return Array.isArray(response?.data) ? response.data : [];
 }
 
@@ -120,6 +123,8 @@ export class AppleMusicClient {
 
   get configured() {
     if (buildDeveloperToken()) return true;
+    // the token endpoint already said this deployment has no credentials
+    if (tokenUnavailable) return false;
     if (typeof window === 'undefined') return false;
     return !['localhost', '127.0.0.1'].includes(window.location.hostname);
   }
@@ -137,7 +142,7 @@ export class AppleMusicClient {
       this._configurePromise = developerToken().then((token) => loadMusicKit().then(async (MusicKit) => {
         await MusicKit.configure({
           developerToken: token,
-          app: { name: 'AUDIOVISOR', build: '8.16.0' },
+          app: { name: 'AUDIOVISOR', build: '8.17.0' },
         });
         this.music = MusicKit.getInstance();
         this._bindEvents();
@@ -196,10 +201,45 @@ export class AppleMusicClient {
     if (this.onAuthChange) this.onAuthChange(false);
   }
 
+  /** MusicKit v3 exposes a single `api.music(path, params)` entry point; the
+   *  v1 `api.library.*` helpers are kept only as a fallback for older hosts. */
+  async _request(path, params) {
+    await this.configure();
+    const api = this.music?.api;
+    if (typeof api?.music === 'function') return api.music(path, params);
+    throw new Error('Apple Music API is unavailable');
+  }
+
   async playlists(limit = 100) {
     await this.configure();
-    const response = await this.music.api.library.playlists({ limit, offset: 0 });
+    if (typeof this.music?.api?.music !== 'function' && this.music?.api?.library?.playlists) {
+      return responseItems(await this.music.api.library.playlists({ limit, offset: 0 })).map(mapApplePlaylist);
+    }
+    const response = await this._request('/v1/me/library/playlists', { limit: Math.min(limit, 100) });
     return responseItems(response).map(mapApplePlaylist);
+  }
+
+  /** Catalog song search in the listener's storefront. */
+  async searchSongs(term, limit = 8) {
+    const q = String(term || '').trim();
+    if (!q) return [];
+    await this.configure();
+    const storefront = this.music?.storefrontId || 'us';
+    const response = await this._request(`/v1/catalog/${storefront}/search`, {
+      term: q, types: 'songs', limit,
+    });
+    const body = response?.data ?? response;
+    const songs = body?.results?.songs?.data;
+    return Array.isArray(songs) ? songs.map(mapAppleTrack) : [];
+  }
+
+  async playSongs(ids, startPosition = 0) {
+    if (!ids?.length) throw new Error('Choose an Apple Music song');
+    await this.configure();
+    if (!this.authed) throw new Error('Apple Music is not connected');
+    await this.music.setQueue({ songs: ids, startPosition });
+    await this.music.play();
+    this.syncTrack();
   }
 
   async playPlaylist(id) {

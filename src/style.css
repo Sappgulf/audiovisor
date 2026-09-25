@@ -3129,3 +3129,27 @@ html, body {
 /* the save-to-library button sits absolutely in the track card's corner;
    keep the title and spec text clear of it */
 .track-info .track-meta { padding-right: 28px; min-width: 0; }
+
+/* ---------- connect menu (v8.17): provider cards ---------- */
+#connect-root { display: flex; flex-direction: column; gap: 10px; }
+.connect-head { display: flex; align-items: center; justify-content: space-between; }
+.connect-head-title { font-size: 13px; font-weight: 600; }
+.connect-status, .connect-sub { display: flex; align-items: center; gap: 5px; font-size: 9px; letter-spacing: 0.1em; color: var(--text-40); }
+.connect-sub { margin-top: 4px; }
+.connect-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border-soft); }
+.connect-dot.sp { --brand-rgb: 30,215,96; }
+.connect-dot.am { --brand-rgb: 250,45,72; }
+.connect-dot.is-on { background: rgb(var(--brand-rgb)); box-shadow: 0 0 8px rgba(var(--brand-rgb), 0.6); }
+.provider-card { --brand-rgb: 30,215,96; --brand: rgb(var(--brand-rgb)); position: relative; overflow: hidden; }
+.provider-apple { --brand-rgb: 250,45,72; }
+.provider-card::before { content: ''; position: absolute; inset: 0 0 auto; height: 2px; background: linear-gradient(90deg, var(--brand), transparent); opacity: 0.35; }
+.provider-card.is-linked { border-color: rgba(var(--brand-rgb), 0.35); box-shadow: 0 8px 28px -14px rgba(var(--brand-rgb), 0.5); }
+.provider-card.is-linked::before { opacity: 1; }
+.provider-logo { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: rgba(var(--brand-rgb), 0.14); color: var(--brand); }
+.provider-logo svg { width: 16px; height: 16px; }
+.provider-card .sp-badge.is-on { color: var(--brand); border-color: rgba(var(--brand-rgb), 0.4); }
+.provider-btn, .provider-card .sp-connect { background: var(--brand); color: #0b0b0b; border: 0; }
+.provider-btn { width: 100%; padding: 10px; border-radius: 999px; cursor: pointer; font: 600 12px/1 inherit; }
+.provider-apple .provider-btn { color: #fff; }
+.provider-btn:hover { filter: brightness(1.08); }
+.provider-card .sp-help .sp-login { margin-top: 8px; }

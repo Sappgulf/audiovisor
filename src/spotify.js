@@ -103,6 +103,11 @@ function migrateLegacyStore() {
   } catch {}
 }
 
+/** Client ID baked into this deployment (VITE_SPOTIFY_CLIENT_ID), if any. */
+export function builtInClientId() {
+  try { return String((import.meta.env && import.meta.env.VITE_SPOTIFY_CLIENT_ID) || '').trim(); } catch { return ''; }
+}
+
 export function storedClientId() {
   try {
     return localStore()?.getItem(CLIENT_KEY)

@@ -1,6 +1,6 @@
 import { setIcon } from './icons.js';
 import { fmtTime, esc } from './utils.js';
-import { SpotifyClient, storedClientId, redirectUri } from './spotify.js';
+import { SpotifyClient, storedClientId, builtInClientId, redirectUri } from './spotify.js';
 import { AppleMusicClient } from './applemusic.js';
 
 
@@ -153,9 +153,140 @@ export class ConnectPanel {
 
   render() {
     const authed = this.client.authed;
+    const appleAuthed = this.apple.authed;
     this.root.innerHTML = '';
 
-    /* --- source chips --- */
+    /* --- header: which accounts are live at a glance --- */
+    const head = document.createElement('div');
+    head.className = 'connect-head';
+    head.innerHTML = `
+      <span class="connect-head-title">Music accounts</span>
+      <span class="connect-status mono">
+        <span class="connect-dot ${authed ? 'is-on sp' : ''}" title="Spotify ${authed ? 'connected' : 'not connected'}"></span>
+        <span class="connect-dot ${appleAuthed ? 'is-on am' : ''}" title="Apple Music ${appleAuthed ? 'connected' : 'not connected'}"></span>
+        ${[authed, appleAuthed].filter(Boolean).length}/2 LINKED
+      </span>`;
+    this.root.appendChild(head);
+
+    /* --- spotify block --- */
+    const sp = document.createElement('div');
+    sp.className = `spotify-block provider-card provider-spotify${authed ? ' is-linked' : ''}`;
+    if (!authed) {
+      const builtIn = builtInClientId();
+      const cid = storedClientId();
+      const setup = `
+          <ol>
+            <li>Create an app at <i>developer.spotify.com/dashboard</i></li>
+            <li>Add this redirect URI:<br><code>${esc(redirectUri())}</code></li>
+            <li>Enable Web API + Web Playback SDK</li>
+          </ol>`;
+      const idRow = `
+          <div class="sp-login">
+            <input type="text" class="connect-input mono" id="sp-client-id"
+                   placeholder="Client ID" value="${esc(cid === builtIn ? '' : cid)}" spellcheck="false" aria-label="Spotify Client ID" />
+            ${builtIn ? '' : '<button class="lime-btn-sm sp-connect" id="sp-connect">Connect</button>'}
+          </div>`;
+      sp.innerHTML = `
+        <div class="sp-head">
+          <span class="provider-logo" data-icon="spotify"></span>
+          <span class="sp-title">Spotify</span>
+          <span class="sp-badge mono">NOT LINKED</span>
+        </div>
+        <p class="sp-note">Search, top tracks and playlists with full playback (Premium). Sign-in happens on Spotify — your password never touches AUDIOVISOR.</p>
+        ${builtIn ? `
+        <button class="provider-btn" id="sp-connect">Connect Spotify</button>
+        <details class="sp-help">
+          <summary class="mono">USE YOUR OWN APP</summary>
+          ${setup}${idRow}
+        </details>` : `
+        <details class="sp-help">
+          <summary class="mono">SETUP</summary>
+          ${setup}
+        </details>
+        ${idRow}`}`;
+    } else {
+      const p = this.client.profile;
+      sp.innerHTML = `
+        <div class="sp-head">
+          <span class="provider-logo" data-icon="spotify"></span>
+          <span class="sp-title">Spotify</span>
+          <span class="sp-badge mono is-on">${this.client.premium ? 'PREMIUM' : 'FREE'}</span>
+          <button class="icon-x" id="sp-disconnect" title="Disconnect Spotify" aria-label="Disconnect Spotify"><span class="ic ic-sm" data-icon="close"></span></button>
+        </div>
+        <div class="sp-profile mono">
+          <span class="sp-avatar">${esc((p?.display_name || '?')[0].toUpperCase())}</span>
+          <span class="sp-name">${esc(p?.display_name || 'Connected')}</span>
+          <span class="sp-dev dot-ok" id="sp-dev">${this.deviceReady ? 'DEVICE LIVE' : 'DEVICE …'}</span>
+        </div>
+        ${this.client.premium ? `
+        <div class="sp-search">
+          <span class="ic ic-dim" data-icon="search"></span>
+          <input type="search" class="connect-input bare mono" id="sp-search-input"
+                 placeholder="Search Spotify…" spellcheck="false" aria-label="Search Spotify" />
+        </div>
+        <div class="sp-actions">
+          <button class="mini-btn" id="sp-top">My Top Tracks</button>
+          <select class="mini-select mono" id="sp-playlists" aria-label="Spotify playlists"><option value="">Playlists…</option></select>
+        </div>
+        <div class="sp-results" id="sp-results"></div>`
+        : `<p class="sp-note"><b>Free plan:</b> playback control needs Premium.
+           You can still visualize Spotify with <b>Capture</b> below.</p>`}`;
+    }
+    this.root.appendChild(sp);
+    sp.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
+
+    /* --- apple music block --- */
+    const am = document.createElement('div');
+    am.className = `spotify-block provider-card provider-apple${appleAuthed ? ' is-linked' : ''}`;
+    const appleConfigured = this.apple.configured;
+    if (!appleAuthed) {
+      am.innerHTML = `
+        <div class="sp-head">
+          <span class="provider-logo" data-icon="music2"></span>
+          <span class="sp-title">Apple Music</span>
+          <span class="sp-badge mono">${appleConfigured ? 'NOT LINKED' : 'UNAVAILABLE'}</span>
+        </div>
+        <p class="sp-note">${appleConfigured
+          ? 'Search the Apple Music catalog and play your library playlists. Sign-in happens with Apple.'
+          : 'Apple Music is not enabled on this deployment yet.'}</p>
+        ${appleConfigured
+          ? '<button class="provider-btn" id="am-connect">Connect Apple Music</button>'
+          : `<details class="sp-help">
+          <summary class="mono">SETUP</summary>
+          <ol>
+            <li>Create a MusicKit key in your Apple Developer account</li>
+            <li>Set <code>APPLE_MUSIC_TEAM_ID</code>, <code>APPLE_MUSIC_KEY_ID</code> and <code>APPLE_MUSIC_PRIVATE_KEY</code> in Vercel</li>
+            <li>Redeploy, then connect here</li>
+          </ol>
+        </details>`}`;
+    } else {
+      am.innerHTML = `
+        <div class="sp-head">
+          <span class="provider-logo" data-icon="music2"></span>
+          <span class="sp-title">Apple Music</span>
+          <span class="sp-badge mono is-on">LINKED</span>
+          <button class="icon-x" id="am-disconnect" title="Disconnect Apple Music" aria-label="Disconnect Apple Music"><span class="ic ic-sm" data-icon="close"></span></button>
+        </div>
+        <div class="sp-search">
+          <span class="ic ic-dim" data-icon="search"></span>
+          <input type="search" class="connect-input bare mono" id="am-search-input"
+                 placeholder="Search Apple Music…" spellcheck="false" aria-label="Search Apple Music" />
+        </div>
+        <div class="sp-actions">
+          <select class="mini-select mono" id="am-playlists" aria-label="Apple Music playlists"><option value="">Playlists…</option></select>
+        </div>
+        <div class="sp-results" id="am-results"></div>
+        <p class="sp-note">Apple keeps its stream protected — turn on <b>Capture</b> for the live spectrum.</p>`;
+    }
+    this.root.appendChild(am);
+    am.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
+
+    /* --- other sources --- */
+    const label = document.createElement('div');
+    label.className = 'connect-sub mono';
+    label.textContent = 'OTHER SOURCES';
+    this.root.appendChild(label);
+
     const sources = document.createElement('div');
     sources.className = 'connect-sources';
     sources.innerHTML = `
@@ -174,108 +305,10 @@ export class ConnectPanel {
     urlRow.id = 'url-row';
     urlRow.innerHTML = `
       <input type="text" class="connect-input mono" id="url-input"
-             placeholder="https://… .mp3 / radio / podcast" spellcheck="false" />
+             placeholder="https://… .mp3 / radio / podcast" spellcheck="false" aria-label="Audio URL" />
       <button class="mini-btn lime-btn-sm" id="url-play" title="Stream"><span class="ic ic-sm" data-icon="play"></span></button>`;
     this.root.appendChild(urlRow);
     setIcon(urlRow.querySelector('#url-play .ic'), 'play');
-
-    /* --- spotify block --- */
-    const sp = document.createElement('div');
-    sp.className = 'spotify-block';
-    if (!authed) {
-      const cid = storedClientId();
-      sp.innerHTML = `
-        <div class="sp-head">
-          <span class="ic ic-lime" data-icon="spotify"></span>
-          <span class="sp-title">Spotify Connect</span>
-        </div>
-        <p class="sp-note">A Spotify account is required for playlists. AUDIOVISOR never stores your password; this browser session is cleared when you disconnect or close the tab.</p>
-        <details class="sp-help">
-          <summary class="mono">SETUP</summary>
-          <ol>
-            <li>Create an app at <i>developer.spotify.com/dashboard</i></li>
-            <li>Add this redirect URI:<br><code>${esc(redirectUri())}</code></li>
-            <li>Web API + Web Playback SDK scopes enabled</li>
-          </ol>
-        </details>
-        <div class="sp-login">
-          <input type="text" class="connect-input mono" id="sp-client-id"
-                 placeholder="Client ID" value="${esc(cid)}" spellcheck="false" />
-          <button class="lime-btn-sm sp-connect" id="sp-connect">Connect</button>
-        </div>`;
-    } else {
-      const p = this.client.profile;
-      sp.innerHTML = `
-        <div class="sp-head">
-          <span class="ic ic-lime" data-icon="spotify"></span>
-          <span class="sp-title">Spotify</span>
-          <span class="sp-badge mono">${this.client.premium ? 'PREMIUM' : 'FREE'}</span>
-          <button class="icon-x" id="sp-disconnect" title="Disconnect"><span class="ic ic-sm" data-icon="close"></span></button>
-        </div>
-        <div class="sp-profile mono">
-          <span class="sp-avatar">${esc((p?.display_name || '?')[0].toUpperCase())}</span>
-          <span class="sp-name">${esc(p?.display_name || 'Connected')}</span>
-          <span class="sp-dev dot-ok" id="sp-dev">${this.deviceReady ? 'DEVICE LIVE' : 'DEVICE …'}</span>
-        </div>
-        ${this.client.premium ? `
-        <div class="sp-search">
-          <span class="ic ic-dim" data-icon="search"></span>
-          <input type="text" class="connect-input bare mono" id="sp-search-input"
-                 placeholder="Search tracks…" spellcheck="false" />
-        </div>
-        <div class="sp-actions">
-          <button class="mini-btn" id="sp-top">My Top Tracks</button>
-          <select class="mini-select mono" id="sp-playlists"><option value="">Playlists…</option></select>
-        </div>
-        <div class="sp-results" id="sp-results"></div>`
-        : `<p class="sp-note"><b>Free plan:</b> playback control needs Premium.
-           You can still visualize Spotify with <b>Capture</b>.</p>`}`;
-    }
-    this.root.appendChild(sp);
-    sp.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
-
-    /* --- apple music block --- */
-    const am = document.createElement('div');
-    am.className = 'spotify-block apple-block';
-    const appleAuthed = this.apple.authed;
-    const appleConfigured = this.apple.configured;
-    if (!appleAuthed) {
-      am.innerHTML = `
-        <div class="sp-head">
-          <span class="ic ic-lime" data-icon="music2"></span>
-          <span class="sp-title">Apple Music</span>
-        </div>
-        <p class="sp-note">An Apple Music account is required for playlists. AUDIOVISOR never stores your password and asks for a fresh provider sign-in on each app load.</p>
-        <details class="sp-help">
-          <summary class="mono">SETUP</summary>
-          <ol>
-            <li>Configure the server token endpoint with your Apple Developer credentials</li>
-            <li>Redeploy, then authorize Apple Music here</li>
-          </ol>
-        </details>
-        <button class="lime-btn-sm apple-connect" id="am-connect" ${appleConfigured ? '' : 'disabled'}>
-          ${appleConfigured ? 'Connect Apple Music' : 'Server token required'}
-        </button>`;
-    } else {
-      am.innerHTML = `
-        <div class="sp-head">
-          <span class="ic ic-lime" data-icon="music2"></span>
-          <span class="sp-title">Apple Music</span>
-          <span class="sp-badge mono">CONNECTED</span>
-          <button class="icon-x" id="am-disconnect" title="Disconnect"><span class="ic ic-sm" data-icon="close"></span></button>
-        </div>
-        <div class="sp-profile mono">
-          <span class="sp-avatar apple-avatar">♪</span>
-          <span class="sp-name">Apple Music library</span>
-          <span class="sp-dev dot-ok">MUSIC KIT LIVE</span>
-        </div>
-        <div class="sp-actions">
-          <select class="mini-select mono" id="am-playlists"><option value="">Playlists…</option></select>
-        </div>
-        <p class="sp-note"><b>Playlist playback:</b> Apple Music keeps the protected stream in its player. Use <b>Capture</b> for the live spectrum.</p>`;
-    }
-    this.root.appendChild(am);
-    am.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
 
     this.bind(sources, urlRow, sp);
     this.bindApple(am);
@@ -326,7 +359,7 @@ export class ConnectPanel {
 
     if (!this.client.authed) {
       sp.querySelector('#sp-connect').addEventListener('click', () => {
-        const cid = sp.querySelector('#sp-client-id').value.trim();
+        const cid = sp.querySelector('#sp-client-id').value.trim() || builtInClientId();
         if (!cid) {
           this.toast('<b>Client ID required</b> — see SETUP above', { duration: 2600 });
           return;
@@ -334,7 +367,7 @@ export class ConnectPanel {
         this.client.login(cid).catch((e) =>
           this.toast(`<b>Login failed</b> — ${esc(e.message)}`, { duration: 3200 }));
       });
-      sp.querySelector('#sp-client-id').addEventListener('keydown', (e) => {
+      sp.querySelector('#sp-client-id')?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') sp.querySelector('#sp-connect').click();
         e.stopPropagation();
       });
@@ -400,9 +433,9 @@ export class ConnectPanel {
     }
   }
 
-  showResults(tracks, label) {
+  showResults(tracks, label, provider = 'spotify') {
     this.lastResults = tracks;
-    const box = this.root.querySelector('#sp-results');
+    const box = this.root.querySelector(provider === 'apple' ? '#am-results' : '#sp-results');
     if (!box) return;
     box.innerHTML =
       `<div class="sp-results-label mono">${esc(label)}</div>` +
@@ -420,7 +453,9 @@ export class ConnectPanel {
           </button>`).join('')
         : '<div class="sp-empty mono">NO RESULTS</div>');
     box.querySelectorAll('.track-row').forEach((btn) =>
-      btn.addEventListener('click', () => this.playTracks(this.lastResults, Number(btn.dataset.i))));
+      btn.addEventListener('click', () => (provider === 'apple'
+        ? this.playAppleTracks(tracks, Number(btn.dataset.i))
+        : this.playTracks(tracks, Number(btn.dataset.i)))));
   }
 
   async playTracks(tracks, startIdx) {
@@ -485,6 +520,23 @@ export class ConnectPanel {
       this.toast('Apple Music <b>disconnected</b>', { duration: 1600 });
     });
 
+    const search = am.querySelector('#am-search-input');
+    let appleTimer = null;
+    search?.addEventListener('input', () => {
+      clearTimeout(appleTimer);
+      const q = search.value.trim();
+      appleTimer = setTimeout(async () => {
+        if (q.length < 2) return;
+        try {
+          const tracks = await this.apple.searchSongs(q, 8);
+          this.showResults(tracks, `RESULTS — “${q}”`, 'apple');
+        } catch (err) {
+          this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3000 });
+        }
+      }, 380);
+    });
+    search?.addEventListener('keydown', (e) => e.stopPropagation());
+
     const playlists = am.querySelector('#am-playlists');
     if (!playlists) return;
     this.loadApplePlaylists(playlists);
@@ -499,6 +551,17 @@ export class ConnectPanel {
         this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3400 });
       }
     });
+  }
+
+  async playAppleTracks(tracks, startIdx) {
+    const t = tracks[startIdx];
+    try {
+      await this.apple.playSongs(tracks.map((x) => x.id), startIdx);
+      this.engine.setExternal(this.makeAppleController());
+      this.toast(`▶ <b>${esc(t.name)}</b>`, { duration: 1800 });
+    } catch (err) {
+      this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3400 });
+    }
   }
 
   async loadApplePlaylists(select = this.root.querySelector('#am-playlists')) {
