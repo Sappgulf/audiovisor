@@ -172,3 +172,40 @@ describe('shader source integrity', () => {
     expect(raw.split('`').length % 2, 'unbalanced backticks in rayshader.js').toBe(1);
   });
 });
+
+describe('RayStage audio upload', () => {
+  const upload = (freq, wave, L, R) => {
+    const calls = [];
+    const gl = {
+      TEXTURE_2D: 1, RED: 2, UNSIGNED_BYTE: 3,
+      bindTexture() {},
+      texSubImage2D: (...a) => calls.push(Uint8Array.from(a[a.length - 1])),
+    };
+    const self = { gl, specTex: {}, waveTex: {}, _specIdxFor: RayStage.prototype._specIdxFor };
+    RayStage.prototype._uploadAudio.call(self, freq, wave, L, R);
+    return { spec: calls[0], wave: calls[1], self };
+  };
+
+  it('writes float stereo taps as bytes instead of truncating them to 0/1', () => {
+    /* the engine's L/R taps are Float32 in -1..1; stored raw into the byte
+       texture they all became 0 or 1 and the scope's stereo rows were flat */
+    const L = new Float32Array(2048).map((_, i) => Math.sin(i * 0.05) * 0.8);
+    const R = new Float32Array(2048).map((_, i) => -Math.sin(i * 0.05) * 0.8);
+    const { wave } = upload(new Uint8Array(1024), new Uint8Array(2048).fill(128), L, R);
+    const lRow = wave.subarray(256, 512), rRow = wave.subarray(512, 768);
+    expect(Math.max(...lRow)).toBeGreaterThan(200);
+    expect(Math.min(...lRow)).toBeLessThan(56);
+    expect(lRow[20] + rRow[20]).toBeGreaterThan(250);        // mirrored around 128
+    expect(lRow[20] + rRow[20]).toBeLessThan(262);
+  });
+
+  it('lifts a quiet spectrum but leaves a loud one untouched', () => {
+    const quiet = new Uint8Array(1024).fill(90);
+    const { spec: q } = upload(quiet, null, null, null);
+    expect(q[10]).toBeGreaterThan(90);
+    expect(q[10]).toBeLessThanOrEqual(Math.ceil(90 * 1.6));
+    const loud = new Uint8Array(1024).fill(230);
+    const { spec: l } = upload(loud, null, null, null);
+    expect(l[10]).toBe(230);
+  });
+});

@@ -374,7 +374,16 @@ export class RayStage {
     const s = this._specScratch || (this._specScratch = new Uint8Array(256));
     if (freq) {
       const { idx, idx2 } = this._specIdxFor(freq.length);
-      for (let i = 0; i < 256; i++) s[i] = Math.max(freq[idx[i]], freq[idx2[i]]);
+      let peak = 0;
+      for (let i = 0; i < 256; i++) { s[i] = Math.max(freq[idx[i]], freq[idx2[i]]); if (s[i] > peak) peak = s[i]; }
+      /* Quiet-track lift. Every scene maps the spectrum straight into
+         geometry, so a quietly mastered track barely moved the stage. A
+         slow-release peak follower lifts the spectrum toward a healthy
+         level — boost only, bounded to 1.6x, so loud material (which the
+         scenes already knee) renders exactly as before. */
+      this._specPeak = Math.max(peak, (this._specPeak || peak) * 0.995);
+      const gain = Math.min(1.6, Math.max(1, 210 / Math.max(1, this._specPeak)));
+      if (gain > 1.001) for (let i = 0; i < 256; i++) s[i] = Math.min(255, s[i] * gain);
     }
     gl.bindTexture(gl.TEXTURE_2D, this.specTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 1, gl.RED, gl.UNSIGNED_BYTE, s);
@@ -386,7 +395,18 @@ export class RayStage {
     const row = (src, off) => {
       if (src) {
         const step = Math.max(1, Math.floor(src.length / 256));
-        for (let i = 0; i < 256; i++) wv[off + i] = src[i * step];
+        /* The engine's stereo taps are Float32 in -1..1. Stored straight
+           into this Uint8Array every sample truncated to 0 or 1, so the
+           L/R rows the scope shears by were flat and the stereo figure
+           never moved. Bytes (the mono path) pass through unchanged. */
+        if (src instanceof Float32Array || src instanceof Float64Array) {
+          for (let i = 0; i < 256; i++) {
+            const v = 128 + src[i * step] * 127;
+            wv[off + i] = v <= 0 ? 0 : v >= 255 ? 255 : v;
+          }
+        } else {
+          for (let i = 0; i < 256; i++) wv[off + i] = src[i * step];
+        }
       } else {
         wv.copyWithin(off, 0, 256);
       }
