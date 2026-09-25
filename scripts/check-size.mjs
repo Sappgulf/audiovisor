@@ -29,8 +29,13 @@ const BUDGETS = {
      v8.13: the main.js split into focused modules adds a small amount of
      module-wrapper overhead to the entry, and the offline tempo analysis
      worker adds a lazy dsp-worker chunk. Worth it: the boot payload is
-     still small and main.js went from 3096 to under 900 lines. */
-  total: 101 * 1024,   // all JS chunks, gzipped
+     still small and main.js went from 3096 to under 900 lines.
+
+     v8.14: the 2D mode pass (lava vessel, aurora curtains, city skyline,
+     tensor well, bloomfield history, scope/spectro/bars gain) lands in the
+     lazy modes-extra chunk plus a little in the core bars/scope, and the
+     entry stays under its own cap. */
+  total: 103 * 1024,   // all JS chunks, gzipped
 };
 
 const DIST = 'dist/assets';
