@@ -107,6 +107,7 @@ const state = {
   // ray.ok, which can flip on a GPU context loss
   raytraceWanted: true,
   rayQuality: 'high',
+  rayQualityExplicit: false,   // runtime only: picked by hand this session
   // offline tempo analysis for the current track, 0 until it lands
   analyzedBpm: 0,
   fx: { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false, widener: false },
@@ -264,11 +265,11 @@ function setMode(id, { restore = false } = {}) {
      nothing about this one — without this, stepping down for a heavy mode
      left every later mode stuck at that tier. The render loop also skips the
      first frames of a new mode, which include one-time setup. */
-  renderLoop.resetAdaptation();
+  renderLoop.resetAdaptation(id);
   /* Restart from the tier this device should begin at rather than the
      ceiling. On a phone the ceiling is a guaranteed stutter that adaptive
      stepping then has to undo; the climb takes it back up if there is room. */
-  const start = initialTier(state.rayQuality);
+  const start = state.rayQualityExplicit ? state.rayQuality : initialTier(state.rayQuality);
   if (ray.ok && ray.quality !== start) ray.setQuality(start);
   state.modeId = id;
   setModeStory(id);
@@ -763,7 +764,7 @@ const renderLoop = createRenderLoop({
   getRay: () => ray,
   state,
   toast,
-  getGpu: () => ({ webgpuState: gpu.getWebgpu(), webgl2State: gpu.getWebgl2(), webgpuCanvas: gpu.canvas }),
+  getGpu: () => ({ webgpuState: gpu.getWebgpu(), webgl2State: gpu.getWebgl2(), webgpuCanvas: gpu.canvas, startGpu: gpu.start }),
   drawVu,
   drawWaveform,
   seekTrack,
@@ -869,7 +870,7 @@ const { currentSettings } = createSettingsUI({
 // PWA — register + force update so stale cache-first HTML self-heals
 registerServiceWorker();
 
-// WebGPU init with WebGL2 fallback
+// WebGPU init with WebGL2 fallback — started by the render loop on first use
 const gpu = createGpuStage();
 /* Surface which backend the GPU Core mode ended up on. WebGPU is preferred;
    WebGL2 is the fallback, and the Canvas2D stage covers the rest. */

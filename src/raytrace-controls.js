@@ -76,9 +76,11 @@ export function createRaytraceControls({
        stage starts lower and the adaptive climb walks up to whatever this
        hardware can actually sustain. */
     state.rayQuality = q;
-    /* A new ceiling restarts the climb from whatever this device should
-       begin at, so the readout follows that rather than the ceiling. */
-    effective = initialTier(q);
+    /* A tier picked by hand this session is applied as asked. A restored or
+       default one is a ceiling: the stage starts lower and the adaptive
+       loop only climbs as far as AUTO_CLIMB_MAX (see src/adaptive.js). */
+    state.rayQualityExplicit = !quiet;
+    effective = quiet ? initialTier(q) : q;
     getRay().setQuality(effective);
     renderQualityLabel();
     if (!quiet) {

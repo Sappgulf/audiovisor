@@ -41,8 +41,13 @@ export const FAST_WINDOW = 4;
 
 /** Frame interval treated as the display's natural pace when unknown. */
 export const DEFAULT_BASELINE_MS = 16.7;
-/** Over this multiple of baseline, step down. */
-export const OVER_BUDGET = 1.6;
+/**
+ * Over this multiple of baseline, step down.
+ * Was 1.6 — but a stage alternating 16.7ms and 33ms frames averages ~22ms
+ * (1.3x), which is a visible 45fps judder that sat under the line forever.
+ * 1.2 catches it; HEALTHY below stays under this so the bands never overlap.
+ */
+export const OVER_BUDGET = 1.2;
 /** Over this multiple, step down two tiers and act on the short window. */
 export const SEVERE = 3.0;
 /**
@@ -56,9 +61,12 @@ export const SEVERE = 3.0;
  * one tier higher. If that turns out to be wrong the step-down path takes
  * it back within about a second.
  */
-export const HEALTHY = 1.25;
+export const HEALTHY = 1.1;
 /** Consecutive healthy windows required before stepping up. */
-export const CLIMB_STREAK = 3;
+/* Was 3 (one second at 60Hz). Each climb that fails costs about half a
+   second of judder, and the step up is often 2-3x the frame cost, so ask for
+   a longer clean run before trying. */
+export const CLIMB_STREAK = 6;
 
 /**
  * The display's natural frame interval, estimated as the fastest interval
@@ -123,6 +131,27 @@ export function relaxBaseline(estimate, samples) {
 }
 
 /** Should this window be judged yet? */
+/**
+ * The figure a window is judged on: its average, unless it is judder.
+ * A mode running just over budget renders most frames on time and drops
+ * every seventh or eighth — measured on Particle Field at medium, one 33ms
+ * frame in eight. That averages ~1.15x, under OVER_BUDGET, yet reads as a
+ * steady stutter. A window where at least a tenth of the frames missed a
+ * whole refresh is treated as over budget whatever its mean.
+ * @param {number[]} samples frame intervals in ms
+ * @param {number} baseline the display's natural interval
+ */
+export function windowCost(samples, baseline = DEFAULT_BASELINE_MS) {
+  if (!samples.length) return NaN;
+  let sum = 0, dropped = 0;
+  for (const ms of samples) {
+    sum += ms;
+    if (ms > baseline * 1.5) dropped++;
+  }
+  const avg = sum / samples.length;
+  return dropped / samples.length >= 0.1 ? Math.max(avg, baseline * OVER_BUDGET * 1.01) : avg;
+}
+
 export function shouldEvaluate(samples, baseline = DEFAULT_BASELINE_MS) {
   if (samples.length >= WINDOW) return true;
   if (samples.length < FAST_WINDOW) return false;
@@ -188,6 +217,34 @@ export function next2dQuality(current, avgMs, baseline = DEFAULT_BASELINE_MS) {
 export const MOBILE_START_TIER = 'low';
 
 /**
+ * Desktops start one step under the default ceiling too. At Retina sizes
+ * 'high' (2 spp, 1.1M px) measured ~3x the frame cost of 'medium' on an M1,
+ * putting the heavy scenes at 20-50ms — a stutter for the seconds it took
+ * the sampler to step down. Starting here and climbing when frames are
+ * clean gets the same ceiling without the janky first impression.
+ */
+export const DESKTOP_START_TIER = 'medium';
+
+/**
+ * The highest tier the adaptive loop will climb to on its own. vsync hides
+ * spare capacity, so a climb is a guess — and medium to high is a 2-3x cost
+ * step on Retina. Measured on an M1, the guess failed on most modes and each
+ * failure cost ~0.5s of 30fps judder plus a 100ms+ frame while the GPU
+ * drained the heavier tier. A tier chosen by hand is still applied directly.
+ */
+export const AUTO_CLIMB_MAX = 'medium';
+
+/**
+ * The ceiling the adaptive loop may climb to.
+ * @param {string} chosen the user's quality setting
+ * @param {boolean} explicit whether it was picked by hand this session
+ */
+export function climbCeiling(chosen, explicit) {
+  if (explicit) return chosen;
+  return TIERS.indexOf(chosen) < TIERS.indexOf(AUTO_CLIMB_MAX) ? chosen : AUTO_CLIMB_MAX;
+}
+
+/**
  * @param {string} ceiling the tier the user asked for
  * @param {object} env injectable for tests
  * @returns {string} the tier to start at, never above the ceiling
@@ -195,8 +252,7 @@ export const MOBILE_START_TIER = 'low';
 export function initialTier(ceiling, env = {}) {
   const idx = TIERS.indexOf(ceiling);
   if (idx < 0) return TIERS[TIERS.length - 2] || 'high';
-  if (!isLowPowerDevice(env)) return ceiling;
-  const start = TIERS.indexOf(MOBILE_START_TIER);
+  const start = TIERS.indexOf(isLowPowerDevice(env) ? MOBILE_START_TIER : DESKTOP_START_TIER);
   return TIERS[Math.min(start, idx)];
 }
 

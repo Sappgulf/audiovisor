@@ -6,7 +6,7 @@ import { renderWebGL2 } from './webgl2.js';
 import { isPluginMode } from './plugins.js';
 import {
   shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, relaxBaseline,
-  TIERS, SEVERE,
+  TIERS, SEVERE, climbCeiling, windowCost,
 } from './adaptive.js';
 
 /**
@@ -24,7 +24,7 @@ import {
  * @param {() => any} deps.getRay
  * @param {any} deps.state
  * @param {(msg: string, opts?: object) => void} deps.toast
- * @param {() => { webgpuState: object|null, webgl2State: object|null, webgpuCanvas: HTMLCanvasElement|null }} deps.getGpu
+ * @param {() => { webgpuState: object|null, webgl2State: object|null, webgpuCanvas: HTMLCanvasElement|null, startGpu?: () => void }} deps.getGpu
  * @param {() => void} deps.drawVu
  * @param {(buffer: object) => void} deps.drawWaveform
  * @param {HTMLElement} deps.seekTrack
@@ -60,6 +60,20 @@ export function createRenderLoop({
   /* consecutive healthy windows; vsync hides headroom, so climbing back up is
      earned by a run of clean windows rather than measured directly */
   let healthyStreak = 0;
+  /* the highest tier this mode may climb back to: set just under a tier the
+     sampler had to step down from, so a mode does not oscillate between a
+     tier it cannot hold and the one below. Cleared on a mode change. */
+  let climbCap = null;
+  /* per-mode memory of that cap for the session: without it every mode
+     switch re-ran the climb into a tier the mode had already failed, half a
+     second of 30fps judder each time */
+  const climbCaps = new Map();
+  /* frames to skip entirely after a tier change. The first frame after
+     stepping down still waits on the GPU backlog of the heavier tier —
+     measured 100-133ms — and counting it read as a second failure that
+     knocked the stage from medium straight on to low. */
+  const SETTLE_AFTER_TIER_CHANGE = 8;
+  let tierSettle = 0;
   /* frames to ignore after a mode change, while one-time setup settles */
   const SETTLE_AFTER_MODE_CHANGE = 5;
   let settleFrames = SETTLE_AFTER_MODE_CHANGE;
@@ -70,6 +84,8 @@ export function createRenderLoop({
       actually running rather than only the ceiling the user chose. */
   function applyTier(ray, tier) {
     if (tier === ray.quality) return;
+    tierSettle = SETTLE_AFTER_TIER_CHANGE;
+    frameTimes.length = 0;
     ray.setQuality(tier);
     onQualityChange?.(tier);
   }
@@ -91,9 +107,19 @@ export function createRenderLoop({
     requestAnimationFrame(frame);
   }
 
+  const rootEl = doc.documentElement;
+
   function frameStep(now) {
+    /* Nothing is visible until the user picks a mode (see .mode-unchosen in
+       style.css), so draw nothing either: the ray stage was marching full
+       frames behind a hidden stage, costing GPU and battery while the user
+       browsed the picker. The frame clock restarts cleanly on the first pick. */
+    if (rootEl.classList.contains('mode-unchosen')) {
+      lastFrameTs = now;
+      return;
+    }
     const ray = getRay();
-    const { webgpuState, webgl2State, webgpuCanvas } = getGpu();
+    const { webgpuState, webgl2State, webgpuCanvas, startGpu } = getGpu();
     /* The gap since the last frame is what a viewer experiences, and the only
        figure that reflects GPU cost — the CPU time this function takes is
        ~0.1ms whatever the scene, because WebGL work is queued rather than
@@ -179,6 +205,7 @@ export function createRenderLoop({
       ray.render(idle, freq, wave, levels, dtMotion, null, stereoL, stereoR);
     } else {
       doc.getElementById('ray-canvas').classList.remove('is-live');
+      if (state.modeId === 'gpu') startGpu?.();
       const gpuReady = !!(webgpuState || webgl2State);
       const gpuMode = state.modeId === 'gpu' && gpuReady;
       if (webgpuCanvas && gpuReady && (webgpuCanvas.width !== Math.round(renderer.w * renderer.dpr) || webgpuCanvas.height !== Math.round(renderer.h * renderer.dpr))) {
@@ -247,7 +274,9 @@ export function createRenderLoop({
     // the interval, not this callback's CPU time — see src/adaptive.js
     rayBaselineEstimate = estimateBaseline(frameTimes, rayBaselineEstimate);
     const rayBaseline = baselineOr(rayBaselineEstimate);
-    if (settleFrames > 0) {
+    if (tierSettle > 0) {
+      tierSettle--;
+    } else if (settleFrames > 0) {
       settleFrames--;
       /* A mode change used to deliver 12 fully-rendered jank frames before the
          sampler had a single sample: at ~172ms that was two seconds of stutter
@@ -267,7 +296,7 @@ export function createRenderLoop({
        short window when every sample in it is severely over budget, which is
        not an ambiguous signal. See src/adaptive.js. */
     if (shouldEvaluate(frameTimes, rayBaseline)) {
-      const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+      const avg = windowCost(frameTimes, rayBaseline);
       /* a window is the natural pace to revisit the baseline: one lucky frame
          can pin the session best below what the display ever achieves again,
          and relaxing per-frame would tie recovery speed to frame timing */
@@ -275,8 +304,15 @@ export function createRenderLoop({
       const relaxed = baselineOr(rayBaselineEstimate);
       frameTimes.length = 0;
       if (state.raytraceWanted && ray.ok) {
-        const { tier, streak } = nextTier(ray.quality, avg, state.rayQuality, relaxed, healthyStreak);
+        const allowed = climbCeiling(state.rayQuality, state.rayQualityExplicit);
+        const ceiling = climbCap && TIERS.indexOf(climbCap) < TIERS.indexOf(allowed)
+          ? climbCap : allowed;
+        const { tier, streak } = nextTier(ray.quality, avg, ceiling, relaxed, healthyStreak);
         healthyStreak = streak;
+        if (TIERS.indexOf(tier) < TIERS.indexOf(ray.quality)) {
+          climbCap = tier;
+          climbCaps.set(state.modeId, tier);
+        }
         applyTier(ray, tier);
       } else {
         renderer.setQuality(next2dQuality(renderer.quality, avg, relaxed));
@@ -306,8 +342,10 @@ export function createRenderLoop({
     start: () => requestAnimationFrame(frame),
     scheduleResize,
     /** A mode change invalidates the tier the last mode adapted to. */
-    resetAdaptation: () => {
+    /** @param {string} [modeId] the mode being switched to */
+    resetAdaptation: (modeId = state.modeId) => {
       healthyStreak = 0;
+      climbCap = climbCaps.get(modeId) ?? null;
       settleFrames = SETTLE_AFTER_MODE_CHANGE;
       frameTimes.length = 0;
     },

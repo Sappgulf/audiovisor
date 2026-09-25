@@ -45,6 +45,13 @@ const QUALITY = {
 };
 
 const HIST_W = 256;
+const SCENE_UNIFORMS = [
+  'uRes', 'uTime', 'uSpp', 'uSteps', 'uRefl', 'uPalN',
+  'uBass', 'uMid', 'uHigh', 'uLevel', 'uBeat',
+  'uSens', 'uPop', 'uBassFocus', 'uIdle', 'uDrop', 'uSpec', 'uWave', 'uHist', 'uHistRow', 'uSeed',
+  'uNoise', 'uScope',
+];
+const SCOPE_MODE = MODES.findIndex((m) => m.id === 'scope');
 /* side of the baked value-noise texture; see _noiseTex */
 const NOISE_N = 256;
 const HIST_H = 128;
@@ -59,6 +66,36 @@ function compile(gl, type, src) {
     throw new Error(`shader compile failed: ${log}`);
   }
   return s;
+}
+
+/* Split compile+link for the scene programs: start() queues the work and
+   returns at once; with KHR_parallel_shader_compile the driver builds it on
+   a background thread, and finish() — the first status query — only blocks
+   if it is still running. Without the extension this is plain link(). */
+function startLink(gl, fragSrc) {
+  const p = gl.createProgram();
+  const vs = gl.createShader(gl.VERTEX_SHADER);
+  const fs = gl.createShader(gl.FRAGMENT_SHADER);
+  gl.shaderSource(vs, VERT);
+  gl.shaderSource(fs, fragSrc);
+  gl.compileShader(vs);
+  gl.compileShader(fs);
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  return { p, vs, fs };
+}
+
+function finishLink(gl, h) {
+  const ok = gl.getProgramParameter(h.p, gl.LINK_STATUS);
+  const log = ok ? '' : (gl.getShaderInfoLog(h.fs) || gl.getProgramInfoLog(h.p));
+  gl.deleteShader(h.vs);
+  gl.deleteShader(h.fs);
+  if (!ok) {
+    gl.deleteProgram(h.p);
+    throw new Error(`scene program failed: ${log}`);
+  }
+  return h.p;
 }
 
 function link(gl, fragSrc) {
@@ -168,7 +205,13 @@ export class RayStage {
     gl.getExtension('OES_texture_float_linear');
 
     try {
-      this.pScene = link(gl, SCENE_FRAG);
+      /* one scene program per mode, compiled on first use (see _scene) */
+      this._parallel = gl.getExtension('KHR_parallel_shader_compile');
+      this._scenes = new Map();
+      this._drawnMode = null;
+      this._prewarmTimer = 0;
+      this._scene(this.mode || 0);
+      this._prewarm();
       this.pBlur = link(gl, BLUR_FRAG);
       this.pAccum = link(gl, ACCUM_FRAG);
       this.pPost = link(gl, POST_FRAG);
@@ -179,13 +222,6 @@ export class RayStage {
 
     try {
       this.vao = gl.createVertexArray();
-      this.uScene = this._locs(this.pScene, [
-        'uRes', 'uTime', 'uMode', 'uSpp', 'uSteps', 'uRefl', 'uPalN',
-        'uBass', 'uMid', 'uHigh', 'uLevel', 'uBeat',
-        'uSens', 'uPop', 'uBassFocus', 'uIdle', 'uDrop', 'uSpec', 'uWave', 'uHist', 'uHistRow', 'uSeed',
-        'uNoise',
-      ]);
-      this.uPal = [0, 1, 2, 3, 4].map((i) => gl.getUniformLocation(this.pScene, `uPal[${i}]`));
       this.uBlur = this._locs(this.pBlur, ['uTex', 'uTexel', 'uDir', 'uThreshold', 'uPrefilter']);
       this.uAccum = this._locs(this.pAccum, ['uScene', 'uHistory', 'uRes', 'uBlend']);
       this.uPost = this._locs(this.pPost, [
@@ -208,13 +244,91 @@ export class RayStage {
       /* look-state revision for the static-uniform cache below; a fresh
          program after a context restore has its own uniform storage */
       this._lookRev = (this._lookRev || 0) + 1;
-      this._staticRev = -1;
       this.error = null;
       this.ok = true;
     } catch (e) {
       this.error = e.message;
       this.ok = false;
     }
+  }
+
+  /* The scene shader holds every mode's SDF behind uMode branches. Linked as
+     one program, the compiler has to size registers for the heaviest scene
+     and keep every branch live — on an M1 that measured 2-5x the cost of a
+     program specialised to one mode. Baking uMode in as a constant lets the
+     compiler fold every `uMode == n` test and drop the other scenes. Each
+     program is compiled the first time its mode is shown and kept. */
+  _scene(mode) {
+    const sp = this._startScene(mode);
+    if (!sp.prog) {
+      sp.prog = finishLink(this.gl, sp.handle);
+      sp.handle = null;
+      sp.u = this._locs(sp.prog, SCENE_UNIFORMS);
+      sp.pal = [0, 1, 2, 3, 4].map((i) => this.gl.getUniformLocation(sp.prog, `uPal[${i}]`));
+    }
+    return sp;
+  }
+
+  /* Queue a mode's program without waiting for it. */
+  _startScene(mode) {
+    let sp = this._scenes.get(mode);
+    if (!sp) {
+      const src = SCENE_FRAG.replace(/uniform int\s+uMode;/, `const int uMode = ${mode | 0};`);
+      sp = { prog: null, handle: startLink(this.gl, src), rev: -1, u: null, pal: null };
+      this._scenes.set(mode, sp);
+    }
+    return sp;
+  }
+
+  /* True once a mode's program can be used without stalling the frame. */
+  _sceneReady(mode) {
+    const sp = this._scenes.get(mode);
+    if (!sp) return false;
+    if (sp.prog) return true;
+    return !!this._parallel
+      && this.gl.getProgramParameter(sp.handle.p, this._parallel.COMPLETION_STATUS_KHR);
+  }
+
+  /* Build every other mode's program in the background so the first switch
+     to a mode does not stall. Compiling is not enough: ANGLE on Metal only
+     builds the GPU pipeline the first time a program draws, which measured
+     100-400ms on the first frame of each mode even with every program
+     linked. So each ready program also draws once into a 1x1 target (the
+     scene target's format, which the pipeline is keyed on). Only worthwhile
+     with parallel compile; without it the link itself would block, so modes
+     compile on first use instead. */
+  _prewarm() {
+    if (!this._parallel || this._prewarmTimer) return;
+    const gl = this.gl;
+    const next = () => {
+      this._prewarmTimer = 0;
+      if (!this.ok || this.lost) return;
+      let pending = false;
+      for (let m = 0; m < MODES.length; m++) {
+        const sp = this._scenes.get(m);
+        if (sp && sp.warm) continue;
+        pending = true;
+        try {
+          if (!sp) { this._startScene(m); continue; }
+          if (!this._sceneReady(m)) continue;
+          const ready = this._scene(m);
+          const t = this._target('warm', 1, 1);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
+          gl.viewport(0, 0, 1, 1);
+          gl.bindVertexArray(this.vao);
+          gl.useProgram(ready.prog);
+          this._fullscreen();
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          ready.warm = true;
+          break;   // one pipeline per tick keeps each hitch small
+        } catch {
+          this._scenes.delete(m);   // compiled on use instead
+          break;
+        }
+      }
+      if (pending) this._prewarmTimer = setTimeout(next, 120);
+    };
+    this._prewarmTimer = setTimeout(next, 1200);
   }
 
   _locs(prog, names) {
@@ -404,6 +518,37 @@ export class RayStage {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 3, gl.RED, gl.UNSIGNED_BYTE, wv);
   }
 
+  /* The scope trace is the same for every pixel in a frame, but the shader
+     used to rebuild it per SDF call: 40 segments x 3 waveform taps on every
+     march, normal and shadow step — 95% of that mode's frame. Build the 41
+     points here once, reading the wave rows the way the sampler does
+     (linear, clamp-to-edge), and upload them as a uniform array. */
+  _scopePoints(level) {
+    const out = this._scopeBuf || (this._scopeBuf = new Float32Array(41 * 4));
+    const wv = this._waveScratch;
+    const tap = (off, x) => {
+      if (!wv) return 0;
+      const f = x - Math.floor(x);
+      const c = Math.min(255, Math.max(0, f * 256 - 0.5));
+      const i = Math.floor(c), j = Math.min(255, i + 1), w = c - i;
+      return ((wv[off + i] * (1 - w) + wv[off + j] * w) / 255) * 2 - 1;
+    };
+    const t = this.t * 0.02;
+    const amp = 0.55 + level * 0.9;
+    const shearAmp = 0.28 + level * 0.45;
+    for (let i = 0; i <= 40; i++) {
+      const u = i / 40;
+      const a = u * Math.PI * 2;
+      const r = 1.5 + tap(0, u * 0.5 + t) * amp;
+      const k = i * 4;
+      out[k] = Math.cos(a) * r;
+      out[k + 1] = Math.sin(a) * r;
+      out[k + 2] = Math.sin(a * 3) * 0.28;
+      out[k + 3] = i < 40 ? (tap(512, u * 0.5 + t) - tap(256, u * 0.5 + t)) * shearAmp : 0;
+    }
+    return out;
+  }
+
   _fullscreen() { this.gl.drawArrays(this.gl.TRIANGLES, 0, 3); }
 
   render(idle, freq, wave, levels, dtMs = 16.7, tOverride = null, stereoL = null, stereoR = null) {
@@ -476,29 +621,39 @@ export class RayStage {
     /* ---- 1. scene ---- */
     gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fbo);
     gl.viewport(0, 0, this.rw, this.rh);
-    gl.useProgram(this.pScene);
-    const u = this.uScene;
+    /* a mode whose program is still compiling in the background keeps
+       showing the last scene for those few frames rather than freezing the
+       page until the driver finishes */
+    let drawMode = this.mode;
+    if (!this._sceneReady(drawMode) && this._drawnMode != null && this._sceneReady(this._drawnMode)) {
+      this._startScene(drawMode);
+      drawMode = this._drawnMode;
+    }
+    const sp = this._scene(drawMode);
+    this._drawnMode = drawMode;
+    sp.warm = true;
+    gl.useProgram(sp.prog);
+    const u = sp.u;
     gl.uniform2f(u.uRes, this.rw, this.rh);
     gl.uniform1f(u.uTime, this.t);
     /* mode/tier/palette/sampler-assignment only change with a look edit.
        Program uniforms persist between frames, so re-uploading them
        60-144x/s was ~20 dead calls every frame; one revision counter gates
        the whole static block. */
-    if (this._lookRev !== this._staticRev) {
-      gl.uniform1i(u.uMode, this.mode);
+    if (sp.rev !== this._lookRev) {
       gl.uniform1i(u.uSpp, q.spp);
       gl.uniform1i(u.uSteps, q.steps);
       gl.uniform1i(u.uRefl, q.refl);
       gl.uniform1i(u.uPalN, this.pal.length);
       for (let i = 0; i < 5; i++) {
         const c = this.pal[Math.min(i, this.pal.length - 1)];
-        gl.uniform3f(this.uPal[i], c[0], c[1], c[2]);
+        gl.uniform3f(sp.pal[i], c[0], c[1], c[2]);
       }
       gl.uniform1i(u.uSpec, 0);
       gl.uniform1i(u.uWave, 1);
       gl.uniform1i(u.uHist, 2);
       gl.uniform1i(u.uNoise, 3);
-      this._staticRev = this._lookRev;
+      sp.rev = this._lookRev;
     }
     /* unit bindings are global state the accumulation/blur/post passes keep
        overwriting, so these four rebinds do have to run every frame — only
@@ -511,6 +666,7 @@ export class RayStage {
     gl.uniform1f(u.uMid, lv.mid || 0);
     gl.uniform1f(u.uHigh, lv.high || 0);
     gl.uniform1f(u.uLevel, idle ? 0.12 : (lv.level || 0));
+    if (drawMode === SCOPE_MODE) gl.uniform4fv(u.uScope, this._scopePoints(idle ? 0.12 : (lv.level || 0)));
     gl.uniform1f(u.uBeat, this.beat);
     gl.uniform1f(u.uSens, this.sensitivity);
     gl.uniform1f(u.uPop, this.colorPop);

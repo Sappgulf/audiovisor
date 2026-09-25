@@ -48,6 +48,10 @@ const base = server.resolvedUrls.local[0];
 const browser = await chromium.launch({ args: ['--use-angle=metal'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 await page.goto(base, { waitUntil: 'load', timeout: 30000 });
+/* a cold vite dep-optimise pass reloads the page once after first load;
+   wait it out so evaluate() does not race a navigation */
+await page.waitForLoadState('networkidle');
+await page.waitForFunction(() => window.__av?.ray, null, { timeout: 30000 });
 await page.waitForTimeout(2500);
 
 const FRAMES = 20;

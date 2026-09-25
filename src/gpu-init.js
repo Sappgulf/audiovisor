@@ -20,8 +20,15 @@ export function createGpuStage(doc = document) {
   const ready = new Promise((resolve) => { resolveReady = resolve; });
 
   const canvas = doc.getElementById('webgpu-canvas');
-  if (canvas) {
-    // WebGPU is preferred; WebGL2 is the fallback, then the Canvas2D stage.
+  /* Lazy: the GPU Core canvas only draws when the raytraced stage is off and
+     that mode is showing. Initialising at load requested a second GPU device
+     and built its pipeline on every visit, competing with the ray stage's
+     startup for a mode most sessions never reach. */
+  let started = false;
+  function start() {
+    if (started) return;
+    started = true;
+    if (!canvas) { resolveReady(null); return; }
     initWebGPU(canvas)
       .catch(() => null)
       .then((s) => {
@@ -34,12 +41,11 @@ export function createGpuStage(doc = document) {
         }
         resolveReady(backend);
       });
-  } else {
-    resolveReady(null);
   }
 
   return {
     canvas,
+    start,
     getWebgpu: () => webgpuState,
     getWebgl2: () => webgl2State,
     getBackend: () => backend,

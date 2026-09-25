@@ -24,6 +24,9 @@ out vec4 fragColor;
 uniform vec2  uRes;
 uniform float uTime;
 uniform int   uMode;
+/* scope: the 41 trace points, built once per frame on the CPU (xyz) with
+   segment i's stereo shear in w — see RayStage._scopePoints */
+uniform vec4  uScope[41];
 uniform int   uSpp;        // samples per pixel (quality)
 uniform int   uSteps;      // max march steps
 uniform int   uRefl;       // reflection bounce on/off
@@ -102,6 +105,19 @@ float fbm(vec3 p) {
   for (int i = 0; i < 5; i++) { s += a * vnoise(p); p *= 2.03; a *= 0.5; }
   return s;
 }
+/* 3D value noise from two taps of the baked 2D noise texture (each z slice
+   is the plane offset by (37, 17) texels; the sampler does the xy blend)
+   instead of vnoise()'s eight sin hashes. Defined next to vnoise2() below;
+   declared here so fbm3() can call it. */
+float vnoiseT(vec3 p);
+/* Three octaves for the volumes, which sample it on every step of a
+   72-step march; the top two octaves are finer than the step length and
+   only added cost. Rescaled to fbm()'s range so densities are unchanged. */
+float fbm3(vec3 p) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 3; i++) { s += a * vnoiseT(p); p *= 2.03; a *= 0.5; }
+  return s * 1.107;
+}
 
 /* 2D value noise, for heightfields.
    This interpolated four hashed corners by hand. The terrain SDF sums five
@@ -115,6 +131,14 @@ float vnoise2(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
   return texture(uNoise, (i + f + 0.5) * (1.0 / 256.0)).r;
+}
+float vnoiseT(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  vec2 uv = i.xy + vec2(37.0, 17.0) * i.z + f.xy;
+  float a = texture(uNoise, (uv + 0.5) * (1.0 / 256.0)).r;
+  float b = texture(uNoise, (uv + vec2(37.0, 17.0) + 0.5) * (1.0 / 256.0)).r;
+  return mix(a, b, f.z);
 }
 /* Two fixed octave counts rather than one parameterised function: the base
    shape needs more detail than the fine layer, and every octave is paid on
@@ -203,37 +227,61 @@ float scWaves(vec3 p) {
    content visibly tears the ring open along its width while a mono source
    leaves it untouched — the raytraced sibling of the Canvas2D goniometer. */
 float scScope(vec3 p) {
+  /* trace radius tops out near 3.7 with shear, the housing corner at 3.6 */
+  float bound = length(p) - 4.3;
+  if (bound > 0.3) { g_id = 26.0; g_aux = 0.22; return bound; }
   float d = 1e9;
-  for (int i = 0; i < 40; i++) {
-    float u = float(i) / 40.0;
-    float a = u * TAU;
-    float r = 1.5 + wav(u * 0.5 + uTime * 0.02) * (0.55 + uLevel * 0.9);
-    float r2 = 1.5 + wav(u * 0.5 + 1.0 / 40.0 * 0.5 + uTime * 0.02) * (0.55 + uLevel * 0.9);
-    float a2 = a + TAU / 40.0;
-    float shear = (wavR(u * 0.5 + uTime * 0.02) - wavL(u * 0.5 + uTime * 0.02)) * (0.28 + uLevel * 0.45);
-    vec3 A = vec3(cos(a) * r + shear, sin(a) * r, sin(a * 3.0) * 0.28);
-    vec3 B = vec3(cos(a2) * r2 + shear, sin(a2) * r2, sin(a2 * 3.0) * 0.28);
-    float s = sdCapsule(p, A, B, 0.1 + uBeat * 0.03);
-    if (s < d) { d = s; g_id = 20.0; g_aux = fract(u + uTime * 0.05); }
-  }
   float ring = abs(sdTorus(p.xzy, vec2(2.35, 0.02))) - 0.004;
   if (ring < d) { d = ring; g_id = 1.0; g_aux = 0.6; }
   /* instrument housing behind the face — the trace used to float in a void;
      a bezel wall gives the accent light something to spill on */
   float panel = sdBox(p - vec3(0.0, 0.0, -1.55), vec3(2.55, 1.85, 0.05));
-  if (panel < d) { d = panel; g_id = 21.0; g_aux = 0.22; }
+  if (panel < d) { d = panel; g_id = 26.0; g_aux = 0.22; }
+  /* The trace lives in a thin slab (|z| <= 0.28 + tube radius) inside r 3.8.
+     Most march steps are rays heading for the housing; only walk the 40
+     segments when the slab could be nearer than what is already found. */
+  float slab = max(length(p.xy) - 3.8, abs(p.z) - 0.45);
+  if (slab >= d) return d;
+  float rad = 0.1 + uBeat * 0.03;
+  /* The trace is radial — point k sits at angle k/40 of a turn — so only the
+     segments around p's own angle can be nearest. Walk a window of 5 rather
+     than all 40, and cap the result so a far segment skipped by the window
+     can never be stepped through. */
+  float ang = atan2s(p.y, p.x);
+  int i0 = int(floor(ang / TAU * 40.0 + 40.0)) - 2;
+  float cap = d;
+  d = min(d, 0.3);
+  for (int k = 0; k < 5; k++) {
+    int i = i0 + k;
+    i = i - (i / 40) * 40;
+    vec4 A = uScope[i];
+    vec3 sh = vec3(A.w, 0.0, 0.0);
+    float s = sdCapsule(p, A.xyz + sh, uScope[i + 1].xyz + sh, rad);
+    if (s < d) { d = s; g_id = 20.0; g_aux = fract(float(i) / 40.0 + uTime * 0.05); }
+  }
+  if (d >= cap) { d = cap; }
   return d;
 }
 
 /* 3 particles — emissive sphere field with per-cell audio lift */
 float scParticles(vec3 p) {
+  /* every sphere is faded to nothing past |id*c| 5.4 and sits within ~1.1 of
+     its cell centre: outside that shell, skip the 27-cell search */
+  float bound = length(p) - 6.6;
+  if (bound > 0.3) { g_id = 4.0; g_aux = 0.0; return bound; }
   vec3 c = vec3(1.9);
   vec3 cell = floor((p + 0.5 * c) / c);
-  float d = 1e9;
-  for (int x = -1; x <= 1; x++)
-  for (int y = -1; y <= 1; y++)
-  for (int z = -1; z <= 1; z++) {
-    vec3 id = cell + vec3(x, y, z);
+  /* Search the 2x2x2 block on the side p leans toward instead of all 27
+     neighbours. A sphere sits within 0.73 of its cell centre with radius at
+     most 0.39 (sensitivity maxes at 2.4), so one in a skipped cell is at
+     least ~0.78 away; capping the result at 0.75 keeps it a safe bound. */
+  vec3 side = sign(p - cell * c);
+  side = mix(vec3(1.0), side, abs(side));
+  float d = 0.75;
+  for (int x = 0; x <= 1; x++)
+  for (int y = 0; y <= 1; y++)
+  for (int z = 0; z <= 1; z++) {
+    vec3 id = cell + vec3(float(x), float(y), float(z)) * side;
     vec3 h = hash33(id);
     float band = spec(h.x);
     vec3 off = (h - 0.5) * 0.75;
@@ -274,7 +322,7 @@ float scKaleido(vec3 p) {
   /* bounded disc, not an endless plane: below-horizon sky outside the
      pool misses cheaply instead of paying shade+shadow+AO */
   float pool = max(p.y + 1.38, length(p.xz) - 2.5);
-  if (pool < d) { d = pool; g_id = 22.0; }
+  if (pool < d) { d = pool; g_id = 27.0; }
   return d;
 }
 
@@ -315,7 +363,7 @@ float scPlasma(vec3 p) {
      room instead of hanging in space. Thin-shell abs() trick keeps it a
      single cheap sdCyl per march step. */
   float chamber = abs(sdCyl(p, 4.6, 5.2)) - 0.06;
-  g_id = 21.0; g_aux = 0.18;
+  g_id = 26.0; g_aux = 0.18;
   float d = chamber;
   for (int i = 0; i < 4; i++) {
     float fi = float(i);
@@ -460,7 +508,7 @@ float scPrism(vec3 p) {
   }
   /* mirror floor: the dispersion fan finally has something to land on */
   float flr = max(p.y + 1.45, length(p.xz - vec2(1.7, 0.0)) - 2.45);
-  if (flr < d) { d = flr; g_id = 22.0; }
+  if (flr < d) { d = flr; g_id = 27.0; }
   return d;
 }
 
@@ -479,12 +527,22 @@ float scVoid(vec3 p) {
 
 /* 17 bloomfield — bokeh sphere field (DOF does the work) */
 float scBloom(vec3 p) {
+  /* spheres fade to nothing 7 from (0,0,-2) and sit within ~2.3 of their
+     cell centre: outside that, skip the cell search entirely */
+  float bound = length(p - vec3(0.0, 0.0, -2.0)) - 9.6;
+  if (bound > 0.3) { g_id = 4.0; g_aux = 0.0; return bound; }
   vec3 c = vec3(2.8, 2.8, 3.4);
   vec3 cell = floor((p + 0.5 * c) / c);
-  float d = 1e9;
-  for (int x = -1; x <= 1; x++)
-  for (int y = -1; y <= 1; y++) {
-    vec3 id = cell + vec3(x, y, 0.0);
+  /* 2x2 on the near side instead of 3x3; see scParticles. A sphere sits
+     within 0.7 of its cell centre with radius up to 1.08 (sensitivity 2.4
+     plus a full drop), so a skipped one is at least ~1.02 away and the 1.0
+     cap keeps the bound safe. */
+  vec2 side = sign(p.xy - cell.xy * c.xy);
+  side = mix(vec2(1.0), side, abs(side));
+  float d = 1.0;
+  for (int x = 0; x <= 1; x++)
+  for (int y = 0; y <= 1; y++) {
+    vec3 id = cell + vec3(float(x) * side.x, float(y) * side.y, 0.0);
     vec3 h = hash33(id);
     float e = spec(h.x);
     vec3 off = (h - 0.5) * 1.0;
@@ -991,7 +1049,10 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, Mat m, float shadows) {
   col += brdf(n, v, key, m, kc) * sh;
   vec3 fill = normalize(vec3(-0.6, 0.35, 0.55));
   col += brdf(n, v, fill, m, palf(0.72) * (0.5 + uBeat * 0.62));
-  float occ = ao(p, n);
+  /* AO rides the same flag as the shadow: the calls that skip one (bounce
+     shading inside reflections and glass, the self-lit sphere fields) are
+     the ones where three more SDF taps per pixel buy nothing visible */
+  float occ = shadows > 0.5 ? ao(p, n) : 1.0;
   col += m.alb * (1.0 - m.metal) * envColor(n) * 0.7 * occ;
   float fres = pow(max(1.0 - max(dot(n, v), 0.0), 0.0), 4.0);
   col += palf(0.7) * fres * 0.18 * occ * (0.4 + uLevel);
@@ -1005,7 +1066,7 @@ float volDensity(vec3 p) {
     vec3 q = p;
     q.xz *= rot(uTime * 0.05);
     float disc = exp(-abs(q.y * 1.9) * 1.6);
-    float f = fbm(q * 0.9 + vec3(0.0, uTime * 0.03, uTime * 0.02));
+    float f = fbm3(q * 0.9 + vec3(0.0, uTime * 0.03, uTime * 0.02));
     f = f * f * 1.6;                                    // more contrast between wisps
     float arms = 0.5 + 0.5 * sin(atan2s(q.z, q.x) * 2.0 + length(q.xz) * 1.9);
     float d = disc * f * (0.35 + arms);
@@ -1025,7 +1086,7 @@ float volDensity(vec3 p) {
        carries the arms as a real luminous sheet */
     float d = pow(arm, 3.2) * exp(-r * 0.34) * exp(-abs(q.y) * 4.5) * 3.4;
     d += exp(-r * 3.4 - abs(q.y) * 7.0) * (1.1 + uBass * 0.8 + uDrop * 0.5);   // bulge, not a floodlight
-    d *= 0.55 + 0.9 * fbm(q * 2.4 + uTime * 0.05);               // dust lanes inside the arms
+    d *= 0.55 + 0.9 * fbm3(q * 2.4 + uTime * 0.05);               // dust lanes inside the arms
     return d * (1.0 + uLevel + uMid * 0.25 + uHigh * 0.2);
   }
   // lava
@@ -1066,8 +1127,21 @@ vec3 marchVolume(vec3 ro, vec3 rd, float tmax) {
   /* the wax is enclosed in glass and read as murk against the bright
      vessel highlights — the lamp gets a gain the open volumes don't need */
   float gain = (uMode == 20) ? 1.5 : 1.0;
+  /* Clip the march to where the medium can be non-zero, so the step budget
+     is spent inside the cloud rather than on empty sky: the nebula is faded
+     to nothing past r 6.4, the galaxy disc is gone beyond |y| 1.2. */
+  float tEnd = min(14.0, tmax);
+  if (uMode == 10) {
+    float b = dot(ro, rd), c = dot(ro, ro) - 6.5 * 6.5, h = b * b - c;
+    if (h < 0.0) { tEnd = 0.0; }
+    else { h = sqrt(h); t = max(t, -b - h); tEnd = min(tEnd, -b + h); }
+  } else if (uMode == 11 && abs(rd.y) > 1e-4) {
+    float ta = (1.2 - ro.y) / rd.y, tb = (-1.2 - ro.y) / rd.y;
+    t = max(t, min(ta, tb));
+    tEnd = min(tEnd, max(ta, tb));
+  }
   for (int i = 0; i < 72; i++) {
-    if (i >= steps || trans < 0.02 || t > min(14.0, tmax)) break;
+    if (i >= steps || trans < 0.02 || t > tEnd) break;
     vec3 p = ro + rd * t;
     float d = volDensity(p);
     if (d > 0.001) {
@@ -1187,7 +1261,10 @@ vec3 trace(vec3 ro, vec3 rd) {
   vec3 p = ro + rd * t;
   vec3 n = normalAt(p);
   Mat m = matOf(id, aux, p);
-  vec3 col = shade(p, rd, n, m, 1.0);
+  /* the sphere fields are self-lit points: a shadow ray through dozens of
+     cells costs more than the rest of their shading and is invisible under
+     the emission, so they skip it */
+  vec3 col = shade(p, rd, n, m, (uMode == 3 || uMode == 17) ? 0.0 : 1.0);
 
   if (m.trans > 0.5) {
     // dispersive glass: split into three wavelengths, each refracted through

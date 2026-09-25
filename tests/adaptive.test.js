@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, relaxBaseline, initialTier, isLowPowerDevice,
-  TIERS, WINDOW, FAST_WINDOW, DEFAULT_BASELINE_MS, SEVERE,
+  TIERS, WINDOW, FAST_WINDOW, DEFAULT_BASELINE_MS, SEVERE, CLIMB_STREAK, climbCeiling, windowCost, OVER_BUDGET,
 } from '../src/adaptive.js';
 
 const B = DEFAULT_BASELINE_MS;   // ~16.7ms, one frame at 60Hz
@@ -140,11 +140,12 @@ describe('nextTier', () => {
   it('needs a run of healthy windows before climbing, not one', () => {
     /* vsync pins a comfortable frame to the refresh interval, so headroom
        cannot be measured directly — it is inferred from a clean streak. */
-    let r = nextTier('low', 16.7, 'high', B, 0);
-    expect(r.tier).toBe('low');
-    expect(r.streak).toBe(1);
-    r = nextTier('low', 16.7, 'high', B, r.streak);
-    expect(r.tier).toBe('low');
+    let r = { tier: 'low', streak: 0 };
+    for (let i = 1; i < CLIMB_STREAK; i++) {
+      r = nextTier('low', 16.7, 'high', B, r.streak);
+      expect(r.tier).toBe('low');
+      expect(r.streak).toBe(i);
+    }
     r = nextTier('low', 16.7, 'high', B, r.streak);
     expect(r.tier).toBe('medium');
     expect(r.streak).toBe(0);      // the next climb has to be earned again
@@ -166,9 +167,31 @@ describe('nextTier', () => {
   });
 
   it('holds steady in the comfortable band', () => {
-    for (const ms of [10, 16, 20, 25]) {
+    for (const ms of [10, 16, 18, 20]) {
       expect(nextTier('high', ms, 'ultra', B, 0).tier, `${ms}ms`).toBe('high');
     }
+  });
+
+  it('judges a window that drops one frame in eight as over budget', () => {
+    const judder = [...Array(17).fill(16.7), 33.4, 33.4, 33.4];
+    expect(windowCost(judder, B)).toBeGreaterThan(B * OVER_BUDGET);
+    expect(nextTier('medium', windowCost(judder, B), 'high', B).tier).toBe('low');
+  });
+
+  it('averages a clean window with one stray slow frame', () => {
+    const clean = [...Array(19).fill(16.7), 40];
+    expect(windowCost(clean, B)).toBeLessThan(B * OVER_BUDGET);
+  });
+
+  it('caps the automatic climb at medium unless the tier was picked by hand', () => {
+    expect(climbCeiling('high', false)).toBe('medium');
+    expect(climbCeiling('ultra', false)).toBe('medium');
+    expect(climbCeiling('low', false)).toBe('low');
+    expect(climbCeiling('ultra', true)).toBe('ultra');
+  });
+
+  it('steps down from a 45fps judder that averages ~22ms', () => {
+    expect(nextTier('high', 22, 'ultra', B, 0).tier).toBe('medium');
   });
 
   it('returns the current tier for nonsense input', () => {
@@ -220,9 +243,10 @@ describe('starting tier', () => {
   const phone = { navigator: { hardwareConcurrency: 6 }, matchMedia: () => ({ matches: true }), screenWidth: 390 };
   const tablet = { navigator: { hardwareConcurrency: 8 }, matchMedia: () => ({ matches: true }), screenWidth: 1024 };
 
-  it('keeps the chosen tier on a desktop', () => {
-    expect(initialTier('high', desktop)).toBe('high');
-    expect(initialTier('ultra', desktop)).toBe('ultra');
+  it('starts a desktop at medium and never above the ceiling', () => {
+    expect(initialTier('high', desktop)).toBe('medium');
+    expect(initialTier('ultra', desktop)).toBe('medium');
+    expect(initialTier('low', desktop)).toBe('low');
   });
 
   it('starts a phone low regardless of the ceiling', () => {
@@ -238,7 +262,7 @@ describe('starting tier', () => {
 
   it('does not treat a large touch screen as a phone', () => {
     // an iPad reports a coarse pointer but has the GPU to back it
-    expect(initialTier('high', tablet)).toBe('high');
+    expect(initialTier('high', tablet)).toBe('medium');
   });
 
   it('treats low memory or few cores as low power, touch or not', () => {

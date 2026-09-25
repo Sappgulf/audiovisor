@@ -1,6 +1,31 @@
 import { defineConfig } from 'vite';
 
+/* The GLSL sources are JS template literals, so the minifier leaves them
+   alone and every design note inside them shipped to the browser — about a
+   third of the raystage chunk. Strip comments and indentation from the
+   shader strings at build time; dev and tests keep the annotated source.
+   Newlines stay, since preprocessor lines (#version, #define) end at them. */
+export function minifyGlsl(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+const glslMinify = {
+  name: 'glsl-minify',
+  apply: 'build',
+  transform(code, id) {
+    if (!id.endsWith('/src/rayshader.js')) return null;
+    return { code: code.replace(/`(#version[\s\S]*?)`/g, (_, body) => `\`${minifyGlsl(body)}\``), map: null };
+  },
+};
+
 export default defineConfig({
+  plugins: [glslMinify],
   build: {
     /* The provider panel and the raytraced stage are dynamic imports, split
        out so a cold visit does not pay for them. Vite's default would emit

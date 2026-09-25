@@ -4,6 +4,7 @@ import { SCENE_FRAG, ACCUM_FRAG, BLUR_FRAG, POST_FRAG, VERT } from '../src/raysh
 import { MODES } from '../src/themes.js';
 import { parser } from '@shaderfrog/glsl-parser';
 import { readFileSync } from 'node:fs';
+import { minifyGlsl } from '../vite.config.js';
 
 function fakeCanvas(ctx = null) {
   return {
@@ -41,6 +42,21 @@ describe('ray shaders', () => {
     for (const [name, src] of Object.entries(sources)) {
       expect(() => parser.parse(src.replace('#version 300 es\n', '')), name).not.toThrow();
     }
+  }, 15_000);
+
+  it('still parse after the build strips comments and indentation', () => {
+    for (const [name, src] of Object.entries(sources)) {
+      const min = minifyGlsl(src);
+      expect(min.startsWith('#version 300 es\n'), name).toBe(true);
+      expect(min.length, name).toBeLessThan(src.length);
+      expect(() => parser.parse(min.replace('#version 300 es\n', '')), name).not.toThrow();
+    }
+  }, 15_000);
+
+  it('parses with the mode baked in, the way each scene program is built', () => {
+    const baked = minifyGlsl(SCENE_FRAG).replace(/uniform int\s+uMode;/, 'const int uMode = 2;');
+    expect(baked.includes('const int uMode = 2;')).toBe(true);
+    expect(() => parser.parse(baked.replace('#version 300 es\n', ''))).not.toThrow();
   }, 15_000);
 
   it('all declare GLSL ES 3.0', () => {
@@ -137,7 +153,7 @@ describe('RayStage runtime behaviour', () => {
   it('gates static uniforms behind a look revision and skips dead bloom', () => {
     const src = readFileSync(new URL('../src/raystage.js', import.meta.url), 'utf8');
     // mode/tier/palette/samplers only change with a look edit
-    expect(src.includes('this._lookRev !== this._staticRev')).toBe(true);
+    expect(src.includes('sp.rev !== this._lookRev')).toBe(true);
     // a width-only resize must invalidate accumulation too, or history
     // resamples the stale buffer for a frame
     expect(src.includes('this._lastKeyH === this.rh')).toBe(true);
