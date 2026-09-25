@@ -157,10 +157,19 @@ function audioBufferToWavBlob(buffer) {
   writeStr('RIFF'); write32(36 + len); writeStr('WAVE');
   writeStr('fmt '); write32(16); write16(1); write16(numCh); write32(buffer.sampleRate); write32(buffer.sampleRate * numCh * 2); write16(numCh * 2); write16(16);
   writeStr('data'); write32(len);
-  for (let i = 0; i < buffer.length; i++) {
-    for (let ch = 0; ch < numCh; ch++) {
-      let s = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
-      view.setInt16(pos, s < 0 ? s * 0x8000 : s * 0x7FFF, true); pos += 2;
+  /* Fetch each channel once and write through an Int16Array. This called
+     getChannelData() per sample per channel — ~26M binding calls for a
+     five-minute stereo track, all on the main thread — so saving to the
+     library froze the whole UI for seconds. WAV is little-endian, as is
+     every platform this runs on. */
+  const chans = [];
+  for (let ch = 0; ch < numCh; ch++) chans.push(buffer.getChannelData(ch));
+  const pcm = new Int16Array(view.buffer, 44, buffer.length * numCh);
+  for (let i = 0, o = 0; i < buffer.length; i++) {
+    for (let ch = 0; ch < numCh; ch++, o++) {
+      const v = chans[ch][i];
+      const c = v < -1 ? -1 : v > 1 ? 1 : v;
+      pcm[o] = c < 0 ? c * 0x8000 : c * 0x7FFF;
     }
   }
   return new Blob([view.buffer], { type: 'audio/wav' });

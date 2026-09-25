@@ -46,3 +46,28 @@ describe('Library (IndexedDB)', () => {
     expect(blob.size).toBeGreaterThan(44);
   });
 });
+
+describe('renderRemixToWav encoding', () => {
+  it('writes interleaved 16-bit PCM that round-trips the samples', async () => {
+    const L = Float32Array.from([0, 0.5, -0.5, 1, -1, 2]);
+    const R = Float32Array.from([0.25, -0.25, 0, -1, 1, -2]);
+    const buf = { numberOfChannels: 2, length: 6, sampleRate: 8000, getChannelData: (c) => (c ? R : L) };
+    const saved = globalThis.OfflineAudioContext;
+    globalThis.OfflineAudioContext = class {
+      constructor() { this.destination = {}; }
+      createBufferSource() { return { playbackRate: {}, connect() {}, start() {} }; }
+      startRendering() { return Promise.resolve(buf); }
+    };
+    try {
+      const { renderRemixToWav } = await import('../src/library.js');
+      const bytes = new Uint8Array(await (await renderRemixToWav(buf, {})).arrayBuffer());
+      expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('RIFF');
+      const pcm = new Int16Array(bytes.buffer, 44, 12);
+      expect(Array.from(pcm)).toEqual([
+        0, 8191, 16383, -8192, -16384, 0, 32767, -32768, -32768, 32767, 32767, -32768,
+      ]);
+    } finally {
+      globalThis.OfflineAudioContext = saved;
+    }
+  });
+});

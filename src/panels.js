@@ -436,11 +436,9 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
     // render the current buffer to WAV and store that
     try {
       const ch = engine.buffer.numberOfChannels;
-      const len = engine.buffer.length;
-      const tmp = new OfflineAudioContext(ch, len, engine.buffer.sampleRate);
-      const src = tmp.createBufferSource(); src.buffer = engine.buffer; src.connect(tmp.destination); src.start(0);
-      const rendered = await tmp.startRendering();
-      const blob = await Library.renderRemixToWav(rendered, {});
+      /* the clean track is stored and its edits ride alongside (export
+         re-applies them); an extra offline pass here only copied the buffer */
+      const blob = await Library.renderRemixToWav(engine.buffer, {});
       const ab = await blob.arrayBuffer();
       const edits = { ...engine.fx };
       const rec = await Library.addToLibrary({
