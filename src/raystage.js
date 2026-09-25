@@ -333,7 +333,7 @@ export class RayStage {
       }
       if (pending) this._prewarmTimer = setTimeout(next, 120);
     };
-    this._prewarmTimer = setTimeout(next, 1200);
+    this._prewarmTimer = setTimeout(next, 300);
   }
 
   _locs(prog, names) {

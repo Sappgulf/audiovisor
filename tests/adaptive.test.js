@@ -65,8 +65,13 @@ describe('estimateBaseline', () => {
     expect(nextTier('high', 33.3, 'high', b).tier).toBe('high');
   });
 
-  it('takes the fastest interval seen, not the average', () => {
-    expect(estimateBaseline([50, 60, 16.7, 55], 40)).toBeCloseTo(16.7, 1);
+  it('takes a low percentile of the window, not the average', () => {
+    expect(estimateBaseline([50, 60, 16.7, 16.7, 16.7, 55, 50, 60], 40)).toBeCloseTo(16.7, 1);
+  });
+
+  it('is not pinned low by one early catch-up frame', () => {
+    const w = [...fill(19, 16.7), 8];
+    expect(estimateBaseline(w)).toBeCloseTo(16.7, 1);
   });
 
   it('ignores implausible samples in both directions', () => {
@@ -76,8 +81,8 @@ describe('estimateBaseline', () => {
   });
 
   it('keeps the estimate once learned', () => {
-    const first = estimateBaseline(fill(5, 16.7));
-    expect(estimateBaseline(fill(5, 90), first)).toBeCloseTo(16.7, 1);
+    const first = estimateBaseline(fill(10, 16.7));
+    expect(estimateBaseline(fill(10, 90), first)).toBeCloseTo(16.7, 1);
   });
 
   it('never rises above the clamp, so a slow session cannot excuse itself', () => {

@@ -80,13 +80,22 @@ export const CLIMB_STREAK = 6;
  * Returns null while still unknown; callers substitute the default.
  */
 export function estimateBaseline(samples, previous = null) {
-  let min = Number.isFinite(previous) ? previous : Infinity;
+  /* The window's 25th percentile, not its minimum. A frame that lands early
+     to catch up after a stall (8ms on a 60Hz panel) is not the display's
+     pace, and taking the minimum let one such frame pin the baseline to
+     120Hz: every on-time frame then read 2x over budget and a real M1 at a
+     steady 60fps was stepped down to low on every mode. */
+  const valid = [];
   for (const ms of samples) {
     // discard sub-millisecond noise and absurd gaps like a tab restore
-    if (Number.isFinite(ms) && ms > 4 && ms < 200 && ms < min) min = ms;
+    if (Number.isFinite(ms) && ms > 4 && ms < 200) valid.push(ms);
   }
-  if (!Number.isFinite(min)) return null;
-  return Math.min(Math.max(min, 6), 40);
+  const prev = Number.isFinite(previous) ? previous : null;
+  if (valid.length < 8) return prev;
+  valid.sort((x, y) => x - y);
+  const p25 = valid[Math.floor(valid.length * 0.25)];
+  const est = prev == null ? p25 : Math.min(prev, p25);
+  return Math.min(Math.max(est, 6), 40);
 }
 
 /**
@@ -133,7 +142,7 @@ export function relaxBaseline(estimate, samples) {
 /** Should this window be judged yet? */
 /**
  * The figure a window is judged on: its average, unless it is judder.
- * A mode running just over budget renders most frames on time and drops
+ * The mean excludes the single worst frame. A mode running just over budget renders most frames on time and drops
  * every seventh or eighth — measured on Particle Field at medium, one 33ms
  * frame in eight. That averages ~1.15x, under OVER_BUDGET, yet reads as a
  * steady stutter. A window where at least a tenth of the frames missed a
@@ -143,12 +152,17 @@ export function relaxBaseline(estimate, samples) {
  */
 export function windowCost(samples, baseline = DEFAULT_BASELINE_MS) {
   if (!samples.length) return NaN;
-  let sum = 0, dropped = 0;
+  let sum = 0, dropped = 0, worst = 0;
   for (const ms of samples) {
     sum += ms;
+    if (ms > worst) worst = ms;
     if (ms > baseline * 1.5) dropped++;
   }
-  const avg = sum / samples.length;
+  /* the single worst frame is left out of the mean: one isolated hitch (a
+     GC pause, a decode, a compositor stall) in a window of on-time frames
+     pushed a steady 60fps stage to 25ms and cost it a tier. Repeated drops
+     are what the judder rule below is for. */
+  const avg = samples.length > 4 ? (sum - worst) / (samples.length - 1) : sum / samples.length;
   return dropped / samples.length >= 0.1 ? Math.max(avg, baseline * OVER_BUDGET * 1.01) : avg;
 }
 

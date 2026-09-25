@@ -2887,6 +2887,13 @@ html, body {
     border-radius: 20px;
     box-shadow: 0 20px 50px rgba(0,0,0,0.6), 0 1px 0 rgba(255,250,243,0.06) inset;
   }
+  /* the seek bar is the one flexible part of the console, and the fixed
+     groups either side took all 900px of it: at 1280 it measured 0px wide
+     and its waveform canvas spilled over the time labels. The track title
+     gives way instead, and the seek bar keeps a usable floor. */
+  .transport .track-info { flex: 0 1 170px; min-width: 84px; }
+  .transport .seek-console { flex: 1 1 240px; min-width: 220px; }
+  .transport .utility-controls { gap: 6px; }
   /* a closed drawer hands the full width back, so the console recentres */
   .shell:has(.drawer.is-closed) .transport { transform: translateX(-50%); }
   /* the library floats above the drawer (z 55 over 40) but opens at the
@@ -2897,6 +2904,17 @@ html, body {
      above it instead of underneath it */
   .stage-story { bottom: 108px; }
   .toasts { bottom: 108px; }
+}
+
+/* The level meter is decoration; below 1500px the floating console needs
+   its 58px for the seek bar. */
+@media (min-width: 1180px) and (max-width: 1499px) {
+  .transport #vu-meter { display: none; }
+}
+/* from 1500px the meter is back, so the console grows to hold it and the
+   extra width goes to the seek bar */
+@media (min-width: 1500px) {
+  .transport { width: min(1080px, calc(100vw - 364px)); }
 }
 
 /* ==========================================================================

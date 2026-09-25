@@ -74,6 +74,7 @@ export function createRenderLoop({
      knocked the stage from medium straight on to low. */
   const SETTLE_AFTER_TIER_CHANGE = 8;
   let tierSettle = 0;
+  let severeRun = 0;
   /* frames to ignore after a mode change, while one-time setup settles */
   const SETTLE_AFTER_MODE_CHANGE = 5;
   let settleFrames = SETTLE_AFTER_MODE_CHANGE;
@@ -284,8 +285,12 @@ export function createRenderLoop({
          spiky cold frame cannot poison the *average* window — but one interval
          three and a half times over budget is not noise, and the climb will
          undo a wrong guess in a couple of seconds. Step down right now. */
-      if (state.raytraceWanted && ray.ok && Number.isFinite(frameGap)
-          && frameGap > rayBaseline * SEVERE && TIERS.indexOf(ray.quality) > 0) {
+      /* one severe frame right after a switch is usually the mode's GPU
+         pipeline being built on first draw (300ms on a real M1 display) —
+         acting on it dropped every freshly picked mode to low and recorded
+         low as its ceiling. Two in a row is the scene itself. */
+      severeRun = Number.isFinite(frameGap) && frameGap > rayBaseline * SEVERE ? severeRun + 1 : 0;
+      if (state.raytraceWanted && ray.ok && severeRun >= 2 && TIERS.indexOf(ray.quality) > 0) {
         const { tier } = nextTier(ray.quality, frameGap, state.rayQuality, rayBaseline);
         applyTier(ray, tier);
       }
@@ -346,6 +351,7 @@ export function createRenderLoop({
     resetAdaptation: (modeId = state.modeId) => {
       healthyStreak = 0;
       climbCap = climbCaps.get(modeId) ?? null;
+      severeRun = 0;
       settleFrames = SETTLE_AFTER_MODE_CHANGE;
       frameTimes.length = 0;
     },

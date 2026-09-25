@@ -1143,6 +1143,14 @@ vec3 marchVolume(vec3 ro, vec3 rd, float tmax) {
     float b = dot(ro, rd), c = dot(ro, ro) - 6.5 * 6.5, h = b * b - c;
     if (h < 0.0) { tEnd = 0.0; }
     else { h = sqrt(h); t = max(t, -b - h); tEnd = min(tEnd, -b + h); }
+  } else if (uMode == 20) {
+    /* the lamp's wax lives inside the vessel (cylinder h 2.1, r 1.15 — a
+       2.45 bounding sphere). Starting at the camera spent the low tier's
+       21 steps on the 4 units of air in front of the glass and never
+       reached the wax: the lamp rendered empty. */
+    float b = dot(ro, rd), c = dot(ro, ro) - 2.45 * 2.45, h = b * b - c;
+    if (h < 0.0) { tEnd = 0.0; }
+    else { h = sqrt(h); t = max(t, -b - h); tEnd = min(tEnd, -b + h); }
   } else if (uMode == 11 && abs(rd.y) > 1e-4) {
     float ta = (1.2 - ro.y) / rd.y, tb = (-1.2 - ro.y) / rd.y;
     t = max(t, min(ta, tb));
