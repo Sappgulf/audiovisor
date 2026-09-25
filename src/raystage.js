@@ -210,7 +210,12 @@ export class RayStage {
       this._scenes = new Map();
       this._drawnMode = null;
       this._prewarmTimer = 0;
-      this._scene(this.mode || 0);
+      /* With parallel compile the first program is only queued: nothing is
+         drawn until a mode is picked, and by then it has usually finished
+         off the main thread. Without it, link now so a broken build still
+         fails here and drops to Canvas2D rather than mid-frame. */
+      if (this._parallel) this._startScene(this.mode || 0);
+      else this._scene(this.mode || 0);
       this._prewarm();
       this.pBlur = link(gl, BLUR_FRAG);
       this.pAccum = link(gl, ACCUM_FRAG);
