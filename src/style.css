@@ -174,7 +174,7 @@ button:focus-visible, input:focus-visible {
   box-shadow: none;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;   /* clip, not hidden: a hidden box can still be scrolled by script or by focus, which slid the whole app up off the phone screen */
 }
 
 .shell:fullscreen {
@@ -184,6 +184,15 @@ button:focus-visible, input:focus-visible {
   border: none;
 }
 /* true cinema: stage owns viewport, chrome auto-hides */
+.shell.is-pseudo-fs {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  margin: 0;
+  border-radius: 0;
+  z-index: 90;
+}
 .shell.is-cinema .topbar,
 .shell.is-cinema .transport {
   transition: transform 0.42s var(--ease-out), opacity 0.32s var(--ease);
@@ -204,6 +213,10 @@ button:focus-visible, input:focus-visible {
   width: min(960px, calc(100vw - 32px));
   z-index: 40;
 }
+/* the floating topbar covers the stage's top-left chips while it shows;
+   they step down under it and back up when the chrome auto-hides */
+.shell.is-cinema .stage-overlays { transition: transform 0.42s var(--ease-out); }
+.shell.is-cinema:not(.is-chrome-hidden) .stage-overlays { transform: translateY(64px); }
 .shell.is-cinema.is-chrome-hidden .topbar { transform: translateX(-50%) translateY(-88px); opacity: 0; pointer-events: none; }
 .shell.is-cinema.is-chrome-hidden .transport { transform: translateX(-50%) translateY(88px); opacity: 0; pointer-events: none; }
 .shell.is-cinema .workspace { padding: 0; }
@@ -904,7 +917,7 @@ button:focus-visible, input:focus-visible {
   z-index: 40;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;   /* not a scroll container: .drawer-scroll inside it scrolls */
   transition: transform 0.36s var(--ease-out), opacity 0.28s var(--ease);
   transform-origin: top right;
 }
@@ -2910,6 +2923,9 @@ html, body {
    its 58px for the seek bar. */
 @media (min-width: 1180px) and (max-width: 1499px) {
   .transport #vu-meter { display: none; }
+  /* up to 1000px where the window has it, so the track title is readable
+     next to a usable seek bar (900px left the title at "tra…") */
+  .transport { width: min(1000px, calc(100vw - 364px)); }
 }
 /* from 1500px the meter is back, so the console grows to hold it and the
    extra width goes to the seek bar */
@@ -3109,3 +3125,7 @@ html, body {
   visibility: hidden;
   opacity: 0;
 }
+
+/* the save-to-library button sits absolutely in the track card's corner;
+   keep the title and spec text clear of it */
+.track-info .track-meta { padding-right: 28px; min-width: 0; }

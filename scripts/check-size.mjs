@@ -19,8 +19,12 @@ const BUDGETS = {
      overhead, and the plugin API + MIDI input add a little more. All in the
      entry because the modules are statically imported. Worth it: the entry
      is still a small payload and the codebase is navigable. */
-  entry: 57 * 1024,    // initial JS chunk, gzipped
-  css: 12 * 1024,
+  /* v8.15: seven five-stop palettes, colour flow, and the cinema fallback
+     for browsers without element fullscreen took the entry and CSS to their
+     lines. +1kB / +0.5kB here is paid for by v8.14's shader minify, which
+     took 6.5kB out of the total — the total stays at 101. */
+  entry: 58 * 1024,    // initial JS chunk, gzipped
+  css: 12.5 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is
      unchanged; only the total went up with the features. That is the point

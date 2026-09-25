@@ -1,7 +1,7 @@
 {
   "name": "audiovisor",
   "private": true,
-  "version": "8.15.1",
+  "version": "8.16.0",
   "type": "module",
   "sideEffects": false,
   "engines": {
@@ -24,6 +24,7 @@
     "thumbs": "node scripts/make-thumbs.mjs",
     "sweep": "node scripts/sweep.mjs",
     "bench": "node scripts/live-bench.mjs",
+    "e2e": "node scripts/e2e.mjs",
     "rayshots": "node scripts/ray-shots.mjs",
     "ci": "npm run lint && npm run typecheck && npm test && npm run build && npm run size"
   },

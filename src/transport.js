@@ -127,39 +127,65 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
     saveSettings();
   }, { passive: false });
 
+  /* Cinema mode: chrome auto-hides over a full-bleed stage. Real fullscreen
+     is tried first; when the browser refuses or has no element fullscreen
+     (iPhone Safari, an embedded view, a denied request) the shell fills the
+     window itself (is-pseudo-fs) instead. The button used to call
+     requestFullscreen() and drop the rejection, so on those browsers it
+     did nothing at all. */
+  let pseudo = false;
+  function enterCinema() {
+    if (shell.classList.contains('is-cinema')) return;
+    shell.classList.add('is-cinema');
+    /* fullscreen is for watching: an open settings drawer covered a third of
+       the stage. Close it through its own control so its state stays true. */
+    const drawer = doc.getElementById('drawer');
+    if (drawer && !drawer.classList.contains('is-closed')) doc.getElementById('drawer-close')?.click();
+    let hid = setTimeout(() => shell.classList.add('is-chrome-hidden'), 2200);
+    const show = () => {
+      shell.classList.remove('is-chrome-hidden');
+      clearTimeout(hid);
+      hid = setTimeout(() => shell.classList.add('is-chrome-hidden'), 2200);
+    };
+    /* pointermove covers the mouse; a touch device never emits it while the
+       finger is off the glass, so without pointerdown the chrome hid after
+       2.2s in fullscreen and there was no way to bring it back. */
+    shell.addEventListener('pointermove', show);
+    shell.addEventListener('pointerdown', show);
+    cinemaShell._cinemaCleanup = () => {
+      shell.removeEventListener('pointermove', show);
+      shell.removeEventListener('pointerdown', show);
+      clearTimeout(hid);
+    };
+  }
+  function exitCinema() {
+    pseudo = false;
+    shell.classList.remove('is-cinema', 'is-chrome-hidden', 'is-pseudo-fs');
+    if (cinemaShell._cinemaCleanup) { try { cinemaShell._cinemaCleanup(); } catch {} cinemaShell._cinemaCleanup = null; }
+  }
+  function enterPseudo() {
+    pseudo = true;
+    shell.classList.add('is-pseudo-fs');
+    enterCinema();
+  }
   $('fullscreen-btn').addEventListener('click', () => {
-    if (doc.fullscreenElement) doc.exitFullscreen();
-    else shell.requestFullscreen?.();
+    if (doc.fullscreenElement) { doc.exitFullscreen().catch(() => {}); return; }
+    if (pseudo) { exitCinema(); return; }
+    const req = shell.requestFullscreen?.();
+    if (!req) { enterPseudo(); return; }
+    req.catch(() => enterPseudo());
   });
   doc.addEventListener('fullscreenchange', () => {
-    const isFs = !!doc.fullscreenElement;
-    shell.classList.toggle('is-cinema', isFs);
-    if (isFs) {
-      // auto-hide chrome after 2.2s
-      let hid = setTimeout(() => shell.classList.add('is-chrome-hidden'), 2200);
-      const show = () => {
-        shell.classList.remove('is-chrome-hidden');
-        clearTimeout(hid);
-        hid = setTimeout(() => shell.classList.add('is-chrome-hidden'), 2200);
-      };
-      const onMove = () => show();
-      /* pointermove covers the mouse; a touch device never emits it while the
-         finger is off the glass, so without pointerdown the chrome hid after
-         2.2s in fullscreen and there was no way to bring it back. */
-      shell.addEventListener('pointermove', onMove);
-      shell.addEventListener('pointerdown', onMove);
-      const clr = () => {
-        shell.removeEventListener('pointermove', onMove);
-        shell.removeEventListener('pointerdown', onMove);
-        doc.removeEventListener('fullscreenchange', clr);
-        clearTimeout(hid);
-      };
-      // cleanup when exiting handled by next fullscreenchange
-      cinemaShell._cinemaCleanup = clr;
-    } else {
-      shell.classList.remove('is-cinema', 'is-chrome-hidden');
-      if (cinemaShell._cinemaCleanup) { try { cinemaShell._cinemaCleanup(); } catch {} cinemaShell._cinemaCleanup = null; }
-    }
+    if (doc.fullscreenElement) enterCinema();
+    else if (!pseudo) exitCinema();
+  });
+  /* the browser normally consumes Escape to leave native fullscreen; if it
+     reaches the page anyway (embedded views, keyboard remaps) honour it, and
+     the fallback always needs its own */
+  doc.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (doc.fullscreenElement) doc.exitFullscreen().catch(() => {});
+    else if (pseudo) exitCinema();
   });
   /* Double-tap the stage for cinema mode. dblclick is unreliable on touch —
      Safari withholds it, and elsewhere it arrives after a 300ms delay — so

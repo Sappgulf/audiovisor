@@ -39,6 +39,17 @@ export function createKeyboardShortcuts({
   }
 
   (doc.defaultView || window).addEventListener('keydown', (e) => {
+    /* Escape closes panels even from a text field: the library focuses its
+       search box on open, so with the typing guard first Escape could never
+       close it — and every shortcut after that was swallowed by the focused
+       input too. Leaving the field is part of closing the panel. */
+    if (e.code === 'Escape' && (panels.isQueueOpen() || panels.isLibraryOpen() || about.isOpen())) {
+      if (isTypingTarget(e.target) && e.target instanceof HTMLElement) e.target.blur();
+      if (panels.isQueueOpen()) panels.toggleQueue(false);
+      if (panels.isLibraryOpen()) panels.toggleLibrary(false);
+      if (about.isOpen()) about.setOpen(false);
+      return;
+    }
     if (isTypingTarget(e.target)) return;
     if (isModePickerTarget(e.target) || isModePickerTarget(doc.activeElement)) return;
     switch (e.code) {
