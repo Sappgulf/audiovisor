@@ -89,14 +89,16 @@ import('./raystage.js')
     ray.error = err;
     console.warn('raytrace stage failed to load:', err);
   });
-renderer.setTheme(THEMES.find((t) => t.id === 'brass'));
-ray.setTheme(THEMES.find((t) => t.id === 'brass'));
+/* the colourway a first visit opens on */
+const DEFAULT_THEME = 'iris';
+renderer.setTheme(THEMES.find((t) => t.id === DEFAULT_THEME));
+ray.setTheme(THEMES.find((t) => t.id === DEFAULT_THEME));
 
 const RAY_QUALITIES = ['low', 'medium', 'high', 'ultra'];
 
 const state = {
   modeId: 'bars',
-  themeId: 'brass',
+  themeId: DEFAULT_THEME,
   autopilot: false,
   autopilotTimer: null,
   // The stage is the product's first impression. Start in the visual workspace
@@ -296,7 +298,7 @@ const autoPaletteCache = new Map();
  * to brass until a track provides one.
  */
 function activeTheme() {
-  if (state.themeId === 'auto') return autoTheme || THEMES.find((t) => t.id === 'brass');
+  if (state.themeId === 'auto') return autoTheme || THEMES.find((t) => t.id === DEFAULT_THEME);
   return THEMES.find((t) => t.id === state.themeId);
 }
 

@@ -230,7 +230,7 @@ export class RayStage {
       this.uBlur = this._locs(this.pBlur, ['uTex', 'uTexel', 'uDir', 'uThreshold', 'uPrefilter']);
       this.uAccum = this._locs(this.pAccum, ['uScene', 'uHistory', 'uRes', 'uBlend']);
       this.uPost = this._locs(this.pPost, [
-        'uScene', 'uBloom', 'uRes', 'uBloomAmt', 'uExposure', 'uTime', 'uBeat', 'uPop', 'uDrop',
+        'uScene', 'uBloom', 'uRes', 'uBloomAmt', 'uExposure', 'uTime', 'uBeat', 'uPop', 'uDrop', 'uTintLo', 'uTintHi',
       ]);
 
       this.noiseTex = this._noiseTex();
@@ -554,6 +554,48 @@ export class RayStage {
     return out;
   }
 
+  /* Colour flow. The five palette uniforms are re-sampled from the theme's
+     ramp every frame at positions that wander along it — two incommensurate
+     sines phased by the stop's own position so neighbouring colours do not
+     move in lockstep, plus a nudge on the beat — folded back into [0,1] so
+     nothing runs off the end. Scenes keep their structure while colour
+     travels across them. Doing it here costs 5 samples a frame; the same
+     drift per palette lookup on the GPU measured 20-65% of frame time. */
+  _flowPal() {
+    const out = this._flowBuf || (this._flowBuf = [0, 1, 2, 3, 4].map(() => new Float32Array(3)));
+    const pal = this.pal, n = pal.length, t = this.t;
+    const beat = this.beat * motionScale();
+    for (let i = 0; i < 5; i++) {
+      const u = i / 4;
+      const w = u + 0.16 * Math.sin(t * 0.071 + u * 2.3) + 0.09 * Math.sin(t * 0.043 - u * 3.7) + beat * 0.05;
+      const fw = w * 0.5 - Math.floor(w * 0.5);
+      const f = Math.min(0.9999, 1 - Math.abs(fw * 2 - 1)) * (n - 1);
+      const k = Math.floor(f), x = f - k;
+      const a = pal[k], b = pal[Math.min(n - 1, k + 1)];
+      out[i][0] = a[0] + (b[0] - a[0]) * x;
+      out[i][1] = a[1] + (b[1] - a[1]) * x;
+      out[i][2] = a[2] + (b[2] - a[2]) * x;
+    }
+    return out;
+  }
+
+  /* The palette's deepest entry and its most vivid bright one, for the post
+     pass's split-tone. Cached per palette: this.pal is replaced on a theme
+     change, never mutated. */
+  _tints() {
+    if (this._tintPal === this.pal && this._tintCache) return this._tintCache;
+    const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const chroma = (c) => Math.max(...c) - Math.min(...c);
+    let lo = this.pal[0], hi = this.pal[0];
+    for (const c of this.pal) {
+      if (lum(c) < lum(lo)) lo = c;
+      if (chroma(c) + lum(c) * 0.5 > chroma(hi) + lum(hi) * 0.5) hi = c;
+    }
+    this._tintPal = this.pal;
+    this._tintCache = { lo: new Float32Array(lo), hi: new Float32Array(hi) };
+    return this._tintCache;
+  }
+
   _fullscreen() { this.gl.drawArrays(this.gl.TRIANGLES, 0, 3); }
 
   render(idle, freq, wave, levels, dtMs = 16.7, tOverride = null, stereoL = null, stereoR = null) {
@@ -649,11 +691,8 @@ export class RayStage {
       gl.uniform1i(u.uSpp, q.spp);
       gl.uniform1i(u.uSteps, q.steps);
       gl.uniform1i(u.uRefl, q.refl);
-      gl.uniform1i(u.uPalN, this.pal.length);
-      for (let i = 0; i < 5; i++) {
-        const c = this.pal[Math.min(i, this.pal.length - 1)];
-        gl.uniform3f(sp.pal[i], c[0], c[1], c[2]);
-      }
+      /* always five stops: _flowPal resamples any palette length to five */
+      gl.uniform1i(u.uPalN, 5);
       gl.uniform1i(u.uSpec, 0);
       gl.uniform1i(u.uWave, 1);
       gl.uniform1i(u.uHist, 2);
@@ -667,6 +706,10 @@ export class RayStage {
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.waveTex);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.histTex);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.noiseTex);
+    {
+      const fp = this._flowPal();
+      for (let i = 0; i < 5; i++) gl.uniform3fv(sp.pal[i], fp[i]);
+    }
     gl.uniform1f(u.uBass, lv.bass || 0);
     gl.uniform1f(u.uMid, lv.mid || 0);
     gl.uniform1f(u.uHigh, lv.high || 0);
@@ -753,6 +796,9 @@ export class RayStage {
        stops throbbing. See src/motion.js. */
     gl.uniform1f(this.uPost.uBeat, this.beat * motionScale());
     gl.uniform1f(this.uPost.uPop, this.colorPop);
+    const tints = this._tints();
+    gl.uniform3fv(this.uPost.uTintLo, tints.lo);
+    gl.uniform3fv(this.uPost.uTintHi, tints.hi);
     gl.uniform1f(this.uPost.uDrop, (this._drop || 0) * motionScale());
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lit.tex); gl.uniform1i(this.uPost.uScene, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.bloomAmount > 0.001 ? blurB.tex : lit.tex); gl.uniform1i(this.uPost.uBloom, 1);

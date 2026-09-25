@@ -68,6 +68,9 @@ float hist(float x, float age) {
   return texture(uHist, vec2(clamp(x, 0.0, 1.0), row)).r;
 }
 vec3 pal(int i) { return uPal[i % uPalN]; }
+/* Colour flow happens on the CPU: the five uPal entries are re-sampled
+   from the theme's ramp every frame at drifting positions (see
+   RayStage._flowPal), so this lookup costs what it always did. */
 vec3 palf(float t) {
   float f = clamp(t, 0.0, 0.9999) * float(uPalN - 1);
   int i = int(floor(f));
@@ -1108,8 +1111,13 @@ vec3 volColor(float dens, vec3 p) {
   float r = length(p);
   float t = clamp(dens * 1.3, 0.0, 1.0);
   // cool at the rim, hot in the core, blowing out to white at peak density
-  vec3 c = mix(palf(0.12), palf(0.8), clamp(r * 0.24, 0.0, 1.0));
-  c = mix(c, vec3(1.0, 0.94, 0.88), pow(t, 3.4) * 0.45);   // keep hue in the dense core
+  /* sweep the whole palette: hot mid-ramp hues in the core, the deep end at
+     the rim, the bright end only in the densest filaments — two fixed stops
+     (0.12 -> 0.8) washed five-colour palettes out to their pale end */
+  float rr = clamp(r * 0.2, 0.0, 1.0);
+  vec3 c = mix(palf(0.55 - rr * 0.4), palf(0.08 + rr * 0.15), smoothstep(0.2, 0.9, rr));
+  c = mix(c, palf(0.78), smoothstep(0.35, 0.9, t) * 0.55);
+  c = mix(c, vec3(1.0, 0.95, 0.9), pow(t, 4.0) * 0.25);   // keep hue in the dense core
   /* the lamp wax sits behind glass and loses half its light to the wall
      march — it measured a third of the nebula's brightness. Base it hotter
      so the lamp actually glows between beats. */
@@ -1403,6 +1411,8 @@ uniform float uTime;
 uniform float uBeat;
 uniform float uPop;
 uniform float uDrop;
+uniform vec3  uTintLo;   // palette's deepest colour (shadow split-tone)
+uniform vec3  uTintHi;   // palette's most vivid bright colour (highlights, bloom)
 
 vec3 aces(vec3 x) {
   const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
@@ -1421,6 +1431,9 @@ void main() {
     texture(uBloom, uv + d * ca).r,
     texture(uBloom, uv).g,
     texture(uBloom, uv - d * ca).b);
+  /* bloom takes on the palette's highlight hue, so glow reads as the
+     colourway rather than white haze */
+  bl *= mix(vec3(1.0), uTintHi * 1.5, 0.3);
   col += bl * uBloomAmt * 1.6 * (1.0 + uDrop * 0.9);
 
   col *= uExposure * (1.0 + uBeat * 0.18 + uDrop * 0.28);
@@ -1429,6 +1442,12 @@ void main() {
   // saturation from the Color Pop control
   float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
   col = mix(vec3(l), col, 0.85 + uPop * 0.5);
+  /* palette split-tone: shadows sink toward the deepest palette colour,
+     highlights lean to the brightest, so every mode sits inside one
+     cohesive colourway */
+  float lg = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  vec3 tone = mix(uTintLo * 1.8, uTintHi, smoothstep(0.05, 0.85, lg));
+  col = mix(col, col * (0.55 + tone * 0.9) + uTintLo * 0.04 * (1.0 - lg), 0.22);
   // vignette + film grain
   col *= 1.0 - dot(d, d) * 0.65;
   col += (hash(gl_FragCoord.xy + fract(uTime) * 91.7) - 0.5) * 0.018;

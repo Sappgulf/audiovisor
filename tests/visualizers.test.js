@@ -9,8 +9,8 @@ describe('themes', () => {
     expect(MODES.find(m => m.id === 'orb').name).toBe('Pulse Orb');
     expect(MODES.find(m => m.id === 'orb').icon).toBe('orb');
   });
-  it('has 25 themes', () => {
-    expect(THEMES.length).toBe(25);
+  it('has 32 themes', () => {
+    expect(THEMES.length).toBe(32);
   });
   it('all modes have id, name, icon', () => {
     for (const m of MODES) {
@@ -38,7 +38,7 @@ describe('Renderer', () => {
 
   it('initializes with defaults', () => {
     expect(renderer.mode).toBe('bars');
-    expect(renderer.theme.id).toBe('lime');
+    expect(renderer.theme.id).toBe('iris');
     expect(renderer.quality).toBe('high');
     expect(renderer.beat).toBe(0);
   });

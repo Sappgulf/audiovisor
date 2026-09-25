@@ -135,9 +135,9 @@ describe('App boot smoke (jsdom)', () => {
     expect(Number(c.width)).toBeGreaterThan(0);
   });
 
-  it('theme row populated (Auto + 25 themes)', () => {
+  it('theme row populated (Auto + 32 themes)', () => {
     const row = dom.window.document.getElementById('theme-row');
-    expect(row.children.length).toBe(26);
+    expect(row.children.length).toBe(33);
     expect(row.firstElementChild.dataset.theme).toBe('auto');
   });
 });

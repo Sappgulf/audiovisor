@@ -25,6 +25,16 @@ export const MODES = [
 ];
 
 export const THEMES = [
+  /* Five-stop palettes ordered deep to bright: the stage reads colour as a
+     gradient (palf), so a full ramp gives every scene shadows, bodies and
+     highlights of its own hue instead of three flat accents. */
+  { id: 'iris', name: 'Iridescent', colors: ['#3a0ca3', '#7209b7', '#f72585', '#4cc9f0', '#e0f7ff'], css: 'linear-gradient(135deg, #7209b7, #f72585 50%, #4cc9f0)' },
+  { id: 'aurora', name: 'Aurora', colors: ['#0b1d51', '#1b6ca8', '#00d4a6', '#8cff7a', '#f1ffb8'], css: 'linear-gradient(135deg, #1b6ca8, #00d4a6 50%, #8cff7a)' },
+  { id: 'biolum', name: 'Bioluminescence', colors: ['#020b1f', '#003f5c', '#00b4d8', '#48ffd8', '#e0fbff'], css: 'linear-gradient(135deg, #003f5c, #00b4d8 50%, #48ffd8)' },
+  { id: 'cosmos', name: 'Cosmic Bloom', colors: ['#10002b', '#5a189a', '#c77dff', '#ff6ad5', '#ffd6f5'], css: 'linear-gradient(135deg, #5a189a, #c77dff 50%, #ff6ad5)' },
+  { id: 'lagoon', name: 'Lagoon Dusk', colors: ['#1a1446', '#2ec4b6', '#ff6f59', '#ffb347', '#fdfcdc'], css: 'linear-gradient(135deg, #2ec4b6, #ff6f59 50%, #ffb347)' },
+  { id: 'holo', name: 'Holographic', colors: ['#2b1055', '#a18cd1', '#ff6a88', '#84fab0', '#8fd3f4'], css: 'linear-gradient(135deg, #a18cd1, #ff6a88 40%, #84fab0 70%, #8fd3f4)' },
+  { id: 'molten', name: 'Molten Gold', colors: ['#1a0500', '#8a1c00', '#ff5400', '#ffb700', '#fff3c4'], css: 'linear-gradient(135deg, #8a1c00, #ff5400 50%, #ffb700)' },
   { id: 'lime', name: 'Lime', colors: ['#ccff00', '#10b981', '#b4ff7a'], css: 'linear-gradient(135deg, #ccff00, #10b981)' },
   { id: 'cyber', name: 'Neon Cyber', colors: ['#00f0ff', '#7b2bff', '#ff2bd6'], css: 'linear-gradient(135deg, #00f0ff, #ff2bd6)' },
   { id: 'psy', name: 'Psychedelic', colors: ['#ccff00', '#ff8a00', '#7b2bff', '#00f0ff', '#ff2bd6'], css: 'linear-gradient(135deg, #ccff00, #7b2bff)' },
