@@ -196,10 +196,12 @@ float scBars(vec3 p) {
   float slot = floor(q.x / 0.46 + 13.0);
   slot = clamp(slot, 0.0, 25.0);
   float cx = (slot + 0.5) * 0.46 - 5.98;
-  float e = pow(spec(slot / 26.0), 1.35) * uSens;
-  e = e / (1.0 + 0.6 * e);              // soft knee — a loud low end shouldn't wall off the stage
+  float u = pow(clamp(slot / 26.0, 0.0, 1.0), 0.62);
+  float e = pow(spec(u), 1.2) * uSens;
+  e = e / (1.0 + 0.55 * e);
   float h = 0.1 + 2.6 * e * (1.0 + uBeat * 0.3 + uDrop * 0.45);
-  vec3 b = vec3(0.15, h, 0.15);
+  float depth = 0.1 + hash11(slot + 4.0) * 0.18;
+  vec3 b = vec3(0.12, h, depth);
   float d = sdRBox(q - vec3(cx, h, 0.0), b, 0.045);
   d = max(d, abs(q.x) - 6.1);
   g_id = 1.0; g_aux = slot / 26.0;
@@ -215,8 +217,8 @@ float scWaves(vec3 p) {
     float z = -fi * 1.15;
     float w = wav(p.x * 0.055 + fi * 0.21 + uTime * 0.06) * (1.0 + uLevel * 1.6);
     float y = w * (1.1 - fi * 0.14) + sin(p.x * 0.7 + uTime * 1.1 + fi) * 0.12;
-    float s = abs(p.y - y) - 0.17 - uBeat * 0.04;     // thicker ribbon body
-    s = max(s, abs(p.z - z) - 0.26);                  // deep enough to catch light
+    float s = abs(p.y - y) - 0.045 - uBeat * 0.02;
+    s = max(s, abs(p.z - z) - 0.12);
     s = max(s, abs(p.x) - 6.2);
     if (s < d) { d = s; g_id = 2.0; g_aux = fi / 5.0; }
   }
@@ -234,18 +236,16 @@ float scScope(vec3 p) {
   float bound = length(p) - 4.3;
   if (bound > 0.3) { g_id = 26.0; g_aux = 0.22; return bound; }
   float d = 1e9;
-  float ring = abs(sdTorus(p.xzy, vec2(2.35, 0.02))) - 0.004;
+  float ring = abs(sdTorus(p.xzy, vec2(2.55, 0.012))) - 0.003;
   if (ring < d) { d = ring; g_id = 1.0; g_aux = 0.6; }
-  /* instrument housing behind the face — the trace used to float in a void;
-     a bezel wall gives the accent light something to spill on */
-  float panel = sdBox(p - vec3(0.0, 0.0, -1.55), vec3(2.55, 1.85, 0.05));
-  if (panel < d) { d = panel; g_id = 26.0; g_aux = 0.22; }
+  float tick = abs(sdTorus(p.xzy, vec2(1.55, 0.008))) - 0.002;
+  if (tick < d) { d = tick; g_id = 1.0; g_aux = 0.35; }
   /* The trace lives in a thin slab (|z| <= 0.28 + tube radius) inside r 3.8.
      Most march steps are rays heading for the housing; only walk the 40
      segments when the slab could be nearer than what is already found. */
   float slab = max(length(p.xy) - 3.8, abs(p.z) - 0.45);
   if (slab >= d) return d;
-  float rad = 0.1 + uBeat * 0.03;
+  float rad = 0.028 + uBeat * 0.012 + uLevel * 0.012;
   /* The trace is radial — point k sits at angle k/40 of a turn — so only the
      segments around p's own angle can be nearest. Walk a window of 5 rather
      than all 40, and cap the result so a far segment skipped by the window
@@ -304,21 +304,24 @@ float scParticles(vec3 p) {
 float scKaleido(vec3 p) {
   float a = atan2s(p.y, p.x);
   float r = length(p.xy);
-  float seg = TAU / 8.0;
+  float seg = TAU / 6.0;
   a = mod(a + seg * 0.5, seg) - seg * 0.5;
-  vec3 q = vec3(cos(a) * r, abs(sin(a) * r), p.z);
+  vec3 q = vec3(cos(a) * r, sin(a) * r, abs(p.z));
   float d = 1e9;
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 3; i++) {
     float fi = float(i);
-    float e = spec(fi / 4.0 + 0.05) * uSens;
-    vec3 c = vec3(0.85 + fi * 0.62 + e * 0.5, 0.12 + fi * 0.1, 0.0);
+    float e = spec(0.12 + fi * 0.28) * uSens;
+    float len = 0.42 + fi * 0.38 + e * 0.28;
+    vec3 c = vec3(0.72 + fi * 0.78 + e * 0.15, 0.0, 0.05 + fi * 0.16);
     vec3 pp = q - c;
-    pp.xz *= rot(uTime * (0.2 + fi * 0.13));
-    pp.xy *= rot(uTime * 0.17);
-    float s = sdRBox(pp, vec3(0.16 + e * 0.3, 0.16, 0.16), 0.03);
-    if (s < d) { d = s; g_id = 3.0; g_aux = fi / 4.0; }
+    float s = sdRBox(pp, vec3(len, 0.045 + e * 0.03, 0.045 + fi * 0.012), 0.015);
+    if (s < d) {
+      d = s;
+      g_id = fi < 1.5 ? 11.0 : 6.0;
+      g_aux = fi / 3.0;
+    }
   }
-  float core = sdSphere(p, 0.32 + uBeat * 0.1);
+  float core = sdSphere(p, 0.22 + uBeat * 0.08 + uBass * 0.06);
   if (core < d) { d = core; g_id = 4.0; g_aux = 0.9; }
   /* mirror pool under the cluster — crystals reflecting into still water
      double the subject for free and ground the whole composition */
@@ -331,12 +334,12 @@ float scKaleido(vec3 p) {
 
 /* 5 spectro — extruded waterfall terrace from the history buffer */
 float scSpectro(vec3 p) {
-  float u = clamp((p.x + 5.0) / 10.0, 0.0, 1.0);
+  float u = pow(clamp((p.x + 5.0) / 10.0, 0.0, 1.0), 0.62);
   float age = clamp((p.z + 5.0) / 10.0, 0.0, 1.0);
   float e = hist(u, age);
-  float e2 = pow(e, 1.5) * uSens;
+  float e2 = pow(e, 1.35) * uSens;
   float h = 2.2 * e2 / (1.0 + 0.7 * e2);
-  h = floor(h * 9.0) / 9.0;              // stepped terraces, not a smooth dune
+  h = floor(h * 18.0) / 18.0;
   float d = (p.y - h) * 0.38;
   d = max(d, abs(p.x) - 5.0);
   d = max(d, abs(p.z) - 5.0);
@@ -352,29 +355,31 @@ float scTunnel(vec3 p) {
   float band = spec(fract(cell * 0.083));
   float r = 2.3 - band * 0.7 * uSens - uBeat * 0.12 - uDrop * 0.2;
   float wob = sin(atan2s(p.y, p.x) * 6.0 + cell * 0.7 + uTime) * 0.09 * (0.3 + uMid);
-  float ring = length(vec2(length(p.xy) - r + wob, lz)) - (0.045 + band * 0.09);
+  float ring = length(vec2(length(p.xy) - r + wob, lz)) - (0.03 + band * 0.05);
   float d = ring;
   g_id = 4.0; g_aux = fract(cell * 0.083);
   float wall = -(length(p.xy) - (r + 0.85));
   if (wall < d) { d = wall; g_id = 6.0; g_aux = 0.2; }
+  float sector = floor(atan2s(p.y, p.x) / (TAU / 4.0) + 0.5) * (TAU / 4.0);
+  vec2 railC = vec2(cos(sector), sin(sector)) * (r - 0.45);
+  float rail = length(p.xy - railC) - 0.018;
+  if (rail < d) { d = rail; g_id = 4.0; g_aux = 0.85; }
   return d;
 }
 
-/* 7 plasma — nested torii inside a dark charging cell */
-float scPlasma(vec3 p) {
-  /* enclosing chamber: the camera sits inside it, so the rings light a
-     room instead of hanging in space. Thin-shell abs() trick keeps it a
-     single cheap sdCyl per march step. */
-  float chamber = abs(sdCyl(p, 4.6, 5.2)) - 0.06;
-  g_id = 26.0; g_aux = 0.18;
-  float d = chamber;
+/* 7 plasma — thin rings inside a hoop cage, not a solid dark cylinder */
+  float d = 1e9;
+  for (int k = 0; k < 3; k++) {
+    float hoop = abs(sdTorus(p - vec3(0.0, float(k) * 1.15 - 1.15, 0.0), vec2(3.15, 0.012))) - 0.004;
+    if (hoop < d) { d = hoop; g_id = 1.0; g_aux = 0.4; }
+  }
   for (int i = 0; i < 4; i++) {
     float fi = float(i);
-    float e = spec(0.06 + fi * 0.2) * uSens;
+    float e = spec(0.08 + fi * 0.22) * uSens;
     vec3 q = p;
     q.xz *= rot(uTime * (0.15 + fi * 0.09) + fi);
     q.yz *= rot(uTime * (0.11 - fi * 0.04));
-    float s = sdTorus(q, vec2(0.7 + fi * 0.72 + e * 0.18, 0.03 + e * 0.07 + uBeat * 0.02));
+    float s = sdTorus(q, vec2(0.55 + fi * 0.62 + e * 0.16, 0.018 + e * 0.028 + uBeat * 0.012));
     if (s < d) { d = s; g_id = 4.0; g_aux = (fi + 0.5) / 4.0; }
   }
   float core = sdSphere(p, 0.24 + uBass * 0.14 + uBeat * 0.08);
@@ -412,9 +417,12 @@ float scCity(vec3 p) {
   vec2 lp = mod(p.xz, 2.2) - 1.1;
   float h = hash11(dot(cell, vec2(17.3, 41.7)));
   float e = spec(fract(h * 3.7));
-  float bh = 0.5 + h * 3.4 + e * 2.4 * uSens + uBeat * 0.2 * h;
-  float d = sdBox(vec3(lp.x, p.y - bh * 0.5, lp.y), vec3(0.62, bh * 0.5, 0.62));
+  float bh = 0.4 + h * 3.2 + e * 2.2 * uSens + uBeat * 0.2 * h;
+  float bw = 0.32 + h * 0.28;
+  float d = sdBox(vec3(lp.x, p.y - bh * 0.5, lp.y), vec3(bw, bh * 0.5, bw));
   g_id = 8.0; g_aux = e;
+  float crown = sdBox(vec3(lp.x, p.y - bh - 0.12, lp.y), vec3(bw * 0.45, 0.14, bw * 0.45));
+  if (crown < d) { d = crown; g_id = 4.0; g_aux = e; }
   if (fl < d) { d = fl; g_id = 9.0; }
   return d;
 }
@@ -424,8 +432,9 @@ float scOrb(vec3 p) {
   float r = length(p);
   vec3 n = p / max(r, 1e-4);
   float band = spec(fract(atan2s(n.z, n.x) / TAU + 0.5) * 0.7 + 0.05);
-  float disp = band * 0.18 * uSens
-    + 0.05 * sin(n.y * 7.0 + uTime * 1.6) * sin(atan2s(n.z, n.x) * 5.0);
+  float disp = band * 0.22 * uSens
+    + 0.06 * sin(n.y * 7.0 + uTime * 1.6) * sin(atan2s(n.z, n.x) * 5.0)
+    + uHigh * 0.07 * sin(n.x * 13.0 + uTime * 2.0);
   float shell = abs(r - (1.15 + disp + uBeat * 0.09)) - 0.035;   // hollow glass
   float core = r - (0.5 + uBass * 0.16 + uBeat * 0.08);
   float d = shell;
@@ -452,7 +461,7 @@ float scFluid(vec3 p) {
     float rr = 1.25 + 0.3 * sin(uTime * 0.4 + fi);
     vec3 c = vec3(cos(a) * rr, sin(a * 1.7 + fi) * 0.5, sin(a) * rr);
     float s = sdSphere(p - c, 0.26 + e * 0.24 + uBeat * 0.05);
-    d = (i == 0) ? s : smin(d, s, 0.22);
+    d = (i == 0) ? s : smin(d, s, 0.12);
   }
   d = smin(d, sdSphere(p, 0.34 + uBass * 0.1), 0.3);   // core keeps the mass connected
   g_id = 10.0; g_aux = 0.5;
@@ -485,29 +494,26 @@ float scTensor(vec3 p) {
 
 /* 15 prism — beam in from the left, dispersion fan out to the right, so the
    whole path reads face-on from the camera */
+float sdTriPrism(vec3 p, vec2 h) {
+  vec3 q = abs(p);
+  return max(q.z - h.y, max(q.x * 0.866025 + p.y * 0.5, -p.y) - h.x * 0.5);
+}
+
 float scPrism(vec3 p) {
   vec3 q = p;
-  q.xz *= rot(uTime * 0.22 + uBeat * 0.1);
-  q.yz *= rot(0.3);
-  float d = sdRBox(q, vec3(0.38, 1.15, 0.38), 0.02);
+  q.xz *= rot(uTime * 0.18);
+  float d = sdTriPrism(q, vec2(0.85 + uBass * 0.08, 0.28));
   g_id = 11.0; g_aux = 0.5;
 
-  // incoming beam: a thin bar travelling in along -x
-  vec3 bp = p - vec3(-2.3, 0.0, 0.0);
-  float beam = sdRBox(bp, vec3(1.5, 0.045 + uLevel * 0.05, 0.045), 0.02);
-  if (beam < d) { d = beam; g_id = 17.0; g_aux = 0.5; }
+  float beam = sdCapsule(p, vec3(-3.3, 0.0, 0.0), vec3(-0.7, 0.0, 0.0), 0.02 + uLevel * 0.012);
+  if (beam < d) { d = beam; g_id = 17.0; g_aux = 0.15; }
 
-  // exit fan: a thin sheet spreading vertically as it travels out along +x,
-  // colour walking the palette across the spread — the caustic a
-  // single-bounce tracer cannot produce for real
-  vec3 fp = p - vec3(2.3, 0.0, 0.0);
-  float spread = 0.05 + (fp.x + 1.8) * 0.34;
-  float fan = sdRBox(fp, vec3(1.8, 1.0, 0.03), 0.02);
-  fan = max(fan, abs(fp.y) - spread);
-  if (fan < d) {
-    d = fan;
-    g_id = 17.0;
-    g_aux = clamp(0.5 + fp.y / max(spread * 2.0, 0.001), 0.0, 1.0);
+  for (int i = 0; i < 7; i++) {
+    float t = (float(i) - 3.0) / 3.0;
+    float e = spec(abs(t));
+    vec3 tip = vec3(3.15, t * (1.15 + uLevel * 0.45), t * 0.22);
+    float ray = sdCapsule(p, vec3(0.55, t * 0.12, 0.0), tip, 0.012 + e * 0.01);
+    if (ray < d) { d = ray; g_id = 17.0; g_aux = t * 0.5 + 0.5; }
   }
   /* mirror floor: the dispersion fan finally has something to land on */
   float flr = max(p.y + 1.45, length(p.xz - vec2(1.7, 0.0)) - 2.45);
@@ -648,10 +654,9 @@ float scGpu(vec3 p) {
   vec3 cell = clamp(floor(q / 0.62 + 2.0), vec3(0.0), vec3(3.0));
   vec3 lp = q - (cell - 2.0 + 0.5) * 0.62;
   float e = spec(fract(dot(cell, vec3(0.11, 0.29, 0.07))));
-  /* the swell is capped: let beats push voxels past ~0.27 half-extent and
-     the 0.62 pitch leaves such narrow funnels that every ray's march length
-     blew up (measured 5x the quiet case on the sweep) */
-  float d = sdRBox(lp, vec3(0.19 + e * 0.04 + min(uBeat, 0.6) * 0.025), 0.035);
+  /* quiet cells stay small so the stack reads as a lattice, not one red mass */
+  float half = 0.07 + e * 0.11 + min(uBeat, 0.5) * 0.02;
+  float d = sdRBox(lp, vec3(half), 0.03);
   d = max(d, sdBox(q, vec3(1.3)));
   g_id = 16.0; g_aux = e;
   /* four corner pylons anchor the slab so it reads as hardware. These are
@@ -662,7 +667,7 @@ float scGpu(vec3 p) {
   for (int i = 0; i < 4; i++) {
     float sx = i < 2 ? -0.95 : 0.95;
     float sz = i == 0 || i == 3 ? -0.95 : 0.95;
-    py = min(py, sdCapsule(q, vec3(sx, -1.6, sz), vec3(sx, 1.6, sz), 0.032));
+    py = min(py, sdCapsule(q, vec3(sx, -1.05, sz), vec3(sx, 1.05, sz), 0.02));
   }
   if (py < d) { d = py; g_id = 6.0; g_aux = 0.55; }
   /* the bus rides inside the spinning frame now, reading as rigid wiring to
@@ -684,6 +689,7 @@ float scVinyl(vec3 p) {
   vec3 q = p;
   q.xz *= rot(0.34);          // tilt the deck toward the camera
   float disc = sdCyl(q, 0.1, 3.4);
+  disc = max(disc, -sdCyl(q - vec3(0.0, 0.12, 0.0), 0.35, 0.08));
   g_id = 23.0; g_aux = length(q.xz);
   float label = sdCyl(q - vec3(0.0, 0.1, 0.0), 0.14, 0.86);
   if (label < disc) { disc = label; g_id = 24.0; }
@@ -827,7 +833,7 @@ Mat matOf(float id, float aux, vec3 p) {
            + palf(0.85) * pow(wedge, 6.0) * 2.0;
   } else if (id < 16.5) {               // gpu voxel
     m.alb = vec3(0.03); m.rough = 0.25; m.metal = 0.6;
-    m.emis = palf(aux) * (0.18 + aux * 3.0 + uBeat * 0.6);
+    m.emis = palf(aux) * (0.06 + aux * 1.15 + uBeat * 0.28);
   } else if (id < 17.5) {               // prism beam / dispersion fan
     m.alb = vec3(0.0); m.rough = 1.0;
     // saturate the palette walk so the fan reads as a spectrum, not a white wedge
