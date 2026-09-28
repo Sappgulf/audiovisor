@@ -682,7 +682,8 @@ export class RayStage {
     gl.useProgram(sp.prog);
     const u = sp.u;
     gl.uniform2f(u.uRes, this.rw, this.rh);
-    gl.uniform1f(u.uTime, this.t);
+    const drive = idle ? 1 : 1 + Math.min(1, lv.level || 0) * 0.9;
+    gl.uniform1f(u.uTime, this.t * drive);
     /* mode/tier/palette/sampler-assignment only change with a look edit.
        Program uniforms persist between frames, so re-uploading them
        60-144x/s was ~20 dead calls every frame; one revision counter gates

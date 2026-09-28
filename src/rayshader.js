@@ -55,7 +55,8 @@ float spec(float x) {
      0.5 default is exactly neutral and no existing look moves until the
      user touches the slider; the tilt factor stays in [0.5, 1.5]. */
   float tilt = (uBassFocus - 0.5) * 2.0;
-  return v * (1.0 + tilt * (0.5 - x));
+  float hit = pow(clamp(uBeat, 0.0, 1.0), 0.5);
+  return v * (1.0 + tilt * (0.5 - x)) * (0.8 + hit * 0.65 + uLevel * 0.35);
 }
 /* uWave carries three rows — mono, L, R — so every mode keeps reading the
    same mono trace while the scope can separate the channels. Row centres of
@@ -1168,7 +1169,7 @@ vec3 marchVolume(vec3 ro, vec3 rd, float tmax) {
   for (int i = 0; i < 72; i++) {
     if (i >= steps || trans < 0.02 || t > tEnd) break;
     vec3 p = ro + rd * t;
-    float d = volDensity(p);
+    float d = volDensity(p) * (0.8 + uLevel * 0.45 + pow(clamp(uBeat, 0.0, 1.0), 0.55) * 0.7);
     if (d > 0.001) {
       float a = 1.0 - exp(-d * stepSize * 3.2);
       acc += trans * a * volColor(d, p) * (0.6 + uLevel * 0.5) * gain;
@@ -1185,6 +1186,7 @@ bool isVolumetric(int m) { return m == 10 || m == 11; }
 /* ---------------- camera ---------------- */
 
 void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
+  t *= 1.45 + uLevel * 1.05;
   vec3 ta = vec3(0.0);
   float fov = 1.5;
   float ap = 0.012;

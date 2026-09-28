@@ -480,7 +480,7 @@ export class Renderer {
     const punched = (this.beat > 0.02 || drop > 0.02) && motion > 0;
     if (punched) {
       ctx.save();
-      const z = 1 + this.beat * 0.012 * motion + drop * drop * 0.05 * motion;
+      const z = 1 + this.beat * 0.045 * motion + drop * drop * 0.08 * motion;
       ctx.translate(w / 2, h / 2);
       ctx.scale(z, z);
       ctx.translate(-w / 2, -h / 2);
