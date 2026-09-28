@@ -95,7 +95,7 @@ export class AudioEngine {
     this.loop = false;
     this.volume = 0.75;
     this.sensitivity = 1.4;
-    this.smoothing = 0.82;
+    this.smoothing = 0.55;
     this.bassFocus = 0.5;
 
     this.fx = { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false, widener: false };

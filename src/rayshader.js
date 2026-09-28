@@ -50,6 +50,7 @@ uniform float uSeed;
 
 float spec(float x) {
   float v = texture(uSpec, vec2(clamp(x, 0.0, 1.0), 0.5)).r;
+  v = pow(clamp(v, 0.0, 1.0), 0.62);
   /* Bass-Focus slider tilts the spectrum toward the low end. Centred so the
      0.5 default is exactly neutral and no existing look moves until the
      user touches the slider; the tilt factor stays in [0.5, 1.5]. */
@@ -1053,7 +1054,8 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, Mat m, float shadows) {
      it with the key gives every face a lit side and a dark side. */
   float wrap = clamp(dot(n, key) * 0.65 + 0.35, 0.18, 1.0);
   vec3 hot = mix(m.emis, vec3(dot(m.emis, vec3(0.2126, 0.7152, 0.0722))) * 1.35, 0.28);
-  vec3 col = hot * wrap;
+  float hit = pow(clamp(uBeat, 0.0, 1.0), 0.55);
+  vec3 col = hot * wrap * (1.0 + hit * 0.55);
   vec3 kc = mix(vec3(1.0, 0.97, 0.92), palf(0.55), 0.4) * (1.45 + uLevel * 0.7 + uBeat * 0.3);
   float sh = shadows > 0.5 ? softShadow(p + n * 0.01, key, 12.0) : 1.0;
   col += brdf(n, v, key, m, kc) * sh;
@@ -1225,6 +1227,10 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
     float k = min(uDrop, 1.0);
     ro = mix(ro, ta, k * 0.20);
     fov *= 1.0 - k * 0.085;
+    float hit = pow(clamp(uBeat, 0.0, 1.0), 0.5);
+    ro = mix(ro, ta, hit * 0.07);
+    fov *= 1.0 - hit * 0.055;
+    ap *= 1.0 + hit * 0.65;
   }
   vec3 fw = normalize(ta - ro);
   vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
@@ -1451,7 +1457,7 @@ void main() {
   bl *= mix(vec3(1.0), uTintHi, 0.12);
   col += bl * uBloomAmt * 1.6 * (1.0 + uDrop * 0.9);
 
-  col *= uExposure * (1.0 + uBeat * 0.18 + uDrop * 0.28);
+  col *= uExposure * (1.0 + pow(clamp(uBeat, 0.0, 1.0), 0.6) * 0.62 + uDrop * 0.4);
   col = aces(col);
   col = pow(col, vec3(1.0 / 2.2));
   // saturation from the Color Pop control
