@@ -202,9 +202,11 @@ float scBars(vec3 p) {
   float h = 0.1 + 2.6 * e * (1.0 + uBeat * 0.3 + uDrop * 0.45);
   float depth = 0.1 + hash11(slot + 4.0) * 0.18;
   vec3 b = vec3(0.12, h, depth);
-  float d = sdRBox(q - vec3(cx, h, 0.0), b, 0.045);
+  float d = sdRBox(q - vec3(cx, h, 0.0), b, 0.04);
+  float cap = sdRBox(q - vec3(cx, h * 2.0 + 0.03, 0.0), vec3(b.x * 1.05, 0.02, b.z * 1.05), 0.01);
+  if (cap < d) { d = cap; g_id = 4.0; g_aux = u; }
+  else { g_id = 1.0; g_aux = u; }
   d = max(d, abs(q.x) - 6.1);
-  g_id = 1.0; g_aux = slot / 26.0;
   if (floorD < d) { d = floorD; g_id = 0.0; }
   return d;
 }
@@ -979,7 +981,7 @@ float march(vec3 ro, vec3 rd, float tmax, out float id, out float aux) {
     vec3 p = ro + rd * t;
     float d = map(p);
     if (d < 0.0012 * t + 0.0006) { id = g_id; aux = g_aux; return t; }
-    t += d * 0.85;
+    t += d * 0.72;
     if (t > tmax) break;
   }
   return -1.0;
@@ -1046,18 +1048,17 @@ vec3 brdf(vec3 n, vec3 v, vec3 l, Mat m, vec3 lc) {
 vec3 shade(vec3 p, vec3 rd, vec3 n, Mat m, float shadows) {
   if (uMode == 16 && m.alb == vec3(0.0) && m.emis == vec3(0.0)) return vec3(0.0);
   vec3 v = -rd;
-  vec3 col = m.emis;
-  /* The makeover's lighting lift rides the EXISTING rig: key warms with the
-     mix, the fill takes the beat pulse. Two extra brdf calls (rim GGX plus a
-     point-light accent) measured as board-wide compile/occupancy tax on all
-     23 scenes — including ones that never reached them — so the pulse moves
-     through these same evaluations instead of new ones. */
   vec3 key = normalize(vec3(0.55, 0.75, -0.4));
-  vec3 kc = palf(0.45) * (1.15 + uLevel * 0.8 + uBeat * 0.35);
+  /* Glow used to be the whole pixel, so a box was one flat colour. Wrapping
+     it with the key gives every face a lit side and a dark side. */
+  float wrap = clamp(dot(n, key) * 0.65 + 0.35, 0.18, 1.0);
+  vec3 hot = mix(m.emis, vec3(dot(m.emis, vec3(0.2126, 0.7152, 0.0722))) * 1.35, 0.28);
+  vec3 col = hot * wrap;
+  vec3 kc = mix(vec3(1.0, 0.97, 0.92), palf(0.55), 0.4) * (1.45 + uLevel * 0.7 + uBeat * 0.3);
   float sh = shadows > 0.5 ? softShadow(p + n * 0.01, key, 12.0) : 1.0;
   col += brdf(n, v, key, m, kc) * sh;
   vec3 fill = normalize(vec3(-0.6, 0.35, 0.55));
-  col += brdf(n, v, fill, m, palf(0.72) * (0.5 + uBeat * 0.62));
+  col += brdf(n, v, fill, m, mix(vec3(0.75, 0.82, 0.95), palf(0.8), 0.35) * (0.55 + uBeat * 0.4));
   /* AO rides the same flag as the shadow: the calls that skip one (bounce
      shading inside reflections and glass, the self-lit sphere fields) are
      the ones where three more SDF taps per pixel buy nothing visible */
@@ -1447,7 +1448,7 @@ void main() {
     texture(uBloom, uv - d * ca).b);
   /* bloom takes on the palette's highlight hue, so glow reads as the
      colourway rather than white haze */
-  bl *= mix(vec3(1.0), uTintHi * 1.5, 0.3);
+  bl *= mix(vec3(1.0), uTintHi, 0.12);
   col += bl * uBloomAmt * 1.6 * (1.0 + uDrop * 0.9);
 
   col *= uExposure * (1.0 + uBeat * 0.18 + uDrop * 0.28);
@@ -1461,9 +1462,8 @@ void main() {
      cohesive colourway */
   float lg = dot(col, vec3(0.2126, 0.7152, 0.0722));
   vec3 tone = mix(uTintLo * 1.8, uTintHi, smoothstep(0.05, 0.85, lg));
-  col = mix(col, col * (0.55 + tone * 0.9) + uTintLo * 0.04 * (1.0 - lg), 0.22);
-  // vignette + film grain
-  col *= 1.0 - dot(d, d) * 0.65;
+  col = mix(col, col * (0.7 + tone * 0.55) + uTintLo * 0.02 * (1.0 - lg), 0.08);
+  col *= 1.0 - dot(d, d) * 0.38;
   col += (hash(gl_FragCoord.xy + fract(uTime) * 91.7) - 0.5) * 0.018;
   fragColor = vec4(col, 1.0);
 }`;
