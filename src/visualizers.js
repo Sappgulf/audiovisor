@@ -1240,14 +1240,14 @@ export class Renderer {
       p.x += p.vx * dt60;
       p.y += p.vy * dt60;
       p.vx *= Math.pow(0.985, dt60);
-      p.vy = p.vy * Math.pow(0.985, dt60) - 0.014 * dt60;
+      p.vy = p.vy * Math.pow(0.985, dt60) - (0.014 + this.sm.high * 0.04) * dt60;
       p.life -= p.decay * dt60;
       if (p.life <= 0 || p.x < -20 || p.x > w + 20 || p.y < -20 || p.y > h + 20) {
         this.particles.splice(i, 1);
         continue;
       }
       const sprite = this._dot(this._color(p.c));
-      const r = p.r * 5;
+      const r = p.r * (4.2 + this.sm.mid * 2.4 + this.beat * 1.2);
       ctx.globalAlpha = Math.max(0, 0.66 * p.life);
       ctx.drawImage(sprite, p.x - r, p.y - r, r * 2, r * 2);
     }

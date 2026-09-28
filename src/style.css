@@ -305,12 +305,15 @@ button:focus-visible, input:focus-visible {
 }
 
 .nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-40);
-  padding: 7px 16px;
+  padding: 7px 12px;
   border-radius: 999px;
   transition: all 0.18s var(--ease);
   position: relative;

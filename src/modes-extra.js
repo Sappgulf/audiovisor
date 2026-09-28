@@ -34,7 +34,7 @@ class ExtraModes {
       const c = this._color(s);
       const pts = [];
       for (let i = 0; i <= P; i++) {
-        const v = logSample(freq, i / P);
+        const v = logSample(freq, Math.pow(i / P, 0.55));
         const ang = (i / P) * span * 0.94;
         const r = inner + v * maxR * this.sensitivity * 0.85 + this.beat * minDim * 0.02;
         pts.push([Math.cos(ang) * r, Math.sin(ang) * r]);
@@ -226,7 +226,10 @@ class ExtraModes {
       for (let s = 0; s <= SEG; s++) {
         const ang = (s / SEG) * Math.PI * 2;
         let wob = 0;
-        if (freq) wob = (logSample(freq, (s / SEG + i * 0.11) % 1) - 0.5) * baseR * 0.1 * (0.4 + this.sm.level) * this.sensitivity;
+        if (freq) {
+          const u = Math.pow((s / SEG + i * 0.11) % 1, 0.55);
+          wob = (logSample(freq, u) - 0.45) * baseR * 0.12 * (0.4 + this.sm.level) * this.sensitivity;
+        }
         const r = baseR + pulse + wob;
         const x = cx + Math.cos(ang) * r * (1 + tilt);
         const y = cy + Math.sin(ang) * r * (1 - tilt);
@@ -272,7 +275,8 @@ class ExtraModes {
       const trail = [];
       for (let i = 0; i < P; i++) {
         const ang = (i / P) * Math.PI * 2 + spin;
-        const v = logSample(freq, ((i * 7 + Math.floor(this.t * 3) * 3) % P) / P);
+        const slot = ((i * 7 + Math.floor(this.t * 3) * 3) % P) / P;
+        const v = logSample(freq, Math.pow(slot, 0.55));
         const mod = Math.sin(ang * (2 + r * 2) - this.t * 1.4) * this.sm.mid * 0.4 + Math.cos(ang * 3 + this.t * 1.1) * this.sm.high * 0.5;
         const rad = baseR * (1 + v * 0.5 * this.sensitivity + mod) + this.beat * baseR * 0.06;
         const x = cx + Math.cos(ang) * rad;
@@ -323,7 +327,10 @@ class ExtraModes {
     while (this._terrainAcc >= SAMPLE) {
       this._terrainAcc -= SAMPLE;
       const row = new Float32Array(COLS);
-      for (let i = 0; i < COLS; i++) row[i] = clamp(logSample(freq, i / COLS) * this.sensitivity, 0, 1.2);
+      for (let i = 0; i < COLS; i++) {
+        const u = Math.pow(i / Math.max(1, COLS - 1), 0.62);
+        row[i] = clamp(logSample(freq, u) * this.sensitivity, 0, 1.2);
+      }
       this.terrainRows.unshift(row);
       if (this.terrainRows.length > ROWS) this.terrainRows.pop();
     }
@@ -502,10 +509,11 @@ class ExtraModes {
     const fall = 1 - Math.pow(0.88, dt60);
     const fallPeak = Math.pow(0.985, dt60);
     for (let i = 0; i < N; i++) {
-      const s0 = logSample(freq, i / N);
-      const s1 = logSample(freq, Math.min(1, (i + 0.7) / N));
+      const u = Math.pow(i / Math.max(1, N - 1), 0.62);
+      const s0 = logSample(freq, u);
+      const s1 = logSample(freq, Math.min(1, u + 0.06));
       const raw = ((s0 + s1) / 2) * this.sensitivity;
-      const weight = 1 + this.bassFocus * 1.4 * (1 - i / N);
+      const weight = 1 + this.bassFocus * 0.7 * (1 - u);
       const target = Math.min(1, raw * weight);
       const c = this.cityCols[i];
       c.v += (target - c.v) * (target > c.v ? Math.min(1, dt60 * 0.55) : fall);
@@ -526,7 +534,8 @@ class ExtraModes {
     const tall = [];
     for (let i = 0; i < N; i++) {
       const col = this.cityCols[i];
-      const bh = Math.max(8, (0.06 + col.v * 0.64) * maxH);
+      const silhouette = 0.62 + ((col.seed % 97) / 97) * 0.7;
+      const bh = Math.max(8, (0.05 + col.v * 0.78) * maxH * silhouette);
       const bodyW = bw * 0.68;
       const x = i * bw + (bw - bodyW) / 2;
       const y = baseline - bh;
@@ -776,9 +785,8 @@ class ExtraModes {
     const P = this.quality === 'low' ? 48 : 64;
     const pts = [];
     for (let i = 0; i < P; i++) {
-      const u = i / P;
-      const ang = u * Math.PI * 2;
-      const rip = freq ? logSample(freq, u) : 0;
+      const ang = (i / P) * Math.PI * 2;
+      const rip = freq ? logSample(freq, Math.pow(i / P, 0.55)) : 0;
       const harm1 = Math.sin(ang * 3 + this.t * 1.4) * this.sm.mid * 0.10;
       const harm2 = Math.cos(ang * 5 - this.t * 2.2) * this.sm.high * 0.08;
       const r = baseR * (1 + rip * 0.42 * this.sensitivity + harm1 + harm2 + this.beat * 0.08);
@@ -996,7 +1004,7 @@ class ExtraModes {
     for (let y = 0; y <= rows; y++) {
       ctx.beginPath();
       for (let x = 0; x <= cols; x++) {
-        const u = x / cols;
+        const u = Math.pow(x / cols, 0.62);
         const v = freq ? logSample(freq, u) : 0;
         const px = x * cw;
         const py = rowY(y);
@@ -1007,7 +1015,7 @@ class ExtraModes {
         else ctx.lineTo(px + pull, py + off);
       }
       const depth = y / rows;
-      ctx.strokeStyle = hexRgba(this._color(y % this.theme.colors.length), 0.10 + depth * 0.16);
+      ctx.strokeStyle = hexRgba(this._color(y % this.theme.colors.length), 0.16 + depth * 0.22);
       ctx.lineWidth = 0.7 + depth * 0.9;
       ctx.stroke();
     }
@@ -1015,8 +1023,8 @@ class ExtraModes {
     for (let x = 0; x <= cols; x++) {
       ctx.beginPath();
       for (let y = 0; y <= rows; y++) {
-        const u = x / cols;
-        const v = freq ? logSample(freq, y / rows) : 0;
+        const u = Math.pow(x / cols, 0.62);
+        const v = freq ? logSample(freq, Math.min(1, u * 0.7 + (y / rows) * 0.3)) : 0;
         const px = x * cw;
         const py = rowY(y);
         const off = Math.sin(u * 6 + this.t * 1.4 + y * 0.22) * v * 26 * this.sensitivity;
