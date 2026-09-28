@@ -2696,6 +2696,16 @@ html, body {
   /* the mode grid is the main browsing surface on a phone — two columns of
      comfortably tappable cards beats three cramped ones */
   .mode-card { min-height: 64px; }
+
+  /* The labeled nav is absolutely centered and overflows a phone bar.
+     Icons stay; the wordmark yields so Settings remains on screen. */
+  .nav-label { display: none; }
+  .pill-nav { position: static; transform: none; padding: 4px; }
+  .nav-link { padding: 8px; gap: 0; }
+  .brand .wordmark { display: none; }
+  .topbar { gap: 8px; }
+  .stage-overlays { top: 10px; left: 10px; }
+  .data-chip { padding: 5px 8px; }
 }
 
 /* ---------- bottom-sheet affordances (phone only) ---------- */
@@ -2755,7 +2765,9 @@ html, body {
    ========================================================================== */
 
 @media (max-height: 500px) and (orientation: landscape) {
-  /* claw back vertical space from the chrome */
+  .nav-label { display: none; }
+  .pill-nav { position: static; transform: none; }
+  .brand .wordmark { display: none; }
   .topbar {
     height: 46px;
     margin-top: calc(6px + var(--sat));
@@ -3125,11 +3137,11 @@ html, body {
 .track-info:not(.has-track) .track-name { display: none; }
 
 @media (max-width: 640px) {
-  .dropzone { width: 184px; }
+  .dropzone { width: min(220px, 62vw); }
   .drop-icon-circle { width: 64px; height: 64px; }
-  .drop-actions { bottom: 14px; }
+  .drop-actions { bottom: 16px; gap: 10px; }
   .dropzone .browse-btn,
-  .dropzone .drop-secondary { width: 36px; height: 36px; min-height: 36px; }
+  .dropzone .drop-secondary { width: 44px; height: 44px; min-height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
