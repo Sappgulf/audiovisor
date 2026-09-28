@@ -383,6 +383,29 @@ export class AudioEngine {
   }
 
   /**
+   * Queue a buffer we rendered ourselves (the built-in demo). Same path as a
+   * decoded file, so seek, FX and the analysers all apply.
+   */
+  enqueueBuffer(buffer, meta) {
+    this._ensureCtx();
+    this.queue.push({
+      buffer,
+      file: null,
+      meta: {
+        ...meta,
+        sampleRate: buffer.sampleRate,
+        channels: buffer.numberOfChannels,
+        duration: buffer.duration,
+      },
+    });
+    if (this.queueIndex === -1) {
+      this.queueIndex = 0;
+      this._applyQueueItem(0);
+    }
+    if (this.onQueueChange) this.onQueueChange();
+  }
+
+  /**
    * Decoded audio is held uncompressed: a five-minute stereo track is ~100MB
    * of Float32, so a dropped-in album can exhaust the tab.
    *
@@ -479,7 +502,8 @@ export class AudioEngine {
     const src = this.ctx.createBufferSource();
     src.buffer = this.buffer;
     src.playbackRate.value = this.speed;
-    src.loop = this.loop;
+    // The demo is a short loop; keep it cycling until a real track replaces it.
+    src.loop = this.loop || !!this.track?.demo;
     this.sourceGain = this.ctx.createGain();
     this.sourceGain.gain.value = 1;
     src.connect(this.sourceGain);

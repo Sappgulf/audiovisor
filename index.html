@@ -152,6 +152,10 @@
                   <span class="ic" data-icon="plus" aria-hidden="true"></span>
                   <span class="sr-only">Choose an audio track</span>
                 </label>
+                <button class="drop-secondary icon-btn" id="play-demo" type="button" title="Play the built-in demo" aria-label="Play the built-in demo">
+                  <span class="ic" data-icon="play" aria-hidden="true"></span>
+                  <span class="sr-only">Play the built-in demo</span>
+                </button>
                 <button class="drop-secondary icon-btn" id="explore-modes" type="button" title="Explore visual modes" aria-label="Explore visual modes">
                   <span class="ic" data-icon="orbit" aria-hidden="true"></span>
                   <span class="sr-only">Explore visual modes</span>
@@ -179,30 +183,30 @@
             </button>
           </div>
           <div class="drawer-tabbar" role="tablist" aria-label="Settings sections">
-            <button class="drawer-tab" id="tab-source" data-tab="source" role="tab" aria-controls="panel-source" aria-selected="false" title="Source">
-              <span class="ic" data-icon="music2" aria-hidden="true"></span><span class="sr-only">Source</span>
+            <button class="drawer-tab" id="tab-source" data-tab="source" role="tab" aria-controls="panel-source" aria-selected="false">
+              <span class="ic" data-icon="music2" aria-hidden="true"></span><span class="tab-label">Source</span>
             </button>
-            <button class="drawer-tab" id="tab-look" data-tab="look" role="tab" aria-controls="panel-look" aria-selected="false" title="Look">
-              <span class="ic" data-icon="orbit" aria-hidden="true"></span><span class="sr-only">Look</span>
+            <button class="drawer-tab" id="tab-look" data-tab="look" role="tab" aria-controls="panel-look" aria-selected="false">
+              <span class="ic" data-icon="orbit" aria-hidden="true"></span><span class="tab-label">Look</span>
             </button>
-            <button class="drawer-tab" id="tab-audio" data-tab="audio" role="tab" aria-controls="panel-audio" aria-selected="false" title="Audio">
-              <span class="ic" data-icon="activity" aria-hidden="true"></span><span class="sr-only">Audio</span>
+            <button class="drawer-tab" id="tab-audio" data-tab="audio" role="tab" aria-controls="panel-audio" aria-selected="false">
+              <span class="ic" data-icon="activity" aria-hidden="true"></span><span class="tab-label">Audio</span>
             </button>
-            <button class="drawer-tab" id="tab-studio" data-tab="studio" role="tab" aria-controls="panel-studio" aria-selected="false" title="Studio">
-              <span class="ic" data-icon="sparkles" aria-hidden="true"></span><span class="sr-only">Studio</span>
+            <button class="drawer-tab" id="tab-studio" data-tab="studio" role="tab" aria-controls="panel-studio" aria-selected="false">
+              <span class="ic" data-icon="sparkles" aria-hidden="true"></span><span class="tab-label">Studio</span>
             </button>
             <div class="drawer-tab-ink" id="drawer-tab-ink" aria-hidden="true"></div>
           </div>
           <div class="drawer-scroll">
           <div class="drawer-panel" id="panel-source" data-panel="source" role="tabpanel" aria-labelledby="tab-source">
             <section>
-              <h3 class="section-title sr-only">Connect</h3>
+              <h3 class="section-title">Connect</h3>
 
               <div id="connect-root"></div>
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title sr-only">Social Feed</h3>
+              <h3 class="section-title">Social Feed</h3>
 
               <div id="social-feed" style="display:flex; flex-direction:column; gap:8px; max-height:160px; overflow-y:auto"></div>
               <div style="display:flex; gap:6px; margin-top:8px">
@@ -213,7 +217,7 @@
           </div>
           <div class="drawer-panel" id="panel-look" data-panel="look" role="tabpanel" aria-labelledby="tab-look">
             <section>
-              <h3 class="section-title sr-only">Stage Mode</h3>
+              <h3 class="section-title">Stage Mode</h3>
 
               <input id="mode-filter" class="connect-input drawer-filter" type="search" placeholder="Filter modes…" aria-label="Filter stage modes" autocomplete="off" />
               <div class="mode-list" id="mode-list"></div>
@@ -230,43 +234,44 @@
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title sr-only">Theme Mood</h3>
+              <h3 class="section-title">Theme Mood</h3>
 
               <div class="theme-row" id="theme-row"></div>
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title sr-only">Autopilot</h3>
+              <h3 class="section-title">Autopilot</h3>
 
               <div class="fx-row">
                 <button class="fx-chip" id="autopilot-chip" data-fx="autopilot"><span class="chip-txt">Auto</span></button>
                 <button class="fx-chip" id="autodj-chip" data-fx="autodj"><span class="chip-txt">Auto DJ</span></button>
                 <button class="fx-chip" id="sleep-chip" data-fx="sleep"><span class="chip-txt" id="sleep-label">Sleep</span></button>
               </div>
+
             </section>
           </div>
           <div class="drawer-panel" id="panel-audio" data-panel="audio" role="tabpanel" aria-labelledby="tab-audio">
             <section>
-              <h3 class="section-title sr-only">Engine Control</h3>
+              <h3 class="section-title">Engine Control</h3>
 
               <div class="sliders" id="sliders"></div>
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title sr-only">EQ — 5 Band</h3>
+              <h3 class="section-title">EQ — 5 Band</h3>
 
               <div class="eq-bands" id="eq-bands"></div>
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title sr-only">FX Chain</h3>
+              <h3 class="section-title">FX Chain</h3>
 
               <div class="fx-row" id="fx-row"></div>
             </section>
           </div>
           <div class="drawer-panel" id="panel-studio" data-panel="studio" role="tabpanel" aria-labelledby="tab-studio">
             <section>
-              <h3 class="section-title sr-only">AI Remix Studio</h3>
+              <h3 class="section-title">AI Remix Studio</h3>
 
               <div class="fx-row" id="ai-stems"></div>
               <div class="fx-row" id="ai-presets" style="margin-top:8px"></div>
@@ -274,7 +279,7 @@
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title sr-only">Collab &amp; Share</h3>
+              <h3 class="section-title">Collab &amp; Share</h3>
 
               <div class="fx-row" style="margin-bottom:10px">
                 <button class="fx-chip" id="share-btn"><span class="ic ic-sm" data-icon="link"></span><span class="chip-txt">Copy Link</span></button>
@@ -289,7 +294,7 @@
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title sr-only">System</h3>
+              <h3 class="section-title">System</h3>
 
               <div class="fx-row" style="margin-bottom:10px">
                 <button class="mini-btn" id="settings-export">Export</button>

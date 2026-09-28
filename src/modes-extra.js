@@ -1422,10 +1422,10 @@ class ExtraModes {
         && Math.random() < 1 - Math.pow(1 - blipP, dt60)) {
       const u = Math.random();
       this.radarBlips.push({
-        ang: this._sweepAng - Math.random() * 0.25,
-        dist: R * (0.15 + u * 0.8),
-        life: 0.7,
-        decay: 0.35 + logSample(freq, u) * 0.5,
+        ang: this._sweepAng - Math.random() * Math.PI * 1.15,
+        dist: R * (0.18 + u * 0.74),
+        life: 1,
+        decay: 0.1 + logSample(freq, u) * 0.12,
         c: 1 + Math.floor(u * 3),
         big: false,
       });
@@ -1683,8 +1683,8 @@ class ExtraModes {
       /* cell body — source-over so overlapping cells stay saturated,
          never stack to white */
       ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = clamp(0.62 + amp * 0.26, 0, 0.86);
-      ctx.fillStyle = col;
+      ctx.globalAlpha = clamp(0.72 + amp * 0.2, 0, 0.92);
+      ctx.fillStyle = this._tint(col, -0.38);
       ctx.fillRect(c.px - c.s / 2, c.py - c.s / 2, c.s, c.s);
       /* Hot top face (fake isometric). This was painted in near-white on
          every one of the 64 cells, so a loud frame turned the whole stack

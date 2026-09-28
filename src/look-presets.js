@@ -40,21 +40,55 @@ export function createLookPresets({ state, fxNames, toast, setMode, setTheme, se
     toast(`LOOK <b>recalled</b> from slot ${slot}`, { duration: 1600 });
   }
 
-  if (row) {
+  function slotLabel(slot) {
+    return `Look ${slot}`;
+  }
+
+  function paint() {
+    if (!row) return;
     const stored = readPresets(vocab());
     for (const slot of PRESET_SLOTS) {
+      const b = row.querySelector(`[data-slot="${slot}"]`);
+      if (!b) continue;
+      b.classList.toggle('is-active', !!stored[slot]);
+      const txt = b.querySelector('.chip-txt');
+      if (txt) txt.textContent = slotLabel(slot);
+      const mode = MODES.find((m) => m.id === stored[slot]?.mode);
+      const theme = THEMES.find((t) => t.id === stored[slot]?.theme);
+      const saved = [mode?.name, theme?.name].filter(Boolean).join(' · ');
+      b.title = stored[slot]
+        ? `Recall ${saved || slotLabel(slot)}. Right-click to overwrite.`
+        : 'Empty. Right-click to save the current look here.';
+    }
+  }
+
+  if (row) {
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'fx-chip';
+    save.title = 'Save the current mode, theme and FX into the next open slot';
+    save.innerHTML = '<span class="chip-txt">Save look</span>';
+    save.addEventListener('click', () => {
+      const stored = readPresets(vocab());
+      const slot = PRESET_SLOTS.find((s) => !stored[s]) || PRESET_SLOTS[0];
+      if (savePreset(slot)) paint();
+    });
+    row.appendChild(save);
+
+    for (const slot of PRESET_SLOTS) {
       const b = document.createElement('button');
-      b.className = 'fx-chip' + (stored[slot] ? ' is-active' : '');
-      b.title = 'Click to recall · right-click to save';
-      b.innerHTML = `<span class="chip-dot"></span><span class="chip-txt">P${slot}</span>`;
+      b.type = 'button';
+      b.className = 'fx-chip';
+      b.dataset.slot = String(slot);
+      b.innerHTML = '<span class="chip-dot"></span><span class="chip-txt"></span>';
       b.addEventListener('click', () => loadPreset(slot));
       b.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        // only light the chip if the write actually landed
-        if (savePreset(slot)) b.classList.add('is-active');
+        if (savePreset(slot)) paint();
       });
       row.appendChild(b);
     }
+    paint();
   }
 
   return { savePreset, loadPreset };

@@ -643,6 +643,22 @@ const { openFilePicker, dropzone } = createFileLoader({
   closeMore,
 });
 
+$('play-demo')?.addEventListener('click', async () => {
+  const { renderDemoTrack, DEMO_META } = await import('./demo-track.js');
+  if (engine.captureActive) await engine.toggleCapture();
+  if (engine.isExternal()) engine.pause();
+  engine.stopStream();
+  engine._ensureCtx();
+  const buffer = renderDemoTrack(engine.ctx);
+  engine.enqueueBuffer(buffer, DEMO_META);
+  dropzone.classList.add('is-hidden');
+  if (document.documentElement.classList.contains('mode-unchosen')) setMode('bars');
+  try { updateTrackUI(); } catch (err) { console.error('track UI failed', err); }
+  engine.play();
+  ensureAudible();
+  toast('Playing <b>Night Circuit</b> — drop your own track any time');
+});
+
 
 /* ---------- media session & transport ---------- */
 

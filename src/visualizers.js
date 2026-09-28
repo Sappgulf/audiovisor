@@ -324,8 +324,11 @@ export class Renderer {
    */
   _tint(hex, amount = 0.55) {
     const n = parseInt(hex.slice(1), 16);
-    const mix = (v, target) => Math.round(v + (target - v) * amount);
-    return `rgb(${mix((n >> 16) & 255, 255)}, ${mix((n >> 8) & 255, 252)}, ${mix(n & 255, 243)})`;
+    const towardLight = amount >= 0;
+    const a = Math.min(1, Math.abs(amount));
+    const target = towardLight ? [255, 252, 243] : [14, 12, 10];
+    const mix = (v, t) => Math.round(v + (t - v) * a);
+    return `rgb(${mix((n >> 16) & 255, target[0])}, ${mix((n >> 8) & 255, target[1])}, ${mix(n & 255, target[2])})`;
   }
 
   _dot(c) { return this._dotSprites.get(c); }
@@ -854,15 +857,27 @@ export class Renderer {
     }
     ctx.fillStyle = this._floorGrads[c0];
     ctx.fillRect(0, horizon, w, h - horizon);
+    ctx.strokeStyle = hexRgba(c0, 0.45);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(8, horizon + 0.5);
+    ctx.lineTo(w - 8, horizon + 0.5);
+    ctx.stroke();
 
     const colors = [];
     const amps = new Array(N);
     const hueFlow = Math.floor(this.t * 0.5);
     for (let i = 0; i < N; i++) {
-      const v = logSample(freq, i / N) * this.sensitivity;
-      const weight = 1 + this.bassFocus * 2.2 * (1 - i / N);
-      const bounce = 1 + this.beat * 0.34 * (1 - i / N);
-      amps[i] = clamp(v * weight * bounce, 0.008, 1.25);
+      /* A linear index spends most columns on the bass, and the bass weight
+         then pins every one of them to the ceiling — the left of the stage
+         reads as a wall. Curve the index so mids get columns, and a soft
+         knee so loud bins stay different from each other. */
+      const u = Math.pow(i / Math.max(1, N - 1), 0.72);
+      const v = logSample(freq, u) * this.sensitivity;
+      const weight = 1 + this.bassFocus * 1.05 * (1 - u);
+      const bounce = 1 + this.beat * 0.28 * (1 - u);
+      const raw = v * weight * bounce;
+      amps[i] = clamp(raw / (1 + raw * 0.55), 0.008, 1.12);
       if (amps[i] >= this.peaks[i]) { this.peaks[i] = amps[i]; this.peakVels[i] = 0; }
       else { this.peakVels[i] += 3.2 * dt; this.peaks[i] = Math.max(amps[i], this.peaks[i] - this.peakVels[i] * dt); }
       colors[i] = this._color(Math.floor((i / N) * this.theme.colors.length + hueFlow) % this.theme.colors.length);
@@ -907,7 +922,7 @@ export class Renderer {
     ctx.save();
     ctx.translate(0, horizon * 2);
     ctx.scale(1, -1);
-    ctx.globalAlpha = 0.16;
+    ctx.globalAlpha = 0.28;
     for (let i = 0; i < N; i++) {
       const bh = amps[i] * maxH;
       if (bh < 1.5) continue;
