@@ -30,7 +30,7 @@ describe('App boot smoke (jsdom)', () => {
   beforeAll(async () => {
     errors = [];
     frames = 0;
-    let html = readFileSync('dist/index.html', 'utf8');
+    let html = readFileSync('index.html', 'utf8');
     /* jsdom cannot execute ESM, and since the app gained dynamic imports the
        shipped entry chunk is a real module (it exports bindings for the lazy
        chunks). So build a dedicated single-file IIFE for this smoke test:

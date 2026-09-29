@@ -142,6 +142,8 @@ describe('AudioEngine', () => {
     });
 
     expect(engine.activeInput).toBe('apple');
+    expect(engine.getData()).toBeNull();
+    expect(engine.getLevels().level).toBe(0);
     expect(engine.getTime()).toBe(12);
     expect(engine.getDuration()).toBe(180);
     engine.play();

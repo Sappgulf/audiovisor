@@ -107,9 +107,9 @@ export function mapApplePlaylist(item) {
 /**
  * Apple Music account and library bridge.
  *
- * MusicKit owns the user authorization and music user token. AUDIOVISOR only
- * keeps the configured developer token in the build and asks MusicKit for
- * playlist data/playback at runtime.
+ * MusicKit owns user authorization and the music user token. AUDIOVISOR
+ * obtains a signed developer token from its server endpoint (or a local
+ * build override) and asks MusicKit for playlist data/playback at runtime.
  */
 export class AppleMusicClient {
   constructor() {

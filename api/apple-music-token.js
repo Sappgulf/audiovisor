@@ -68,7 +68,7 @@ export default function handler(req, res) {
   } catch (err) {
     const permanent = err && err.permanent === true;
     res.status(permanent ? 501 : 503).json({
-      error: err.message || 'Apple Music token unavailable',
+      error: permanent ? err.message : 'Apple Music token unavailable',
       configured: !permanent,
     });
   }

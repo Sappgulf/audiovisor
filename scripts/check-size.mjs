@@ -26,8 +26,10 @@ const BUDGETS = {
   /* This polish pass adds the first-run audio card and source-accurate tempo
      display; each component grew by about 0.1kB gzip. Reserve 0.25kB for
      these user-facing additions without changing the 101kB total ceiling. */
+  /* v8.17: the responsive auto-hiding transport and honest audio-only player
+     add ~0.2kB gzip of CSS. Keep the JS ceilings fixed. */
   entry: 58.25 * 1024, // initial JS chunk, gzipped
-  css: 12.75 * 1024,
+  css: 13.1 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is
      unchanged; only the total went up with the features. That is the point

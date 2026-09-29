@@ -1114,8 +1114,8 @@ export class Renderer {
       /* True goniometer: plot L against R over time, rotated 45° so an
          in-phase (mono) signal collapses to a vertical line and stereo
          width reads as horizontal spread. The delayed-self-correlation
-         trace below is what runs when no L/R tap exists (synth feeds,
-         mono streams) — same phosphor, honest data in both cases. */
+         trace below is what runs when no L/R tap exists (mono sources) —
+         same phosphor, honest data in both cases. */
       const n = Math.min(this.stereoL.length, this.stereoR.length);
       const step = Math.max(1, Math.floor(n / N));
       for (let i = 0; i < N; i++) {

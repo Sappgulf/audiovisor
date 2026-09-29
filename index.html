@@ -130,6 +130,20 @@
             <span class="mono stage-context-theme sr-only" id="active-theme-label">Warm Brass</span>
           </div>
 
+          <div class="provider-playback" id="provider-playback" hidden aria-live="polite">
+            <div class="provider-playback-art" id="provider-playback-art">
+              <img id="provider-cover" alt="" hidden />
+              <span class="ic" id="provider-placeholder" data-icon="music2" aria-hidden="true"></span>
+            </div>
+            <div class="provider-playback-copy">
+              <span class="mono provider-playback-label" id="provider-playback-label">MUSIC ACCOUNT</span>
+              <strong id="provider-playback-title">Choose a song</strong>
+              <span id="provider-playback-artist"></span>
+              <p id="provider-playback-note">Account playback is available here. Visual modes use audio you add or have permission to visualize.</p>
+              <label class="provider-playback-add" for="file-input" role="button" tabindex="0">Visualize a local file</label>
+            </div>
+          </div>
+
           <div class="idle-visual" aria-hidden="true">
             <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
           </div>
@@ -312,7 +326,7 @@
         </aside>
       </div>
 
-      <footer class="transport">
+      <footer class="transport" id="transport">
         <div class="track-info" id="track-info">
           <button class="ghost-btn" id="save-library-btn" title="Save to library (with edits)" aria-label="Save to library" style="position:absolute; top:6px; right:6px; width:26px; height:26px; z-index:2;"><span class="ic ic-sm" data-icon="layers"></span></button>
           <div class="track-art" id="track-art"><span class="ic" data-icon="music2"></span></div>

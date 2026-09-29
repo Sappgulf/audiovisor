@@ -45,8 +45,8 @@ export function createPlayState({ engine, panels, setIcon, setToggle, getDropzon
     switch (engine.activeInput) {
       case 'mic': text = playing || engine.micActive ? 'Live · Mic' : 'Mic ready'; break;
       case 'capture': text = 'Live · Capture'; break;
-      case 'spotify': text = playing ? 'SPOTIFY · Live' : 'SPOTIFY · Paused'; break;
-      case 'apple': text = playing ? 'APPLE MUSIC · Live' : 'APPLE MUSIC · Paused'; break;
+      case 'spotify': text = playing ? 'SPOTIFY · Playing' : 'SPOTIFY · Paused'; break;
+      case 'apple': text = playing ? 'APPLE MUSIC · Playing' : 'APPLE MUSIC · Paused'; break;
       case 'stream': text = playing ? 'STREAM · Live' : 'STREAM · Paused'; break;
       case 'track': text = playing ? 'Live · Track' : 'Paused · Track'; break;
     }

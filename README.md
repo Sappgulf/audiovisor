@@ -1,18 +1,18 @@
 # AUDIOVISOR — v8.17.0
 
-A hifi, real-time music visualizer for the browser. Drop in a track, stream a URL, capture any app's audio, or connect Spotify / Apple Music — the engine renders the frequency spectrum live across twenty-three stage modes, thirty-two themes, a full FX chain (now with Chop N Screwed), tempo-locked beat tracking, a persistent Library with remix saves, true cinema fullscreen, session recording, and autopilot.
+A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-three stage modes and thirty-two themes. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
 
 ### Sources
 - **Local files** — drag & drop, the **Add** control in the transport, or **Browse files** on the stage (MP3, WAV, FLAC, OGG, M4A…); multi-select builds a playlist queue
-- **Spotify Connect** — log in with PKCE OAuth, search your library, play tracks/playlists through the built-in Web Playback SDK player *(Premium required for playback)*
+- **Spotify Connect (approval-gated)** — PKCE OAuth and Web Playback SDK code is available for an approved deployment; this public deployment has no Spotify Client ID *(Premium required for playback)*
 - **Apple Music** — authorize with MusicKit on the Web, browse personal playlists, and start playback in Apple Music's protected player *(Apple Music subscription required for playback)*
-- **Tab / system capture** — visualize audio from *any* app: Spotify desktop, Apple Music, YouTube, anything playing on your machine (Chrome/Edge; share a tab with "share tab audio" enabled)
-- **Direct URLs** — stream any `http(s)` audio link (radio, podcasts, direct MP3s)
+- **Tab / system capture** — visualize audio you have permission to use (Chrome/Edge; share a tab with "share tab audio" enabled)
+- **Direct URLs** — play `http(s)` audio links (radio, podcasts, direct MP3s); streams that block browser audio analysis use a still player view
 - **Live mic input** — party mode; analysis-only (never routed to speakers, no feedback)
 
-> **Note on streaming services:** DRM-protected streams (Spotify/Apple Music in-app playback) can't be tapped by the Web Audio API directly. When Spotify plays through the built-in player without capture, AUDIOVISOR drives the visuals with a procedural synth feed seeded from the track — hit **Capture** and share the current tab for true spectrum-reactive visuals of the actual audio.
+> **Streaming accounts:** MusicKit and Spotify do not expose decoded song audio to this app. Their published terms also restrict synchronizing their recordings with other visual content. The account player therefore shows a still playback view. Local files, analyzable direct URLs, and permitted live inputs provide real audio analysis for the visualizer.
 
 ### Raytraced stage (v8.8)
 Every one of the 23 stage modes is now a **live raytraced scene** rendered on a WebGL2 ray-marcher — the Canvas2D engine remains as a fallback and can be toggled back on at any time (Look tab → **Raytrace**).
@@ -109,7 +109,9 @@ Every one of the 23 stage modes is now a **live raytraced scene** rendered on a 
 - Autopilot — cycles modes and themes every 12s
 - MediaSession — OS media keys, lock-screen metadata & album art, seek-to
 
-## Spotify setup
+## Spotify setup (approved use only)
+
+Spotify's [Developer Policy](https://developer.spotify.com/policy) restricts synchronizing recordings with visual media and integrating streams or content from another service. AUDIOVISOR's production deployment leaves the Spotify Client ID unset while permission for this multi-service product is unresolved. The steps below are for a deployment with the required provider rights.
 
 1. Create an app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
 2. Add this app's exact URL as a **Redirect URI** (shown in Settings → Connect → SETUP), e.g. `http://localhost:5173/` for dev or your deployed URL
@@ -144,7 +146,7 @@ VITE_APPLE_MUSIC_DEVELOPER_TOKEN=your_signed_developer_token
 
 3. Redeploy, then open Settings → Source → Apple Music → **Connect Apple Music**
 
-Guest mode supports local files, URLs, microphone, and capture without an account. Spotify and Apple Music playlist access requires the user's own provider account. Playlist playback stays inside the provider player; use **Capture** and share the current tab when you want the actual protected audio spectrum instead of AUDIOVISOR's synth fallback. Disconnect before handing a shared device to another person.
+Guest mode supports local files, URLs, microphone, and permitted capture without an account. Spotify and Apple Music playlist access requires the user's own provider account. Playlist playback stays inside the provider player and does not drive the visual modes. Disconnect before handing a shared device to another person.
 
 ## Mobile
 
@@ -223,7 +225,7 @@ Requires Node 22.12+ in the 22.x line, 24.x, or 26+ for the full build and test 
 ## Tests & lint
 
 ```bash
-npm test        # vitest — engine, beat tracker, synth feed, PKCE, utils,
+npm test        # vitest — engine, beat tracker, PKCE, utils,
                 #          settings schema, palette, per-mode stage render,
                 #          pointer drags, sheet gestures, PWA/responsive contract,
                 #          plugin registry, MIDI mapping, offline tempo analysis

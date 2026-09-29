@@ -222,18 +222,25 @@ float scBars(vec3 p) {
 
 /* 1 waves — layered silk ribbons displaced by the waveform */
 float scWaves(vec3 p) {
+  /* Portrait stages turn the river upright. Keeping a six-unit horizontal
+     scene on a 390px phone only shows a flat crop through its middle. */
+  float aspect = uRes.x / max(uRes.y, 1.0);
+  float portrait = 1.0 - smoothstep(0.50, 0.85, aspect);
+  vec3 q = p;
+  q.xy *= rot(portrait * PI * 0.5);
   float d = 1e9;
   for (int i = 0; i < 5; i++) {
     float fi = float(i);
     float z = -fi * 1.15;
-    float w = wav(p.x * 0.055 + fi * 0.21 + uTime * 0.06) * (1.0 + uLevel * 1.6);
-    float y = w * (1.1 - fi * 0.14) + sin(p.x * 0.7 + uTime * 1.1 + fi) * 0.12;
-    float s = abs(p.y - y) - 0.045 - uBeat * 0.02;
-    s = max(s, abs(p.z - z) - 0.12);
-    s = max(s, abs(p.x) - 6.2);
+    float w = wav(q.x * 0.055 + fi * 0.21 + uTime * 0.06) * (1.0 + uLevel * 1.6);
+    float y = w * (1.1 - fi * 0.14) * (1.0 + uBeat * 0.24)
+            + sin(q.x * 0.7 + uTime * 1.1 + fi) * (0.12 + uMid * 0.14);
+    float s = abs(q.y - y) - 0.045 - uBeat * 0.02;
+    s = max(s, abs(q.z - z) - 0.12);
+    s = max(s, abs(q.x) - 6.2);
     if (s < d) { d = s; g_id = 2.0; g_aux = fi / 5.0; }
   }
-  float fl = p.y + 2.6;
+  float fl = p.y + 2.6 + portrait * 20.0;
   if (fl < d) { d = fl; g_id = 0.0; }
   return d;
 }
@@ -247,16 +254,16 @@ float scScope(vec3 p) {
   float bound = length(p) - 4.3;
   if (bound > 0.3) { g_id = 26.0; g_aux = 0.22; return bound; }
   float d = 1e9;
-  float ring = abs(sdTorus(p.xzy, vec2(2.55, 0.012))) - 0.003;
+  float ring = abs(sdTorus(p.xzy, vec2(2.55 + uBass * 0.07, 0.026))) - 0.004;
   if (ring < d) { d = ring; g_id = 1.0; g_aux = 0.6; }
-  float tick = abs(sdTorus(p.xzy, vec2(1.55, 0.008))) - 0.002;
+  float tick = abs(sdTorus(p.xzy, vec2(1.55 + uHigh * 0.06, 0.014))) - 0.003;
   if (tick < d) { d = tick; g_id = 1.0; g_aux = 0.35; }
   /* The trace lives in a thin slab (|z| <= 0.28 + tube radius) inside r 3.8.
      Most march steps are rays heading for the housing; only walk the 40
      segments when the slab could be nearer than what is already found. */
   float slab = max(length(p.xy) - 3.8, abs(p.z) - 0.45);
   if (slab >= d) return d;
-  float rad = 0.028 + uBeat * 0.012 + uLevel * 0.012;
+  float rad = 0.046 + uBeat * 0.022 + uLevel * 0.016;
   /* The trace is radial — point k sits at angle k/40 of a turn — so only the
      segments around p's own angle can be nearest. Walk a window of 5 rather
      than all 40, and cap the result so a far segment skipped by the window
@@ -534,23 +541,23 @@ float scPrism(vec3 p) {
   v.x /= fit;
   vec3 q = v;
   q.xz *= rot(uTime * 0.18);
-  float d = sdTriPrism(q, vec2(1.38 + uBass * 0.12, 0.52));
+  float d = sdTriPrism(q, vec2(1.65 + uBass * 0.20, 0.62));
   g_id = 11.0; g_aux = 0.5;
 
-  float entry = abs(sdTorus(vec3(v.y, v.z, v.x + 1.48), vec2(0.7, 0.024))) - 0.006;
+  float entry = abs(sdTorus(vec3(v.y, v.z, v.x + 1.72), vec2(0.78, 0.029))) - 0.006;
   if (entry < d) { d = entry; g_id = 4.0; g_aux = 0.08; }
-  float exit = abs(sdTorus(vec3(v.y, v.z, v.x - 1.48), vec2(0.6 + uBeat * 0.08, 0.024))) - 0.006;
+  float exit = abs(sdTorus(vec3(v.y, v.z, v.x - 1.72), vec2(0.68 + uBeat * 0.12, 0.029))) - 0.006;
   if (exit < d) { d = exit; g_id = 4.0; g_aux = 0.92; }
 
-  float beam = sdCapsule(v, vec3(-4.1, 0.0, 0.0), vec3(-1.35, 0.0, 0.0), 0.042 + uLevel * 0.02);
+  float beam = sdCapsule(v, vec3(-4.2, 0.0, 0.0), vec3(-1.58, 0.0, 0.0), 0.055 + uLevel * 0.025);
   if (beam < d) { d = beam; g_id = 17.0; g_aux = 0.15; }
 
   for (int i = 0; i < 11; i++) {
     float t = (float(i) - 5.0) / 5.0;
     float e = spec(abs(t));
-    vec3 tip = vec3(4.15, t * (1.7 + uLevel * 0.5 + uBeat * 0.18), t * 0.38);
-    vec3 start = vec3(1.42, t * 0.11, 0.0);
-    float ray = sdCapsule(v, start, tip, 0.042 + e * 0.026);
+    vec3 tip = vec3(4.2, t * (2.18 + uHigh * 0.72 + uBeat * 0.38), t * 0.58);
+    vec3 start = vec3(1.58, t * 0.13, 0.0);
+    float ray = sdCapsule(v, start, tip, 0.055 + e * 0.035);
     if (ray < d) { d = ray; g_id = 17.0; g_aux = t * 0.5 + 0.5; }
   }
   return d * fit;
@@ -572,9 +579,9 @@ float scVoid(vec3 p) {
   float radius = length(q.xz);
   float az = atan2s(q.z, q.x);
   float inner = horizon + 0.16;
-  float outer = 2.36 + uBeat * 0.06;
-  float warp = 0.012 * sin(az * 2.0 - uTime * 0.55) + 0.006 * sin(az * 5.0 + uTime * 0.8);
-  float disc = max(abs(q.y - warp) - 0.012, max(inner - radius, radius - outer));
+  float outer = 2.50 + uBeat * 0.12;
+  float warp = 0.036 * sin(az * 2.0 - uTime * 0.55) + 0.014 * sin(az * 5.0 + uTime * 0.8);
+  float disc = max(abs(q.y - warp) - (0.036 + uBass * 0.02), max(inner - radius, radius - outer));
   if (disc < d) { d = disc; g_id = 19.0; g_aux = clamp((radius - inner) / (outer - inner), 0.0, 1.0); }
   float jet = sdCapsule(p, vec3(0.0, 1.24, 0.0), vec3(0.0, 2.25 + uDrop * 0.18, 0.0), 0.025 + uBeat * 0.009);
   float lowerJet = sdCapsule(p, vec3(0.0, -1.24, 0.0), vec3(0.0, -2.25 - uDrop * 0.18, 0.0), 0.025 + uBeat * 0.009);
@@ -591,7 +598,7 @@ float scBloom(vec3 p) {
   for (int i = 0; i < 3; i++) {
     float fi = float(i);
     float size = i == 1 ? 1.38 : 0.96;
-    vec3 head = vec3((fi - 1.0) * 1.72 * spread, 0.48 + 0.14 * sin(fi * 2.1), -0.85 - fi * 1.35);
+    vec3 head = vec3((fi - 1.0) * 1.72 * spread, 0.48 + 0.14 * sin(fi * 2.1), -1.4 - fi * 0.52);
     float stem = sdCapsule(p, head - vec3(0.0, 0.06, 0.0), vec3(head.x, -1.8, head.z), 0.024 * size);
     if (stem < d) { d = stem; g_id = 6.0; g_aux = 0.62 + fi * 0.1; }
     for (int side = 0; side < 2; side++) {
@@ -604,14 +611,15 @@ float scBloom(vec3 p) {
     float localBound = length(p - head) - 1.55 * size;
     if (localBound < d) {
       vec3 flower = p - head;
-      float phase = uTime * (0.38 + fi * 0.08) + fi * 2.0;
+      float phase = uTime * (0.38 + fi * 0.08 + uMid * 0.12) + fi * 2.0;
       float bloom = spec(0.2 + fi * 0.25) * uSens;
       for (int k = 0; k < 5; k++) {
         float angle = float(k) * TAU / 5.0 + phase;
         vec3 petal = flower;
         petal.xy *= rot(-angle);
-        petal -= vec3(0.34 * size + bloom * 0.06, 0.0, 0.0);
-        float petalD = sdEllipsoid(petal, vec3(0.36 * size + bloom * 0.08, 0.22 * size, 0.13 * size));
+        petal -= vec3(0.39 * size + bloom * 0.12 + uBeat * 0.05, 0.0, 0.0);
+        petal.yz *= rot(0.18 + uHigh * 0.24);
+        float petalD = sdEllipsoid(petal, vec3(0.40 * size + bloom * 0.11, 0.25 * size, 0.13 * size));
         if (petalD < d) { d = petalD; g_id = 4.0; g_aux = fract(float(k) / 5.0 + fi * 0.28 + 0.1); }
       }
       float heart = sdSphere(flower, 0.17 * size + uBeat * 0.04 + bloom * 0.04);
@@ -625,11 +633,11 @@ float scBloom(vec3 p) {
 float scFractal(vec3 p) {
   /* a modest camera-space scale makes its fine edges fill the frame without
      changing the iteration count or washing out the depth of the bulb */
-  vec3 seed = p * 1.46;
+  vec3 seed = p * 0.95;
   vec3 z = seed;
   float dr = 1.0, r = 0.0;
   float trap = 1e9;
-  float power = 7.5 + uBass * 4.0 + uDrop * 2.0 + sin(uTime * 0.2) * 1.5;
+  float power = 7.3 + uBass * 3.5 + uMid * 1.2 + uDrop * 2.0 + sin(uTime * 0.2) * 1.5;
   for (int i = 0; i < 11; i++) {
     r = length(z);
     trap = min(trap, r);
@@ -642,7 +650,7 @@ float scFractal(vec3 p) {
     z = zr * vec3(sin(th) * cos(ph), sin(ph) * sin(th), cos(th)) + seed;
   }
   g_id = 13.0; g_aux = clamp(trap * 1.4, 0.0, 1.0);
-  return 0.5 * log(max(r, 1e-4)) * r / dr / 1.46;
+  return 0.5 * log(max(r, 1e-4)) * r / dr / 0.95;
 }
 
 /* 19 radar — top-down phosphor scope with a swept beam and live contacts */
@@ -1288,7 +1296,7 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   float sway = sin(t * 0.21) * 0.22;
   if (uMode == 0)       { ro = vec3(sway * 2.0, 2.4 + uBeat * 0.1, 8.4); ta = vec3(0.0, 1.3, 0.0); ap = 0.035; }
   else if (uMode == 1)  { ro = vec3(sway * 1.4, 1.1, 6.6); ta = vec3(0.0, 0.0, -1.2); ap = 0.03; }
-  else if (uMode == 2)  { ro = vec3(0.0, 0.0, 5.6 + sin(t * 0.3) * 0.3); ta = vec3(0.0); ap = 0.02; }
+  else if (uMode == 2)  { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(0.0, 0.0, 5.2 + sin(t * 0.3) * 0.3); ta = vec3(0.0); ap = 0.02; fov = min(1.65, 1.6 * aspect); }
   else if (uMode == 3)  { ro = vec3(sin(t * 0.13) * 1.6, cos(t * 0.11) * 0.9, 4.25); ap = 0.022; }
   else if (uMode == 4)  { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(0.0, 0.0, 3.9); ap = 0.008; fov = 1.35 * min(1.0, aspect); }
   else if (uMode == 5)  { ro = vec3(0.0, 3.35, 6.5); ta = vec3(0.0, 0.35, -0.6); ap = 0.022; }
@@ -1298,16 +1306,16 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 9)  { ro = vec3(sin(t * 0.09) * 7.0, 3.0 + sin(t * 0.14), cos(t * 0.09) * 7.0); ta = vec3(0.0, 1.8, 0.0); ap = 0.04; }
   else if (uMode == 10) { ro = vec3(sin(t * 0.08) * 5.4, 1.6, cos(t * 0.08) * 5.4); ap = 0.0; }
   else if (uMode == 11) { ro = vec3(sin(t * 0.06) * 2.8, 4.4 + sin(t * 0.1) * 0.7, cos(t * 0.06) * 2.8); ta = vec3(0.0); ap = 0.0; }
-  else if (uMode == 12) { ro = vec3(sin(t * 0.17) * 3.6, 0.8, cos(t * 0.17) * 3.6); ap = 0.03; }
-  else if (uMode == 13) { ro = vec3(sin(t * 0.15) * 4.2, 1.3, cos(t * 0.15) * 4.2); ap = 0.035; }
+  else if (uMode == 12) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.17) * 3.6, 0.8, cos(t * 0.17) * 3.6); ap = 0.03; fov = min(1.5, 1.65 * aspect); }
+  else if (uMode == 13) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.15) * 4.2, 1.3, cos(t * 0.15) * 4.2); ap = 0.035; fov = min(1.5, 1.7 * aspect); }
   else if (uMode == 14) { ro = vec3(sin(t * 0.1) * 3.2, 1.6 + sin(t * 0.07), cos(t * 0.1) * 3.2); ap = 0.04; }
   /* a gentle orbit rather than the locked frontal shot: the slab itself
      rotates, so any camera drift now produces real parallax between beam,
      prism and fan instead of one flat diagram */
-  else if (uMode == 15) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.12) * 0.3, 0.2, 4.5 + cos(t * 0.12) * 0.1); ap = 0.004; fov = min(1.25, 2.75 * max(aspect, 0.3)); }
-  else if (uMode == 16) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.08) * 3.9, 0.18, cos(t * 0.08) * 3.9); ap = 0.004; fov = 1.2 * min(1.0, aspect); }
-  else if (uMode == 17) { ro = vec3(sin(t * 0.07) * 1.2, cos(t * 0.06) * 0.6, 3.95); ta = vec3(0.0, 0.0, -2.4); ap = 0.04; fov = 0.96; }
-  else if (uMode == 18) { ro = vec3(sin(t * 0.12) * 2.85, sin(t * 0.09) * 0.75, cos(t * 0.12) * 2.85); ap = 0.02; }
+  else if (uMode == 15) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.12) * 0.3, 0.2, 4.5 + cos(t * 0.12) * 0.1); ap = 0.004; fov = min(1.5, 1.7 * max(aspect, 0.3)); }
+  else if (uMode == 16) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.08) * 3.7, 0.48, cos(t * 0.08) * 3.7); ap = 0.004; fov = 1.35 * min(1.0, aspect); }
+  else if (uMode == 17) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.07) * 0.6, 0.14 + cos(t * 0.06) * 0.28, 2.25); ta = vec3(0.0, 0.0, -1.9); ap = 0.02; fov = min(1.8, 1.9 * aspect); }
+  else if (uMode == 18) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.12) * 2.4, sin(t * 0.09) * 0.55, cos(t * 0.12) * 2.4); ap = 0.015; fov = min(1.45, 1.5 * aspect); }
   else if (uMode == 19) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.045) * 0.04, 3.55, cos(t * 0.045) * 0.04); ta = vec3(0.0); ap = 0.0; fov = 1.32 * min(1.0, aspect); }
   else if (uMode == 20) { ro = vec3(0.0, 0.0, 4.65); ap = 0.0; }
   else if (uMode == 21) { ro = vec3(sin(t * 0.12) * 2.9, 1.95, cos(t * 0.12) * 2.9); ta = vec3(0.0, -0.1, 0.0); ap = 0.015; }
@@ -1329,6 +1337,9 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
     fov *= 1.0 - hit * 0.055;
     ap *= 1.0 + hit * 0.65;
   }
+  /* The tunnel target is camera-relative. Shared drift moves the camera,
+     so move its forward target with it or the bore exits the phone frame. */
+  if (uMode == 6) ta = ro + vec3(0.0, 0.0, -1.0);
   vec3 fw = normalize(ta - ro);
   vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
   vec3 up = cross(rt, fw);

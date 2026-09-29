@@ -2963,6 +2963,90 @@ html, body {
   .transport { width: min(1080px, calc(100vw - 364px)); }
 }
 
+/* Once playback starts, the stage claims the space the in-flow transport
+   occupied on small screens. The same bottom control remains available on
+   movement, tap, or keyboard focus. Wide screens already float the console. */
+@media (max-width: 1179px) {
+  .shell.is-auto-transport:not(.is-cinema) .transport {
+    position: absolute;
+    left: 50%;
+    bottom: calc(8px + var(--sab));
+    transform: translateX(-50%);
+    margin: 0;
+  }
+  .shell.is-auto-transport:not(.is-cinema) .stage {
+    height: 100%;
+    max-height: none;
+    aspect-ratio: auto;
+  }
+}
+.shell.is-auto-transport:not(.is-cinema) .transport {
+  transition: opacity 0.3s var(--ease), translate 0.42s var(--ease-out);
+}
+.shell.is-auto-transport:not(.is-cinema).is-transport-hidden .transport {
+  opacity: 0;
+  translate: 0 calc(100% + 48px);
+  pointer-events: none;
+}
+
+/* Playback without decoded audio stays in a still player view. The animated
+   canvases and analysis badges belong only to analyzable sources. */
+:root.audio-only-playback .stage > :is(canvas, .horizon, .stage-overlays, .stage-context, .idle-visual, .stage-story) {
+  display: none !important;
+}
+:root.audio-only-playback :is(#seek-wave, #vu-meter) { display: none !important; }
+.provider-playback[hidden] { display: none; }
+.provider-playback {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  padding: 32px 24px 120px;
+  text-align: center;
+  background: radial-gradient(ellipse 44% 42% at 50% 45%, rgba(var(--accent-rgb), 0.12), transparent 75%), #08090c;
+}
+.provider-playback-art {
+  width: clamp(132px, 23vmin, 270px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(var(--accent-rgb), 0.2), #10111b 70%);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
+  box-shadow: 0 28px 80px rgba(0,0,0,0.48), 0 0 65px rgba(var(--accent-rgb), 0.08);
+}
+.provider-playback-art img { width: 100%; height: 100%; object-fit: cover; }
+.provider-playback-art .ic { color: var(--accent); font-size: 48px; }
+.provider-playback-copy { display: flex; flex-direction: column; align-items: center; max-width: 470px; }
+.provider-playback-label { color: var(--accent); font-size: 10px; letter-spacing: 0.22em; }
+.provider-playback-copy strong { margin-top: 12px; color: var(--text-strong); font-size: clamp(22px, 3.5vw, 42px); line-height: 1.12; }
+.provider-playback-copy > span:nth-child(3) { margin-top: 6px; color: var(--text-60); font-size: 14px; }
+.provider-playback-copy p { margin: 20px 0 0; color: var(--text-60); font-size: 13px; line-height: 1.55; }
+.provider-playback-add {
+  margin-top: 22px;
+  padding: 11px 16px;
+  color: var(--accent);
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.provider-playback-add:hover { background: var(--accent-dim); }
+.provider-playback-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 640px) {
+  .provider-playback { gap: 20px; padding: 24px 22px 100px; }
+  .provider-playback-art { width: min(54vw, 230px); border-radius: 18px; }
+  .provider-playback-copy p { font-size: 12px; }
+}
+
 /* ==========================================================================
    Touch devices: no live blur over the animating stage
    ==========================================================================

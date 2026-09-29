@@ -80,5 +80,6 @@ describe('Apple Music token endpoint', () => {
     handler({ method: 'GET', headers: { host: 'audiovisor.example' } }, res);
     expect(res.out.statusCode).toBe(503);
     expect(res.out.body.configured).toBe(true);
+    expect(res.out.body.error).toBe('Apple Music token unavailable');
   });
 });

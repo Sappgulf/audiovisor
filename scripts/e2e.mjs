@@ -66,7 +66,7 @@ async function step(name, fn) {
 const tap = (sel) => MOBILE ? page.tap(sel) : page.click(sel);
 const vis = (sel) => page.isVisible(sel);
 const text = (sel) => page.textContent(sel);
-const snap = (n) => page.screenshot({ path: `${SP}/e2e-${MOBILE ? 'm' : 'd'}-${n}.png` });
+const snap = (n) => page.screenshot({ path: `${SP}/e2e-${MOBILE ? 'm' : 'd'}-${n}.png`, timeout: 15_000 });
 
 await page.goto(server.resolvedUrls.local[0]);
 await page.waitForLoadState('networkidle');
@@ -148,6 +148,61 @@ await step('tab capture button', async () => { await tap('#capture-btn'); await 
 await step('voice AI button', async () => { await tap('#voice-btn'); await page.waitForTimeout(800); await tap('#voice-btn').catch(() => {}); });
 await step('nav tabs (stage/settings/about)', async () => { const out = []; for (const n of ['nav-about', 'nav-settings', 'nav-stage']) { if (await vis('#' + n)) { await tap('#' + n); await page.waitForTimeout(400); out.push(n); if (n === 'nav-about') { await page.keyboard.press('Escape'); await page.waitForTimeout(300); } } } await page.keyboard.press('Escape'); return out.join(','); });
 await step('all 23 modes via cards, still error-free', async () => { if (await page.evaluate(() => document.getElementById('drawer').classList.contains('is-closed'))) { await tap('#drawer-toggle'); await page.waitForTimeout(500); } await tap('#tab-look'); const ids = await page.$$eval('#mode-list [data-mode-id]', (b) => b.map((x) => x.dataset.modeId)); for (const id of ids) { await page.click(`[data-mode-id="${id}"]`, { force: false }); await page.waitForTimeout(250); } return ids.length + ' modes'; });
+await step('account playback stays in a still, audio-only view', async () => {
+  await page.evaluate(() => {
+    const engine = window.__av.engine;
+    engine.pause();
+    engine.setExternal({ kind: 'apple', isPlaying: () => true, getTime: () => 37, getDuration: () => 180 });
+  });
+  await page.waitForTimeout(250);
+  const state = await page.evaluate(() => {
+    const av = window.__av;
+    const rayRender = av.ray.render;
+    const canvasRender = av.renderer.render;
+    window.__audioOnlyCalls = { ray: 0, canvas: 0 };
+    av.ray.render = function (...args) { window.__audioOnlyCalls.ray++; return rayRender.apply(this, args); };
+    av.renderer.render = function (...args) { window.__audioOnlyCalls.canvas++; return canvasRender.apply(this, args); };
+    return {
+      noSamples: av.engine.getData() === null,
+      stillView: document.documentElement.classList.contains('audio-only-playback'),
+      title: document.getElementById('provider-playback-label').textContent,
+      transportTitle: document.getElementById('track-name').textContent,
+      clock: document.getElementById('time-current').textContent,
+      canvasHidden: getComputedStyle(document.getElementById('ray-canvas')).display === 'none',
+      waveformHidden: getComputedStyle(document.getElementById('seek-wave')).display === 'none',
+      meterHidden: getComputedStyle(document.getElementById('vu-meter')).display === 'none',
+    };
+  });
+  await page.waitForTimeout(350);
+  const calls = await page.evaluate(() => {
+    const calls = window.__audioOnlyCalls;
+    window.__av.engine.setExternal(null);
+    return calls;
+  });
+  if (!state.noSamples || !state.stillView || !state.canvasHidden || !state.waveformHidden || !state.meterHidden || state.transportTitle !== 'Choose a song' || !state.title.includes('APPLE MUSIC') || state.clock !== '0:37' || calls.ray || calls.canvas) {
+    throw new Error(JSON.stringify({ state, calls }));
+  }
+  return `clock ${state.clock}; renderer calls ${calls.ray}/${calls.canvas}`;
+});
+await step('tapless direct stream shows its analysis limitation', async () => {
+  await page.evaluate(() => {
+    const engine = window.__av.engine;
+    engine.streamTrack = { name: 'Independent radio', url: 'https://example.invalid/radio', ext: 'MP3' };
+    engine.streamNoTap = true;
+    engine._setMode('stream');
+    engine.playing = false;
+    engine._emit();
+  });
+  await page.waitForTimeout(200);
+  const state = await page.evaluate(() => ({
+    noSamples: window.__av.engine.getData() === null,
+    stillView: document.documentElement.classList.contains('audio-only-playback'),
+    label: document.getElementById('provider-playback-label').textContent,
+    title: document.getElementById('provider-playback-title').textContent,
+  }));
+  if (!state.noSamples || !state.stillView || !state.label.includes('AUDIO ONLY') || state.title !== 'Independent radio') throw new Error(JSON.stringify(state));
+  return state.label;
+});
 await snap('07-end');
 console.log(results.join('\n'));
 const failed = results.filter((r) => !r.startsWith('ok')).length;

@@ -18,7 +18,8 @@ import { MODES } from '../src/themes.js';
 const args = process.argv.slice(2);
 const tf = args.indexOf('--tier');
 const TIER = tf >= 0 && args[tf + 1] ? args[tf + 1] : null;
-const OUT = '/tmp/audiovisor-ray';
+const MOBILE = args.includes('--mobile');
+const OUT = MOBILE ? '/tmp/audiovisor-ray-mobile' : '/tmp/audiovisor-ray';
 mkdirSync(OUT, { recursive: true });
 
 const server = await createServer({ root: process.cwd(), server: { port: 0, strictPort: true }, logLevel: 'error' });
@@ -31,7 +32,7 @@ const browser = await chromium.launch({ args: ['--use-angle=metal'] });
    the screenshot evaluate call. */
 const context = await browser.newContext({
   serviceWorkers: 'block',
-  viewport: { width: 1280, height: 800 },
+  viewport: MOBILE ? { width: 390, height: 844 } : { width: 1280, height: 800 },
 });
 const page = await context.newPage();
 await page.goto(base, { waitUntil: 'load', timeout: 30000 });
@@ -60,8 +61,8 @@ for (const s of shots) {
 }
 
 /* one sheet so a whole pass is a single image */
-const sheet = await page.evaluate(async (shots) => {
-  const COLS = 5, CW = 300, LABEL_H = 20;
+const sheet = await page.evaluate(async ({ shots, mobile }) => {
+  const COLS = mobile ? 6 : 5, CW = mobile ? 150 : 300, LABEL_H = 20;
   const IMAGE_H = Math.round(CW / shots[0].aspect);
   const CH = IMAGE_H + LABEL_H;
   const c = document.createElement('canvas');
@@ -78,7 +79,7 @@ const sheet = await page.evaluate(async (shots) => {
     x.fillText(shots[i].id, px + 6, py + CH - 6);
   }
   return c.toDataURL('image/png');
-}, shots);
+}, { shots, mobile: MOBILE });
 writeFileSync(`${OUT}/sheet.png`, Buffer.from(sheet.split(',')[1], 'base64'));
 
 console.log(`${shots.length} modes -> ${OUT}/ (sheet.png)`);

@@ -192,7 +192,7 @@ export class ConnectPanel {
           <span class="sp-title">Spotify</span>
           <span class="sp-badge mono">NOT LINKED</span>
         </div>
-        <p class="sp-note">Search, top tracks and playlists with full playback (Premium). Sign-in happens on Spotify — your password never touches AUDIOVISOR.</p>
+        <p class="sp-note">Search, top tracks and playlists with in-app playback (Premium). Spotify audio plays without beat-driven visuals. Sign-in happens on Spotify.</p>
         ${builtIn ? `
         <button class="provider-btn" id="sp-connect">Connect Spotify</button>
         <details class="sp-help">
@@ -218,6 +218,7 @@ export class ConnectPanel {
           <span class="sp-name">${esc(p?.display_name || 'Connected')}</span>
           <span class="sp-dev dot-ok" id="sp-dev">${this.deviceReady ? 'DEVICE LIVE' : 'DEVICE …'}</span>
         </div>
+        <p class="sp-note">Spotify playback is audio-only in AUDIOVISOR. Visual modes do not analyze its stream.</p>
         ${this.client.premium ? `
         <div class="sp-search">
           <span class="ic ic-dim" data-icon="search"></span>
@@ -229,8 +230,7 @@ export class ConnectPanel {
           <select class="mini-select mono" id="sp-playlists" aria-label="Spotify playlists"><option value="">Playlists…</option></select>
         </div>
         <div class="sp-results" id="sp-results"></div>`
-        : `<p class="sp-note"><b>Free plan:</b> playback control needs Premium.
-           You can still visualize Spotify with <b>Capture</b> below.</p>`}`;
+        : `<p class="sp-note"><b>Free plan:</b> playback control needs Premium.</p>`}`;
     }
     this.root.appendChild(sp);
     sp.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
@@ -247,7 +247,7 @@ export class ConnectPanel {
           <span class="sp-badge mono">${appleConfigured ? 'NOT LINKED' : 'UNAVAILABLE'}</span>
         </div>
         <p class="sp-note">${appleConfigured
-          ? 'Search the Apple Music catalog and play your library playlists. Sign-in happens with Apple.'
+          ? 'Search the Apple Music catalog and play your library playlists. Playback is audio-only; sign-in happens with Apple.'
           : 'Apple Music is not enabled on this deployment yet.'}</p>
         ${appleConfigured
           ? '<button class="provider-btn" id="am-connect">Connect Apple Music</button>'
@@ -276,7 +276,7 @@ export class ConnectPanel {
           <select class="mini-select mono" id="am-playlists" aria-label="Apple Music playlists"><option value="">Playlists…</option></select>
         </div>
         <div class="sp-results" id="am-results"></div>
-        <p class="sp-note">Apple keeps its stream protected — turn on <b>Capture</b> for the live spectrum.</p>`;
+        <p class="sp-note">Apple Music plays here; visual modes do not analyze its protected stream.</p>`;
     }
     this.root.appendChild(am);
     am.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));

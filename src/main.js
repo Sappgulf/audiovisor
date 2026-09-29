@@ -531,15 +531,44 @@ function updateTrackUI() {
   trackInfoEl.classList.toggle('has-track', input !== 'none');
 
   const connect = connectLoader.getConnect();
-  if ((input === 'spotify' || input === 'apple') && connect?.currentTrack) {
-    const t = connect.currentTrack;
+  const providerOnly = input === 'spotify' || input === 'apple';
+  const audioOnly = providerOnly || (input === 'stream' && engine.streamNoTap);
+  const providerTrack = providerOnly ? connect?.currentTrack : null;
+  const providerPanel = $('provider-playback');
+  providerPanel.hidden = !audioOnly;
+  if (audioOnly) {
+    $('provider-playback-label').textContent = input === 'apple' ? 'APPLE MUSIC · PLAYBACK' : input === 'spotify' ? 'SPOTIFY · PLAYBACK' : 'DIRECT STREAM · AUDIO ONLY';
+    $('provider-playback-title').textContent = providerOnly ? providerTrack?.name || 'Choose a song' : engine.streamTrack?.name || 'Direct stream';
+    $('provider-playback-artist').textContent = providerOnly ? providerTrack?.artists || '' : 'Audio samples unavailable in this browser';
+    $('provider-playback-note').textContent = providerOnly
+      ? 'Account playback is available here. Visual modes use audio you add or have permission to visualize.'
+      : 'This stream plays, but it does not expose audio samples for the visual modes.';
+    const cover = $('provider-cover');
+    cover.hidden = !providerTrack?.artwork;
+    if (providerTrack?.artwork) cover.src = providerTrack.artwork;
+    else cover.removeAttribute('src');
+    $('provider-placeholder').hidden = !!providerTrack?.artwork;
+    setIcon($('provider-placeholder'), input === 'apple' ? 'music2' : input === 'spotify' ? 'spotify' : 'link');
+  }
+  if (providerOnly && providerTrack) {
+    const t = providerTrack;
     $('track-name').textContent = t.name;
     $('track-spec').textContent = `${t.artists} · ${t.kind}`;
     $('time-total').textContent = fmtTime(t.duration);
     const icon = t.provider === 'apple' ? 'music2' : 'spotify';
-    trackArtEl.innerHTML = t.artwork
-      ? `<img class="track-art-img" src="${t.artwork}" alt="" />`
-      : `<span class="ic" data-icon="${icon}"></span>`;
+    trackArtEl.replaceChildren();
+    if (t.artwork) {
+      const img = document.createElement('img');
+      img.className = 'track-art-img';
+      img.src = t.artwork;
+      img.alt = '';
+      trackArtEl.appendChild(img);
+    } else {
+      const placeholder = document.createElement('span');
+      placeholder.className = 'ic';
+      placeholder.dataset.icon = icon;
+      trackArtEl.appendChild(placeholder);
+    }
     if (!t.artwork) {
       setIcon(trackArtEl.querySelector('.ic'), icon);
       trackInfoEl.classList.remove('has-art');
@@ -551,6 +580,18 @@ function updateTrackUI() {
       artImg.crossOrigin = 'anonymous';
       artImg.addEventListener('load', () => onArtworkLoaded(t.artwork, artImg), { once: true });
     }
+  } else if (providerOnly) {
+    $('track-name').textContent = 'Choose a song';
+    $('track-spec').textContent = input === 'apple' ? 'APPLE MUSIC' : 'SPOTIFY';
+    $('time-total').textContent = '0:00';
+    trackArtEl.replaceChildren();
+    const placeholder = document.createElement('span');
+    placeholder.className = 'ic';
+    placeholder.dataset.icon = input === 'apple' ? 'music2' : 'spotify';
+    trackArtEl.appendChild(placeholder);
+    setIcon(placeholder, placeholder.dataset.icon);
+    currentArtworkUrl = null;
+    trackInfoEl.classList.remove('has-art');
   } else if (input === 'stream' && engine.streamTrack) {
     $('track-name').textContent = engine.streamTrack.name;
     $('track-spec').textContent = `LIVE STREAM · ${engine.streamTrack.ext}`;

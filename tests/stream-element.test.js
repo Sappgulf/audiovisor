@@ -157,6 +157,8 @@ describe('_onStreamError', () => {
     first.paused = false;
     e._onStreamError();
     expect(e.streamNoTap).toBe(true);
+    expect(e.getData()).toBeNull();
+    expect(e._fire).toHaveBeenCalledWith('source', 'stream');
     expect(first.paused).toBe(true);
     expect(first.liveListeners).toHaveLength(0);
   });

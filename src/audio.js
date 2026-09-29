@@ -1,6 +1,5 @@
 import { safe } from './utils.js';
 import { BeatTracker } from './beattracker.js';
-import { SynthFeed } from './synthfeed.js';
 import { DropDetector } from './drop.js';
 
 /**
@@ -48,8 +47,7 @@ export function stereoWidth(bufL, bufR) {
  *  - 'mic'      live microphone (analysis-only, no speaker routing)
  *  - 'capture'  system/tab audio capture (analysis-only)
  *  - 'stream'   HTMLMediaElement URLs (radio/podcast/direct links)
- *  - 'spotify' / 'apple' external DRM playback — visuals driven by a synth
- *               feed unless capture/mic provides real spectrum data
+ *  - 'spotify' / 'apple' account playback (no decoded audio access)
  */
 export class AudioEngine {
   constructor() {
@@ -88,8 +86,6 @@ export class AudioEngine {
 
     this.mode = 'none';
     this.external = null;
-    this.synthFile = null;
-    this.synthExternal = null;
 
     this.playing = false;
     this.loop = false;
@@ -1020,11 +1016,12 @@ export class AudioEngine {
 
   _onStreamError(_err) {
     // CORS-tainted sources fail with crossOrigin set; fall back to a plain
-    // element (plays straight to speakers) + synth feed for visuals.
+    // element that plays to speakers. Its samples cannot drive visuals.
     if (!this._streamRetry && this.streamTrack?.url) {
       this._streamRetry = true;
       this._resetStreamElement(true);
       this.mediaEl.src = this.streamTrack.url;
+      this._fire('source', this.mode);
       this.mediaEl.play().catch(() => {});
       return;
     }
@@ -1047,7 +1044,6 @@ export class AudioEngine {
   setExternal(controller) {
     this.external = controller;
     if (controller) {
-      this.synthExternal = null;
       this._setMode(controller.kind || 'spotify');
       this.playing = controller.isPlaying?.() ?? false;
     } else {
@@ -1125,7 +1121,7 @@ export class AudioEngine {
    * getLevels() reuses this frame so every consumer sees the same
    * instant of audio (no double-sampling skew).
    */
-  getData(timeSec = null) {
+  getData(_timeSec = null) {
     if (this.micActive || this.captureActive) {
       if (!this.tapAnalyser) return null;
       this.tapAnalyser.getByteFrequencyData(this.tapFreq);
@@ -1137,23 +1133,12 @@ export class AudioEngine {
       return this._frameData;
     }
     if (this.isExternalMode()) {
-      if (!this.synthExternal) {
-        this.synthExternal = new SynthFeed(
-          this.external?.seed ? this.external.seed : 'spotify',
-        );
-      }
-      if (this.playing) this.synthExternal.tick(timeSec ?? this.getTime());
-      else this.synthExternal.clear();
-      return this.synthExternal.getData();
+      // MusicKit and Spotify expose transport state, not decoded PCM. A fake
+      // spectrum would misrepresent the song and couple protected playback to
+      // the visualizer, so account playback remains audio-only.
+      return null;
     }
-    if (this.mode === 'stream' && this.streamNoTap) {
-      if (!this.synthFile) {
-        this.synthFile = new SynthFeed(this.streamTrack?.url || 'stream');
-      }
-      if (this.playing) this.synthFile.tick(timeSec ?? this.getTime());
-      else this.synthFile.clear();
-      return this.synthFile.getData();
-    }
+    if (this.mode === 'stream' && this.streamNoTap) return null;
     if (!this.analyser) return null;
     this.analyser.getByteFrequencyData(this.freqData);
     this.analyser.getByteTimeDomainData(this.waveData);
@@ -1175,18 +1160,14 @@ export class AudioEngine {
    * Spectrum for beat detection.
    *
    * Prefers the dedicated analyser, whose smoothing is fixed rather than
-   * following the Smoothing slider. Synthetic feeds (external providers,
-   * tapless streams) have no analyser at all, so they fall back to the
-   * visual spectrum they already produce.
+   * following the Smoothing slider. Sources without decoded audio access
+   * do not reach beat detection.
    */
   _beatSpectrum(visualFreq) {
     if (this.micActive || this.captureActive) {
       if (!this.tapBeatAnalyser) return visualFreq;
       this.tapBeatAnalyser.getByteFrequencyData(this.tapBeatFreq);
       return this.tapBeatFreq;
-    }
-    if (this.isExternalMode() || (this.mode === 'stream' && this.streamNoTap)) {
-      return visualFreq;   // synthesized, never went through the graph
     }
     if (!this.beatAnalyser) return visualFreq;
     this.beatAnalyser.getByteFrequencyData(this.beatFreq);

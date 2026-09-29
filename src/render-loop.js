@@ -45,6 +45,7 @@ export function createRenderLoop({
   let _vuAcc = 0;
   let _lastBeatWritten = -1;
   let _stageLive = null;
+  let _audioOnly = null;
   let _uiAcc = 0;
   const seekFillEl = doc.getElementById('seek-fill');
   const timeCurrentEl = doc.getElementById('time-current');
@@ -131,12 +132,18 @@ export function createRenderLoop({
 
     const input = engine.activeInput;
     const idle = input === 'none';
+    const audioOnly = input === 'spotify' || input === 'apple' || (input === 'stream' && engine.streamNoTap);
+    const visualIdle = idle || audioOnly;
+    if (audioOnly !== _audioOnly) {
+      _audioOnly = audioOnly;
+      rootEl.classList.toggle('audio-only-playback', audioOnly);
+    }
     /* The render loop is the only thing that knows whether the stage is
        actually animating — toggle the class once per change so the CSS can
        drop the expensive chrome blur while it is (see style.css). */
-    if (idle !== _stageLive) {
-      _stageLive = idle;
-      doc.documentElement.classList.toggle('stage-live', !idle);
+    if (visualIdle !== _stageLive) {
+      _stageLive = visualIdle;
+      doc.documentElement.classList.toggle('stage-live', !visualIdle);
     }
 
     engine.syncExternal();
@@ -147,7 +154,7 @@ export function createRenderLoop({
     let wave = null;
     let stereoL = null;
     let stereoR = null;
-    if (!idle) {
+    if (!visualIdle) {
       const d = engine.getData(audioTime);
       if (!d) {
         freq = wave = null;
@@ -164,12 +171,12 @@ export function createRenderLoop({
 
     /* Plugin modes are Canvas2D-only, so the raytraced stage steps aside
        while one is selected. */
-    const rtOn = state.raytraceWanted && ray.ok && !raySuspended && !isPluginMode(state.modeId);
+    const rtOn = !audioOnly && state.raytraceWanted && ray.ok && !raySuspended && !isPluginMode(state.modeId);
     // Surface a runtime GPU context loss instead of silently swapping
     // renderers. A browser without WebGL2 is an expected capability fallback,
     // not an error to put over the first-run experience; the effective backend
     // is still reported in the Look panel.
-    if (state.raytraceWanted && !ray.ok && !ray.loading && ray.lost && !rayDropped) {
+    if (!audioOnly && state.raytraceWanted && !ray.ok && !ray.loading && ray.lost && !rayDropped) {
       rayDropped = true;
       toast(ray.lost
         ? 'GPU context lost — <b>Canvas2D stage</b> until it recovers'
@@ -182,14 +189,18 @@ export function createRenderLoop({
        BPM chip). The value moves in tiny increments 60+ times a second, so
        only touch the style when it has moved enough to see. */
     {
-      const beatVal = rtOn ? ray.beat : renderer.beat;
+      const beatVal = audioOnly ? 0 : rtOn ? ray.beat : renderer.beat;
       if (Math.abs(beatVal - _lastBeatWritten) > 0.004) {
         _lastBeatWritten = beatVal;
         shellEl.style.setProperty('--beat', beatVal.toFixed(3));
       }
     }
 
-    if (rtOn) {
+    if (audioOnly) {
+      doc.getElementById('ray-canvas').classList.remove('is-live');
+      doc.getElementById('viz-canvas').classList.add('is-off');
+      if (webgpuCanvas) webgpuCanvas.style.display = 'none';
+    } else if (rtOn) {
       // raytraced stage owns every mode; the 2D renderer still advances its
       // beat envelope so chrome (VU, chips, favicon) keeps working
       if (ray.w !== renderer.w || ray.h !== renderer.h) ray.resize(renderer.w, renderer.h);
@@ -240,25 +251,32 @@ export function createRenderLoop({
         seekTrack.setAttribute('aria-valuenow', String(dur ? Math.round((t / dur) * 100) : 0));
         seekTrack.setAttribute('aria-valuetext', `${fmtTime(t)} of ${fmtTime(dur)}`);
       }
-      if (_vuAcc >= 33) { _vuAcc = 0; drawVu(); }
+      if (_vuAcc >= 33) { _vuAcc = 0; if (!audioOnly) drawVu(); }
       _uiAcc += dtMs;
       if (_uiAcc >= 100) {
         _uiAcc = 0;
-        const bi = engine.beatInfo;
-        /* A decoded file has a whole-track estimate; an early live lock can
-           briefly disagree with it. Keep live tempo for sources without a
-           decoded track, and for files until their analysis finishes. */
-        const liveBpm = bi.bpm && bi.confidence > 0.25 ? bi.bpm : 0;
-        const analyzedBpm = input === 'track' ? state.analyzedBpm : 0;
-        const bpm = analyzedBpm || liveBpm || 0;
-        bpmValueEl.textContent = bpm ? bpm.toFixed(2) : '--.--';
-        bpmValueEl.title = analyzedBpm ? 'Analysed from the track'
-          : liveBpm ? 'Live tempo lock' : '';
-        bassChipEl.classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));
-        if (levels) {
-          const mood = detectMood({ bpm: levels.bpm, bass: levels.bass, mid: levels.mid, high: levels.high, width: levels.width });
-          if (mood) { moodValueEl.textContent = mood.tag; moodChipEl.classList.remove('is-hidden'); }
-          else moodChipEl.classList.add('is-hidden');
+        if (audioOnly) {
+          bpmValueEl.textContent = '--.--';
+          bpmValueEl.title = '';
+          bassChipEl.classList.add('is-hidden');
+          moodChipEl.classList.add('is-hidden');
+        } else {
+          const bi = engine.beatInfo;
+          /* A decoded file has a whole-track estimate; an early live lock can
+             briefly disagree with it. Keep live tempo for sources without a
+             decoded track, and for files until their analysis finishes. */
+          const liveBpm = bi.bpm && bi.confidence > 0.25 ? bi.bpm : 0;
+          const analyzedBpm = input === 'track' ? state.analyzedBpm : 0;
+          const bpm = analyzedBpm || liveBpm || 0;
+          bpmValueEl.textContent = bpm ? bpm.toFixed(2) : '--.--';
+          bpmValueEl.title = analyzedBpm ? 'Analysed from the track'
+            : liveBpm ? 'Live tempo lock' : '';
+          bassChipEl.classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));
+          if (levels) {
+            const mood = detectMood({ bpm: levels.bpm, bass: levels.bass, mid: levels.mid, high: levels.high, width: levels.width });
+            if (mood) { moodValueEl.textContent = mood.tag; moodChipEl.classList.remove('is-hidden'); }
+            else moodChipEl.classList.add('is-hidden');
+          }
         }
       }
       // Auto DJ crossfade near track end
@@ -272,6 +290,10 @@ export function createRenderLoop({
         }
       }
     }
+
+    // Sources without decoded audio have a still player view. No renderer
+    // frame or adaptation sample should run against inaccessible audio.
+    if (audioOnly) return;
 
     // the interval, not this callback's CPU time — see src/adaptive.js
     rayBaselineEstimate = estimateBaseline(frameTimes, rayBaselineEstimate);

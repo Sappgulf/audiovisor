@@ -1,5 +1,6 @@
 // @ts-check
 import { bindDragTrack, keyStep, makeDoubleTap } from './drag.js';
+import { createChromeVisibility } from './chrome-visibility.js';
 
 /**
  * Transport controls: play/pause, prev/next, loop, seek and volume, plus
@@ -22,15 +23,17 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
     try {
       const input = engine.activeInput;
       const connect = getConnect();
-      if ((input === 'spotify' || input === 'apple') && connect?.currentTrack) {
-        const t = connect.currentTrack;
-        const artwork = t.artwork ? [{ src: t.artwork, sizes: '640x640', type: 'image/jpeg' }] : [];
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: t.name,
-          artist: t.artists,
-          album: `${t.album} · AUDIOVISOR`,
-          artwork,
-        });
+      if (input === 'spotify' || input === 'apple') {
+        const t = connect?.currentTrack;
+        if (t) {
+          const artwork = t.artwork ? [{ src: t.artwork, sizes: '640x640', type: 'image/jpeg' }] : [];
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: t.name,
+            artist: t.artists,
+            album: `${t.album} · AUDIOVISOR`,
+            artwork,
+          });
+        } else navigator.mediaSession.metadata = null;
       } else if (input === 'stream' && engine.streamTrack) {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: engine.streamTrack.name,
@@ -69,7 +72,7 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
   const volumeFill = $('volume-fill');
   const stage = $('stage');
   const shell = $('shell');
-  const cinemaShell = /** @type {any} */ (shell);   // carries the fullscreen cleanup handle
+  const visibility = createChromeVisibility({ engine, shell, transport: $('transport'), doc });
 
   function transportToggle() {
     if (engine.activeInput === 'none') {
@@ -141,27 +144,12 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
        the stage. Close it through its own control so its state stays true. */
     const drawer = doc.getElementById('drawer');
     if (drawer && !drawer.classList.contains('is-closed')) doc.getElementById('drawer-close')?.click();
-    let hid = setTimeout(() => shell.classList.add('is-chrome-hidden'), 2200);
-    const show = () => {
-      shell.classList.remove('is-chrome-hidden');
-      clearTimeout(hid);
-      hid = setTimeout(() => shell.classList.add('is-chrome-hidden'), 2200);
-    };
-    /* pointermove covers the mouse; a touch device never emits it while the
-       finger is off the glass, so without pointerdown the chrome hid after
-       2.2s in fullscreen and there was no way to bring it back. */
-    shell.addEventListener('pointermove', show);
-    shell.addEventListener('pointerdown', show);
-    cinemaShell._cinemaCleanup = () => {
-      shell.removeEventListener('pointermove', show);
-      shell.removeEventListener('pointerdown', show);
-      clearTimeout(hid);
-    };
+    visibility.refresh();
   }
   function exitCinema() {
     pseudo = false;
     shell.classList.remove('is-cinema', 'is-chrome-hidden', 'is-pseudo-fs');
-    if (cinemaShell._cinemaCleanup) { try { cinemaShell._cinemaCleanup(); } catch {} cinemaShell._cinemaCleanup = null; }
+    visibility.refresh();
   }
   function enterPseudo() {
     pseudo = true;
