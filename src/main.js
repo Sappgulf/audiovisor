@@ -621,7 +621,7 @@ function updateTrackUI() {
     }
   } else {
     $('track-name').textContent = 'No track loaded';
-    $('track-spec').textContent = 'Drop audio or pick a source';
+    $('track-spec').textContent = 'No track';
     $('time-total').textContent = '00:00';
     trackArtEl.innerHTML = '<span class="ic" data-icon="layers"></span>';
     setIcon(trackArtEl.querySelector('.ic'), 'layers');

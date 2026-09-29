@@ -89,7 +89,7 @@ if (!MOBILE) await step('1280px console keeps track text and seek readable', asy
   });
   await snap('00-1280');
   await page.setViewportSize({ width: 1440, height: 900 });
-  if (sizes.specHeight > 20 || sizes.infoWidth < 150 || sizes.seekWidth < 80) throw new Error(JSON.stringify(sizes));
+  if (sizes.specHeight < 10 || sizes.specHeight > 20 || sizes.infoWidth < 150 || sizes.seekWidth < 80) throw new Error(JSON.stringify(sizes));
   return `track ${Math.round(sizes.infoWidth)}px, seek ${Math.round(sizes.seekWidth)}px`;
 });
 

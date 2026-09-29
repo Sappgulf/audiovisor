@@ -2953,10 +2953,10 @@ html, body {
    its 58px for the seek bar. */
 @media (min-width: 1180px) and (max-width: 1499px) {
   .transport #vu-meter { display: none; }
-  .track-spec { display: none; }
+  .track-info.has-track .track-spec { display: none; }
   /* Keep the console inside the visible stage while the drawer is open.
      Compact gaps make room for readable track text and a usable seek bar. */
-  .transport { width: min(1000px, calc(100vw - 320px)); gap: 10px; }
+  .transport { width: min(1000px, calc(100vw - 320px)); }
   .transport .transport-controls, .transport .seek-console { gap: 8px; }
   .shell:has(.drawer.is-closed) .transport { width: min(1080px, calc(100vw - 32px)); }
 }
