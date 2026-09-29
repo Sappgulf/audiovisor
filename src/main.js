@@ -260,8 +260,8 @@ function setModeStory(id) {
 
 function setMode(id, { restore = false } = {}) {
   if (!MODES.some((m) => m.id === id)) return;
-  /* The stage stays blank until the user picks a mode themselves; restoring
-     the saved mode on load must not reveal it. */
+  /* Restoring a saved mode alone keeps the first-run stage idle; an active
+     audio source or a fresh mode pick reveals it. */
   if (!restore) document.documentElement.classList.remove('mode-unchosen');
   /* Each mode has its own cost, and the tier adapted for the last one says
      nothing about this one — without this, stepping down for a heavy mode

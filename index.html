@@ -142,22 +142,25 @@
 
           <div class="dropzone-wrap" id="dropzone">
             <div class="dropzone">
-              <span class="drop-title sr-only">Choose an audio track</span>
-              <p class="drop-sub sr-only">Drop an audio file or choose one to start the visualizer.</p>
+              <span class="drop-title">Choose an audio track</span>
+              <p class="drop-sub">Drop an audio file or choose one to start the visualizer.</p>
               <div class="drop-visual" aria-hidden="true">
                 <div class="drop-icon-circle"><span class="ic" data-icon="music"></span></div>
               </div>
               <div class="drop-actions">
                 <label class="browse-btn icon-btn" for="file-input" id="browse-label" role="button" tabindex="0" title="Choose an audio track" aria-label="Choose an audio track">
                   <span class="ic" data-icon="plus" aria-hidden="true"></span>
+                  <span class="drop-action-text" aria-hidden="true">Browse files</span>
                   <span class="sr-only">Choose an audio track</span>
                 </label>
                 <button class="drop-secondary icon-btn" id="play-demo" type="button" title="Play the built-in demo" aria-label="Play the built-in demo">
                   <span class="ic" data-icon="play" aria-hidden="true"></span>
+                  <span class="drop-action-text" aria-hidden="true">Play demo</span>
                   <span class="sr-only">Play the built-in demo</span>
                 </button>
                 <button class="drop-secondary icon-btn" id="explore-modes" type="button" title="Explore visual modes" aria-label="Explore visual modes">
                   <span class="ic" data-icon="orbit" aria-hidden="true"></span>
+                  <span class="drop-action-text" aria-hidden="true">Explore modes</span>
                   <span class="sr-only">Explore visual modes</span>
                 </button>
               </div>
@@ -314,9 +317,9 @@
           <button class="ghost-btn" id="save-library-btn" title="Save to library (with edits)" aria-label="Save to library" style="position:absolute; top:6px; right:6px; width:26px; height:26px; z-index:2;"><span class="ic ic-sm" data-icon="layers"></span></button>
           <div class="track-art" id="track-art"><span class="ic" data-icon="music2"></span></div>
           <div class="track-meta">
-            <span class="mono track-label sr-only">Now Playing</span>
+            <span class="mono track-label sr-only">Audio source</span>
             <span class="track-name" id="track-name">Waiting for input...</span>
-            <span class="mono track-spec" id="track-spec">44.1kHz / STEREO</span>
+            <span class="mono track-spec" id="track-spec">Drop audio or pick a source</span>
           </div>
         </div>
 

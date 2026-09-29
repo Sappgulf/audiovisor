@@ -1376,7 +1376,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   text-overflow: ellipsis;
   line-height: 1.3;
 }
-.track-spec { font-size: 9px; color: var(--text-40); letter-spacing: 0.08em; }
+.track-spec { font-size: 10px; color: var(--text-60); letter-spacing: 0.08em; }
 
 .transport-controls {
   display: flex;
@@ -1431,7 +1431,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   min-width: 0;
 }
 
-.time-label { font-size: 10px; color: var(--text-40); font-variant-numeric: tabular-nums; letter-spacing: 0.06em; min-width: 3.2ch; text-align: center; font-weight: 500; }
+.time-label { font-size: 11px; color: var(--text-60); font-variant-numeric: tabular-nums; letter-spacing: 0.06em; min-width: 3.2ch; text-align: center; font-weight: 500; }
 
 .seek-track {
   flex: 1;
@@ -3090,9 +3090,6 @@ html, body {
   box-shadow: 0 0 0 1px rgba(255,250,243,0.05) inset;
   transition: transform 0.36s var(--ease-out), border-color 0.24s var(--ease);
 }
-.dropzone::before {
-  border-radius: 50%;
-}
 .dropzone:hover,
 .dropzone.drag-over,
 .dropzone:focus-within {
@@ -3148,17 +3145,45 @@ html, body {
   .dropzone { transition: none; }
 }
 
-/* Blank stage until the user chooses a mode — no idle art, drop target or
-   canvases. Cleared by setMode() on the first user pick. */
-:root.mode-unchosen .stage,
-:root.mode-unchosen .stage.is-empty {
-  background: #000;
-}
-:root.mode-unchosen .stage::before,
-:root.mode-unchosen .stage::after,
-:root.mode-unchosen .stage > * {
+/* Keep the renderer idle before the first source or mode pick, but leave the
+   audio entry point visible. The old broad selector hid the entire stage,
+   including the only in-stage path to getting started and its toasts. */
+:root.mode-unchosen .stage > :is(canvas, .horizon, .stage-overlays, .stage-context) {
   visibility: hidden;
-  opacity: 0;
+}
+.stage.is-empty .dropzone {
+  width: min(420px, calc(100% - 36px));
+  aspect-ratio: auto;
+  padding: 26px;
+  border-radius: 24px;
+}
+.stage.is-empty .drop-visual {
+  position: static;
+  order: -1;
+  margin-bottom: 20px;
+}
+.stage.is-empty .drop-icon-circle { width: 58px; height: 58px; }
+.stage.is-empty .drop-actions {
+  position: static;
+  transform: none;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.stage.is-empty .dropzone .browse-btn,
+.stage.is-empty .dropzone .drop-secondary {
+  width: auto;
+  min-width: 128px;
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 999px;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.stage.is-empty .dropzone .browse-btn {
+  color: #16121a;
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 /* the save-to-library button sits absolutely in the track card's corner;

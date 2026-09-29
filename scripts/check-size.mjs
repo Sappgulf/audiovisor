@@ -23,8 +23,11 @@ const BUDGETS = {
      for browsers without element fullscreen took the entry and CSS to their
      lines. +1kB / +0.5kB here is paid for by v8.14's shader minify, which
      took 6.5kB out of the total — the total stays at 101. */
-  entry: 58 * 1024,    // initial JS chunk, gzipped
-  css: 12.5 * 1024,
+  /* This polish pass adds the first-run audio card and source-accurate tempo
+     display; each component grew by about 0.1kB gzip. Reserve 0.25kB for
+     these user-facing additions without changing the 101kB total ceiling. */
+  entry: 58.25 * 1024, // initial JS chunk, gzipped
+  css: 12.75 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is
      unchanged; only the total went up with the features. That is the point

@@ -66,6 +66,9 @@ export function createPlayState({ engine, panels, setIcon, setToggle, getDropzon
     const idle = engine.activeInput === 'none';
     getDropzone().classList.toggle('is-hidden', !idle);
     $('stage')?.classList.toggle('is-empty', idle);
+    // A source is enough to start the default visual. Otherwise audio can
+    // play behind the first-run curtain until someone also picks a mode.
+    if (!idle) doc.documentElement.classList.remove('mode-unchosen');
   }
 
   engine.on('state', refreshStatus);

@@ -72,7 +72,14 @@ await page.goto(server.resolvedUrls.local[0]);
 await page.waitForLoadState('networkidle');
 await page.waitForFunction(() => window.__av?.ray);
 await page.waitForTimeout(1500);
-await step('first paint: stage blank until mode chosen', async () => (await page.evaluate(() => document.documentElement.classList.contains('mode-unchosen'))) ? '' : (() => { throw new Error('not blank'); })());
+await step('first paint: audio entry point visible while renderer waits', async () => {
+  const state = await page.evaluate(() => ({
+    waiting: document.documentElement.classList.contains('mode-unchosen'),
+    title: getComputedStyle(document.querySelector('.drop-title')).display,
+    picker: getComputedStyle(document.querySelector('#browse-label')).visibility,
+  }));
+  if (!state.waiting || state.title === 'none' || state.picker !== 'visible') throw new Error(JSON.stringify(state));
+});
 await snap('00-first');
 
 // onboarding / tour
@@ -93,6 +100,13 @@ for (const chip of ['autopilot-chip', 'autodj-chip', 'sleep-chip']) await step(c
 // audio
 await step('load two tracks via file input', async () => { await page.setInputFiles('#file-input', [SP + '/track-a.wav', SP + '/track-b.wav']); await page.waitForFunction(() => window.__av.engine.playing, null, { timeout: 8000 }); return 'playing: ' + await text('#track-name'); });
 await page.waitForTimeout(1500);
+await step('known 124 BPM file readout', async () => {
+  await page.waitForFunction(() => {
+    const value = document.getElementById('bpm-value');
+    return value?.title === 'Analysed from the track' && Math.abs(Number(value.textContent) - 124) < 2;
+  }, null, { timeout: 8000 });
+  return (await text('#bpm-value')).trim() + ' BPM';
+});
 await snap('02-playing');
 await step('audio tab sliders (drag sensitivity)', async () => { await tap('#tab-audio'); await page.waitForTimeout(300); const r = await page.$$('#sliders input[type=range]'); if (!r.length) return 'no range inputs'; await r[0].scrollIntoViewIfNeeded(); const box = await r[0].boundingBox(); await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2); return r.length + ' sliders, sens=' + await r[0].inputValue(); });
 await step('EQ bands', async () => { const r = await page.$$('#eq-bands input[type=range]'); if (!r.length) return 'none'; await r[0].scrollIntoViewIfNeeded(); const box = await r[0].boundingBox(); await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); return r.length + ' bands'; });

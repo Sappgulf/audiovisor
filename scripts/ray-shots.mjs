@@ -45,11 +45,12 @@ const shots = await page.evaluate(async ({ tier, ids }) => {
   for (let m = 0; m < ids.length; m++) {
     av.pump(m, 60, 3);
     const cv = document.createElement('canvas');
-    cv.width = 420; cv.height = 300;
+    cv.width = 420;
+    cv.height = Math.round(cv.width * rc.height / rc.width);
     const cx = cv.getContext('2d');
     cx.fillStyle = '#000'; cx.fillRect(0, 0, cv.width, cv.height);
     cx.drawImage(rc, 0, 0, cv.width, cv.height);
-    out.push({ id: ids[m], png: cv.toDataURL('image/png') });
+    out.push({ id: ids[m], aspect: cv.width / cv.height, png: cv.toDataURL('image/png') });
   }
   return out;
 }, { tier: TIER, ids: MODES.map((m) => m.id) });
@@ -60,7 +61,9 @@ for (const s of shots) {
 
 /* one sheet so a whole pass is a single image */
 const sheet = await page.evaluate(async (shots) => {
-  const COLS = 5, CW = 300, CH = 230;
+  const COLS = 5, CW = 300, LABEL_H = 20;
+  const IMAGE_H = Math.round(CW / shots[0].aspect);
+  const CH = IMAGE_H + LABEL_H;
   const c = document.createElement('canvas');
   c.width = COLS * CW; c.height = Math.ceil(shots.length / COLS) * CH;
   const x = c.getContext('2d');
@@ -70,7 +73,7 @@ const sheet = await page.evaluate(async (shots) => {
     img.src = shots[i].png;
     await img.decode();
     const px = (i % COLS) * CW, py = Math.floor(i / COLS) * CH;
-    x.drawImage(img, px, py, CW, CH - 20);
+    x.drawImage(img, px, py, CW, IMAGE_H);
     x.fillStyle = '#fff'; x.font = '14px monospace';
     x.fillText(shots[i].id, px + 6, py + CH - 6);
   }

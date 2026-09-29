@@ -56,9 +56,9 @@ export function createLookPresets({ state, fxNames, toast, setMode, setTheme, se
       const mode = MODES.find((m) => m.id === stored[slot]?.mode);
       const theme = THEMES.find((t) => t.id === stored[slot]?.theme);
       const saved = [mode?.name, theme?.name].filter(Boolean).join(' · ');
-      b.title = stored[slot]
+      b.setAttribute('title', stored[slot]
         ? `Recall ${saved || slotLabel(slot)}. Right-click to overwrite.`
-        : 'Empty. Right-click to save the current look here.';
+        : 'Empty. Right-click to save the current look here.');
     }
   }
 

@@ -2,9 +2,9 @@
 import { writeText, readText } from './storage.js';
 
 /**
- * First-run onboarding tour: four staggered toasts that introduce the core
- * shortcuts. Shown once (a flag is written on completion) and replayable
- * from the About panel.
+ * First-run desktop tour: four staggered toasts introduce the core shortcuts.
+ * Touch screens use the visible audio card instead, with a short manual hint
+ * available from the About panel. The desktop tour is replayable there too.
  *
  * @param {object} deps
  * @param {(msg: string, opts?: object) => void} deps.toast
@@ -13,7 +13,13 @@ import { writeText, readText } from './storage.js';
  * @param {Document} [deps.doc]
  */
 export function createOnboarding({ toast, modeCount, themeCount, doc = document }) {
+  const coarsePointer = doc.defaultView?.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+
   function runTour() {
+    if (coarsePointer) {
+      toast('Tap <b>Browse files</b> or <b>Explore modes</b> to begin', { duration: 3000 });
+      return;
+    }
     /** @type {Array<[string, number]>} */
     const steps = [
       ['Drop <b>audio</b> or press <b>Space</b> to begin', 800],
@@ -25,8 +31,13 @@ export function createOnboarding({ toast, modeCount, themeCount, doc = document 
     writeText('audiovisor.tour', '1');
   }
 
-  if (!readText('audiovisor.tour')) runTour();
-  doc.getElementById('tour-replay')?.addEventListener('click', () => { toast('TOUR <b>restarted</b>'); runTour(); });
+  // The first-run card already explains the touch actions, and the shortcut
+  // toasts would cover it on a phone. Keep the desktop tour available later.
+  if (!coarsePointer && !readText('audiovisor.tour')) runTour();
+  doc.getElementById('tour-replay')?.addEventListener('click', () => {
+    if (!coarsePointer) toast('TOUR <b>restarted</b>');
+    runTour();
+  });
 
   return { runTour };
 }

@@ -111,10 +111,9 @@ export function createRenderLoop({
   const rootEl = doc.documentElement;
 
   function frameStep(now) {
-    /* Nothing is visible until the user picks a mode (see .mode-unchosen in
-       style.css), so draw nothing either: the ray stage was marching full
-       frames behind a hidden stage, costing GPU and battery while the user
-       browsed the picker. The frame clock restarts cleanly on the first pick. */
+    /* The ray stage stays idle until an audio source starts or the user picks
+       a mode. Drawing behind the first-run card would waste GPU and battery;
+       the frame clock restarts cleanly when either path reveals the stage. */
     if (rootEl.classList.contains('mode-unchosen')) {
       lastFrameTs = now;
       return;
@@ -246,13 +245,15 @@ export function createRenderLoop({
       if (_uiAcc >= 100) {
         _uiAcc = 0;
         const bi = engine.beatInfo;
-        /* Live lock wins; the offline analysis only fills the gap before the
-           tracker has converged. */
+        /* A decoded file has a whole-track estimate; an early live lock can
+           briefly disagree with it. Keep live tempo for sources without a
+           decoded track, and for files until their analysis finishes. */
         const liveBpm = bi.bpm && bi.confidence > 0.25 ? bi.bpm : 0;
-        const bpm = liveBpm || state.analyzedBpm || 0;
+        const analyzedBpm = input === 'track' ? state.analyzedBpm : 0;
+        const bpm = analyzedBpm || liveBpm || 0;
         bpmValueEl.textContent = bpm ? bpm.toFixed(2) : '--.--';
-        bpmValueEl.title = liveBpm ? 'Live tempo lock'
-          : state.analyzedBpm ? 'Analysed from the track' : '';
+        bpmValueEl.title = analyzedBpm ? 'Analysed from the track'
+          : liveBpm ? 'Live tempo lock' : '';
         bassChipEl.classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));
         if (levels) {
           const mood = detectMood({ bpm: levels.bpm, bass: levels.bass, mid: levels.mid, high: levels.high, width: levels.width });
