@@ -81,6 +81,17 @@ await step('first paint: audio entry point visible while renderer waits', async 
   if (!state.waiting || state.title === 'none' || state.picker !== 'visible') throw new Error(JSON.stringify(state));
 });
 await snap('00-first');
+if (!MOBILE) await step('1280px console keeps track text and seek readable', async () => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const sizes = await page.evaluate(() => {
+    const rect = (selector) => document.querySelector(selector).getBoundingClientRect();
+    return { specHeight: rect('#track-spec').height, infoWidth: rect('#track-info').width, seekWidth: rect('#seek-track').width };
+  });
+  await snap('00-1280');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  if (sizes.specHeight > 20 || sizes.infoWidth < 150 || sizes.seekWidth < 80) throw new Error(JSON.stringify(sizes));
+  return `track ${Math.round(sizes.infoWidth)}px, seek ${Math.round(sizes.seekWidth)}px`;
+});
 
 // onboarding / tour
 await step('dismiss onboarding if shown', async () => { const t = await page.$('.onboarding, .tour, [data-tour]'); if (t && await t.isVisible()) { await page.keyboard.press('Escape'); return 'tour shown, escaped'; } return 'none'; });
