@@ -55,6 +55,9 @@ describe('createShareCard', () => {
     getModeName: () => 'Bars',
     getTrackName: () => 'Kind of Blue',
     getLiveCanvas: () => ({ width: 800, height: 450 }),
+    /* no render loop in these tests, so no frame copy arrives: the card falls
+       back to getLiveCanvas straight away instead of waiting out the timeout */
+    captureFrame: async () => null,
     download: vi.fn(),
     toast: vi.fn(),
     ...overrides,
@@ -86,5 +89,21 @@ describe('createShareCard', () => {
     expect(blob).toBeInstanceOf(Blob);
     expect(name).toMatch(/^audiovisor-\d{8}-\d{6}\.png$/);
     expect(toast).toHaveBeenCalledWith('SHARE <b>CARD</b> saved', { duration: 1400 });
+  });
+
+  it('draws the frame the render loop copied, never the live stage canvas', async () => {
+    const copy = { width: 1600, height: 900 };
+    const live = vi.fn(() => ({ width: 800, height: 450 }));
+    const { renderShareCard } = card({ captureFrame: async () => copy, getLiveCanvas: live });
+    await renderShareCard();
+    expect(live).not.toHaveBeenCalled();
+    expect(ctx.drawImage.mock.calls[0][0]).toBe(copy);
+  });
+
+  it('falls back to the live canvas when no frame is copied in time', async () => {
+    const live = vi.fn(() => ({ width: 800, height: 450 }));
+    const { renderShareCard } = card({ captureFrame: async () => null, getLiveCanvas: live });
+    await renderShareCard();
+    expect(live).toHaveBeenCalled();
   });
 });

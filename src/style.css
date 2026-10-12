@@ -26,7 +26,8 @@
   --text-strong: #fffaf3;
   --text-60: rgba(245, 240, 232, 0.72);
   --text-40: rgba(245, 240, 232, 0.54);
-  --text-20: rgba(245, 240, 232, 0.32);
+  /* only ever used for text (placeholders, empty states); 0.32 measured 2.7:1 */
+  --text-20: rgba(245, 240, 232, 0.56);
   --text-12: rgba(245, 240, 232, 0.16);
   --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -86,7 +87,7 @@ button {
   border: none;
   cursor: pointer;
 }
-button:focus-visible, input:focus-visible {
+button:focus-visible, input:focus-visible, [role="button"]:focus-visible, [role="slider"]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 2px;
@@ -359,7 +360,7 @@ button:focus-visible, input:focus-visible {
   50% { opacity: 0.7; transform: scale(0.85); }
 }
 
-.status-text { font-size: 9px; color: var(--text-60); letter-spacing: 0.14em; }
+.status-text { font-size: 10px; color: var(--text-60); letter-spacing: 0.14em; }
 
 .lime-btn {
   width: 36px;
@@ -666,7 +667,7 @@ button:focus-visible, input:focus-visible {
   backdrop-filter: blur(16px);
   box-shadow: 0 2px 12px rgba(0,0,0,0.2);
 }
-.chip-label { font-size: 9px; color: var(--text-40); letter-spacing: 0.12em; }
+.chip-label { font-size: 10px; color: var(--text-40); letter-spacing: 0.12em; }
 .chip-value { font-size: 10px; color: var(--text-strong); font-variant-numeric: tabular-nums; letter-spacing: 0.06em; }
 .chip-accent { border-color: var(--accent-line); background: var(--accent-dim); }
 .chip-accent .chip-label { color: var(--accent); }
@@ -866,7 +867,7 @@ button:focus-visible, input:focus-visible {
   color: var(--text-60);
   background: rgba(255,250,243,0.04);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.13em;
   text-transform: uppercase;
   transition: color 0.18s var(--ease), border-color 0.18s var(--ease), background 0.18s var(--ease), transform 0.18s var(--ease);
@@ -888,16 +889,10 @@ button:focus-visible, input:focus-visible {
   margin-top: 22px;
   color: var(--text-40);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-}
-.drop-meta-sep {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--accent);
-  opacity: 0.75;
+  text-align: center;
 }
 
 /* ---------- Drawer ---------- */
@@ -1252,7 +1247,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   background: var(--glass);
   color: var(--text-40);
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   font-weight: 500;
@@ -1848,11 +1843,13 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   .ghost-btn { width: 40px; height: 40px; }
   .play-btn { width: 48px; height: 48px; }
   /* bottom sheet drawer on mobile */
+  /* the sheet rests on top of the transport, which stays usable while it is
+     open; --tp-h is the transport's measured height (set by drawer.js) */
   .drawer {
     top: auto;
     right: 0;
     left: 0;
-    bottom: 0;
+    bottom: calc(var(--tp-h, 0px) + 8px);
     width: 100%;
     border-radius: 20px 20px 0 0;
     border-left: none;
@@ -1865,11 +1862,6 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   .stage { aspect-ratio: auto; height: auto; flex: 1; min-height: 42vh; }
   .workspace { padding: 10px 8px 6px; }
   .cmd-box { width: calc(100vw - 16px); }
-  .shell.drawer-open .transport {
-    opacity: 0;
-    transform: translateY(18px);
-    pointer-events: none;
-  }
 }
 
 /* ---------- Connect panel ---------- */
@@ -1942,7 +1934,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   background: var(--glass);
   color: var(--text-60);
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   font-weight: 500;
@@ -2075,7 +2067,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 .sp-results::-webkit-scrollbar { width: 4px; }
 .sp-results::-webkit-scrollbar-thumb { background: rgba(255,235,205,0.12); border-radius: 999px; }
 .sp-results-label {
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.14em;
   color: var(--text-40);
   padding: 6px 2px 4px;
@@ -2171,7 +2163,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   gap: 4px;
   padding: 8px 2px 10px;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-weight: 600;
@@ -2252,7 +2244,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   grid-column: 1 / -1;
   margin-top: 10px;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--text-40);
@@ -2289,7 +2281,7 @@ input:focus-visible,
 }
 
 @media (max-width: 640px) {
-  .drawer-tab { font-size: 9px; letter-spacing: 0.1em; }
+  .drawer-tab { font-size: 10px; letter-spacing: 0.1em; }
   .shortcuts-grid { grid-template-columns: 1fr; }
 }
 
@@ -2378,7 +2370,7 @@ input:focus-visible,
 .more-item kbd {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-40);
   background: var(--glass);
   border: 1px solid var(--border);
@@ -2461,7 +2453,6 @@ label.add-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 
   /* the sheet sits at the bottom of the screen and the transport floats over
      it, so the last controls were unreachable */
-  .drawer-scroll { padding-bottom: 132px; }
   .drawer { max-height: 68vh; }
 
   /* keep the transport readable instead of wrapping into the sheet */
@@ -2511,7 +2502,7 @@ html, body {
     padding-bottom: var(--sab);
     max-height: calc(68dvh + var(--sab));
   }
-  .drawer-scroll { padding-bottom: calc(132px + var(--sab)); }
+  .drawer-scroll { padding-bottom: 24px; }
   .queue-panel, .library-panel { bottom: calc(96px + var(--sab)); }
   .toasts { bottom: calc(96px + var(--sab)); }
 
@@ -2705,7 +2696,7 @@ html, body {
   .sheet-scrim {
     display: block;
     position: fixed;
-    inset: 0;
+    inset: 0 0 var(--tp-h, 0px);   /* leaves the transport undimmed and tappable */
     z-index: 45;          /* under the sheet (50), over everything else */
     background: rgba(0,0,0,0.42);
     opacity: 0;
@@ -2764,6 +2755,8 @@ html, body {
   .track-art { width: 32px; height: 32px; }
   .transport-controls { flex: 0 0 auto; }
   .utility-controls { flex: 0 1 auto; gap: 4px; }
+  /* a phone on its side is still a touch screen: keep the 44px target */
+  .ghost-btn, .mic-btn, .add-btn { min-width: 44px; min-height: 44px; }
   .seek-console { order: 9; flex: 1 1 100%; }
   #vu-meter { display: none; }
 
@@ -2792,19 +2785,18 @@ html, body {
   .topbar { padding: 0 8px; }
   .topbar-right { gap: 6px; }
 
-  /* 44px is the target everywhere there is room; at this width the choice
-     is 40px or a clipped control, and a reachable button wins. */
+  /* the 44px target holds here too; the utility row gives up gap instead */
   .ghost-btn,
   .mic-btn,
   .lime-btn,
   .add-btn {
-    min-width: 40px;
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   /* keep Add on the utility row instead of letting it claim one of its own */
   .utility-controls { gap: 2px; }
-  .add-btn { width: 40px; }
+  .add-btn { width: 44px; }
   .util-sep { margin-inline: 2px; }
 
   .transport { padding: 8px 10px 6px; gap: 6px; }
@@ -2838,7 +2830,7 @@ html, body {
     gap: 8px 14px;
     margin-bottom: calc(14px + var(--sab));
   }
-  .track-info { width: auto; flex: 1 1 200px; }
+  .track-info { width: auto; flex: 0 1 200px; }
   .transport-controls { flex: 0 0 auto; }
   .utility-controls { flex: 0 1 auto; }
   .seek-console { order: 9; flex: 1 1 100%; }
@@ -3098,11 +3090,7 @@ html, body {
   .drop-actions { flex-direction: column; gap: 8px; margin-top: 18px; }
   .drop-actions .browse-btn,
   .drop-secondary { width: min(220px, 100%); }
-  .drop-meta { margin-top: 17px; font-size: 7px; gap: 6px; }
-  .drop-meta-sep { display: none; }
-  .drop-meta span { display: none; }
-  .drop-meta span:first-child,
-  .drop-meta span:last-child { display: inline; }
+  .drop-meta { margin-top: 17px; }
 
   .drawer-head { padding: 10px 14px 9px; }
   .drawer-heading strong { font-size: 14px; }
@@ -3249,7 +3237,7 @@ html, body {
 #connect-root { display: flex; flex-direction: column; gap: 10px; }
 .connect-head { display: flex; align-items: center; justify-content: space-between; }
 .connect-head-title { font-size: 13px; font-weight: 600; }
-.connect-status, .connect-sub { display: flex; align-items: center; gap: 5px; font-size: 9px; letter-spacing: 0.1em; color: var(--text-40); }
+.connect-status, .connect-sub { display: flex; align-items: center; gap: 5px; font-size: 10px; letter-spacing: 0.1em; color: var(--text-40); }
 .connect-sub { margin-top: 4px; }
 .connect-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border-soft); }
 .connect-dot.am { --brand-rgb: 250,45,72; }

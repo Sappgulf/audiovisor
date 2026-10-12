@@ -70,3 +70,70 @@ describe('createMidiInput dispatch', () => {
     expect(setMode).toHaveBeenCalledWith('waves');
   });
 });
+
+describe('MIDI enable/disable serialization', () => {
+  const settle = () => new Promise((r) => setTimeout(r, 20));
+
+  function stubMidi() {
+    const input = { onmidimessage: null };
+    const access = { inputs: new Map([['in', input]]), onstatechange: null };
+    const request = vi.fn(() => new Promise((r) => setTimeout(() => r(access), 5)));
+    const prev = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { requestMIDIAccess: request } });
+    return {
+      input, access, request,
+      restore: () => {
+        if (prev) Object.defineProperty(globalThis, 'navigator', prev);
+        else delete globalThis.navigator;
+      },
+    };
+  }
+
+  function make(chip = null) {
+    return createMidiInput({
+      chip, fxNames: ['reverb'], modes: [{ id: 'bars' }],
+      setSlider: vi.fn(), setFx: vi.fn(), setMode: vi.fn(), toast: vi.fn(), setToggle: vi.fn(),
+    });
+  }
+
+  it('a disable during the permission prompt wins and leaves nothing bound', async () => {
+    const m = stubMidi();
+    try {
+      const midi = make();
+      const on = midi.enable();
+      midi.disable();
+      await on;
+      await settle();
+      expect(midi.isEnabled()).toBe(false);
+      expect(m.input.onmidimessage).toBeNull();
+      expect(m.access.onstatechange).toBeNull();
+    } finally { m.restore(); }
+  });
+
+  it('two enables during the prompt ask once and bind once', async () => {
+    const m = stubMidi();
+    try {
+      const midi = make();
+      await Promise.all([midi.enable(), midi.enable()]);
+      expect(m.request).toHaveBeenCalledTimes(1);
+      expect(midi.isEnabled()).toBe(true);
+      expect(typeof m.input.onmidimessage).toBe('function');
+      await midi.disable();
+      expect(m.input.onmidimessage).toBeNull();
+    } finally { m.restore(); }
+  });
+
+  it('a second chip click during the prompt cancels the first', async () => {
+    const m = stubMidi();
+    try {
+      let click = null;
+      const chip = { addEventListener: (_ev, fn) => { click = fn; } };
+      const midi = make(chip);
+      click();                 // on: prompt opens
+      click();                 // off: arrives before the prompt resolves
+      await settle();
+      expect(midi.isEnabled()).toBe(false);
+      expect(m.input.onmidimessage).toBeNull();
+    } finally { m.restore(); }
+  });
+});

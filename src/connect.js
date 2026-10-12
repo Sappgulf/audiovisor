@@ -2,6 +2,32 @@ import { setIcon } from './icons.js';
 import { fmtTime, esc } from './utils.js';
 import { AppleMusicClient } from './applemusic.js';
 
+const LOCAL_HOSTS = ['localhost', '127.0.0.1'];
+
+/* Developer setup for the Apple Music credentials. Rendered only on a
+   developer site (see isDeveloperSite); a visitor to the live site never
+   sees env var names, Vercel or the Apple Developer steps. */
+const APPLE_SETUP_HTML = `<details class="sp-help">
+          <summary class="mono">SETUP</summary>
+          <ol>
+            <li>Create a MusicKit key in your Apple Developer account</li>
+            <li>Set <code>APPLE_MUSIC_TEAM_ID</code>, <code>APPLE_MUSIC_KEY_ID</code> and <code>APPLE_MUSIC_PRIVATE_KEY</code> in Vercel</li>
+            <li>Redeploy, then connect here</li>
+          </ol>
+        </details>`;
+
+/**
+ * True on the Vite dev server or a local host. Read at render time, so the
+ * answer follows the page actually being shown.
+ * @param {{dev?: boolean, hostname?: string}} [env]
+ */
+export function isDeveloperSite({
+  dev = !!import.meta.env?.DEV,
+  hostname = typeof window !== 'undefined' ? window.location.hostname : '',
+} = {}) {
+  return dev || LOCAL_HOSTS.includes(hostname);
+}
+
 
 /**
  * Drawer "Connect" panel: the Apple Music (MusicKit) account link, system and
@@ -14,18 +40,22 @@ export class ConnectPanel {
    * @param {import('./audio.js').AudioEngine} deps.engine
    * @param {(msg:string, opts?:object)=>void} deps.toast
    * @param {(info:object|null)=>void} [deps.onExternalTrack]
+   * @param {() => boolean} [deps.isDeveloper] whether setup copy may show; defaults to isDeveloperSite()
   */
-  constructor(root, { engine, toast, onExternalTrack }) {
+  constructor(root, { engine, toast, onExternalTrack, isDeveloper }) {
     this.root = root;
     this.engine = engine;
     this.toast = toast;
     this.onExternalTrack = onExternalTrack || (() => {});
+    this.isDeveloper = isDeveloper || (() => isDeveloperSite());
 
     this.apple = new AppleMusicClient();
     this.currentTrack = null;
 
     this.apple.onAuthChange = () => this.render();
     this.apple.onTrackChange = (track) => {
+      // a direct URL owns the output now; a late MusicKit event must not re-attach the Apple controller
+      if (this.engine.mode === 'stream') return;
       if (!track) {
         if (this.currentTrack?.provider === 'apple') this.setCurrentTrack(null);
         return;
@@ -116,25 +146,22 @@ export class ConnectPanel {
     am.className = `provider-block provider-card provider-apple${appleAuthed ? ' is-linked' : ''}`;
     const appleConfigured = this.apple.configured;
     if (!appleAuthed) {
+      /* Not configured here means either the token endpoint refused this
+         deployment (remembered for the page's life, so there is no Connect
+         button that is guaranteed to fail) or this is a local build without
+         credentials. The setup steps appear only on a developer site. */
       am.innerHTML = `
         <div class="sp-head">
           <span class="provider-logo" data-icon="music2"></span>
           <span class="sp-title">Apple Music</span>
           <span class="sp-badge mono">${appleConfigured ? 'NOT LINKED' : 'UNAVAILABLE'}</span>
         </div>
-        <p class="sp-note">${appleConfigured
-          ? 'Search the Apple Music catalog and play your library playlists. Playback is audio-only; sign-in happens with Apple.'
-          : 'Apple Music is not enabled on this deployment yet.'}</p>
         ${appleConfigured
-          ? '<button class="provider-btn" id="am-connect">Connect Apple Music</button>'
-          : `<details class="sp-help">
-          <summary class="mono">SETUP</summary>
-          <ol>
-            <li>Create a MusicKit key in your Apple Developer account</li>
-            <li>Set <code>APPLE_MUSIC_TEAM_ID</code>, <code>APPLE_MUSIC_KEY_ID</code> and <code>APPLE_MUSIC_PRIVATE_KEY</code> in Vercel</li>
-            <li>Redeploy, then connect here</li>
-          </ol>
-        </details>`}`;
+          ? `<p class="sp-note">Sign in with your Apple Music subscription. Playback stays in Apple's player.</p>
+        <button class="provider-btn" id="am-connect">Connect Apple Music</button>`
+          : `<p class="sp-note">Apple Music isn't available on this site yet.</p>
+        <button class="provider-btn" id="am-connect" disabled>Connect Apple Music</button>
+        ${this.isDeveloper() ? APPLE_SETUP_HTML : ''}`}`;
     } else {
       am.innerHTML = `
         <div class="sp-head">
@@ -218,9 +245,9 @@ export class ConnectPanel {
         const u = new URL(url);
         name = decodeURIComponent(u.pathname.split('/').pop() || u.hostname);
       } catch {}
+      this.releaseAppleTrack();
       this.engine.playUrl(url, { name }).then(() => {
         this.toast(`Streaming <b>${esc(name)}</b>`);
-        this.setCurrentTrack(null);
       }).catch((err) => {
         this.toast(`<b>Stream failed</b> — ${esc(err?.message || err)}`, { duration: 3400 });
       });
@@ -250,7 +277,9 @@ export class ConnectPanel {
         } catch (err) {
           connect.disabled = false;
           connect.textContent = 'Connect Apple Music';
-          this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3600 });
+          this.appleToast(err, 3600);
+          // a refusal from the token endpoint turns the card into its unavailable state
+          if (!this.apple.configured) this.render();
         }
       });
       return;
@@ -275,7 +304,7 @@ export class ConnectPanel {
           const tracks = await this.apple.searchSongs(q, 8);
           this.showResults(tracks, `RESULTS — “${q}”`);
         } catch (err) {
-          this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3000 });
+          this.appleToast(err, 3000);
         }
       }, 380);
     });
@@ -292,7 +321,7 @@ export class ConnectPanel {
         this.engine.setExternal(this.makeAppleController());
         this.toast(`▶ Apple playlist <b>${esc(playlists.selectedOptions[0].textContent)}</b>`, { duration: 2200 });
       } catch (err) {
-        this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3400 });
+        this.appleToast(err, 3400);
       }
     });
   }
@@ -326,7 +355,7 @@ export class ConnectPanel {
       this.engine.setExternal(this.makeAppleController());
       this.toast(`▶ <b>${esc(t.name)}</b>`, { duration: 1800 });
     } catch (err) {
-      this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3400 });
+      this.appleToast(err, 3400);
     }
   }
 
@@ -347,10 +376,33 @@ export class ConnectPanel {
       if (!playlists.length) select.innerHTML = '<option value="">No playlists found</option>';
     } catch (err) {
       select.innerHTML = '<option value="">Could not load playlists</option>';
-      if (this.apple.authed) this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3200 });
+      if (this.apple.authed) this.appleToast(err, 3200);
     } finally {
       select.disabled = false;
     }
+  }
+
+  /**
+   * Toast for a failed Apple Music action. Once the deployment has refused the
+   * token, the server's wording is replaced with the card's own line.
+   */
+  appleToast(err, duration) {
+    const msg = this.apple.unavailable
+      ? "<b>Apple Music</b> isn't available on this site yet"
+      : `<b>Apple Music</b> — ${esc(err?.message || err)}`;
+    this.toast(msg, { duration });
+  }
+
+  /**
+   * A direct URL is taking the output. Detach the Apple controller now (not
+   * when the stream resolves) and pause MusicKit, so a stream that fails
+   * leaves no Apple track shown as current.
+   */
+  releaseAppleTrack() {
+    if (this.currentTrack?.provider === 'apple') {
+      void Promise.resolve().then(() => this.apple.pause?.()).catch(() => {});
+    }
+    this.setCurrentTrack(null);
   }
 
   /* ---------- state sync ---------- */

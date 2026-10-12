@@ -1,6 +1,6 @@
 import { THEMES } from './themes.js';
 import { lerp, logSample, hexRgba, clamp } from './utils.js';
-import { beatEnergy } from './beatenergy.js';
+import { beatEnergy, GRID_MIN_CONFIDENCE, GRID_MAX } from './beatenergy.js';
 import { sanitizeLevels, usableSpectrum, safeDimension } from './levels.js';
 import { motionScale } from './motion.js';
 import { isLowPowerDevice } from './adaptive.js';
@@ -9,6 +9,43 @@ import { getPluginMode, isPluginMode } from './plugins.js';
 /* modes whose scenes are broad bright plates rather than thin bright
    marks; full-strength bloom clips them (see _bloom) */
 const MODE_BLOOM = { spectro: 0.28, gpu: 0.34, terrain: 0.62 };
+
+/* ---- beat-lock and calm (shared with the raytraced stage) ----
+   Beat-lock: in these three modes the beat drives motion from the tracker's
+   phase grid instead of the onset detector, so a pulse lands on the predicted
+   beat rather than a few tens of ms after it. Everything else keeps the
+   onset-driven envelope it always had. */
+export const LOCK_MODES = new Set(['bars', 'particles', 'orb']);
+
+/* Calm (reduce flashing): the beat envelope is capped below the kick-flare
+   threshold (0.45) and follows a slow time constant, so brightness can no
+   longer track the beat rhythm. The drop term, which drives whole-frame camera
+   motion, is scaled down. */
+export const CALM_BEAT_CAP = 0.4;
+export const CALM_DROP = 0.35;
+
+/** Slow swell for calm mode: rises over ~0.5s, falls over ~0.8s. */
+export function calmEnvelope(prev, target, dt) {
+  const k = 1 - Math.exp(-Math.max(0, dt) / (target > prev ? 0.5 : 0.8));
+  return Math.min(CALM_BEAT_CAP, prev + (target - prev) * k);
+}
+
+/**
+ * The phase-locked beat envelope, with the same curve and ceiling as the grid
+ * term in beatenergy.js. Falls back to `fallback` when the tracker has no
+ * phase or is not confident.
+ * @param {{ bpm?: number, beatConfidence?: number, beatPhase?: number }} info sanitised levels
+ * @param {boolean} hasPhase whether the raw frame carried a beatPhase at all
+ * @param {number} fallback the onset-driven envelope
+ */
+export function lockedBeat(info, hasPhase, fallback) {
+  if (!hasPhase || !(info?.bpm > 0) || !(info.beatConfidence >= GRID_MIN_CONFIDENCE)) return fallback;
+  const conf = Math.min(1, info.beatConfidence);
+  return Math.pow(1 - Math.min(1, Math.max(0, info.beatPhase || 0)), 2.4) * conf * GRID_MAX;
+}
+
+/* the dissolve between two modes, in seconds */
+const XFADE_S = 0.32;
 
 /* The four modes that ship in the entry bundle. Everything else lives in
    modes-extra.js and is fetched the first time it is selected; until it
@@ -91,6 +128,18 @@ export class Renderer {
 
     this.sm = { bass: 0, mid: 0, high: 0, level: 0 };
     this.beat = 0;
+    /* reduce-flashing envelope, beat-lock flag and mode-switch dissolve; the
+       accessors below and setMode() own them */
+    this._calm = false;
+    this._calmBeat = 0;
+    this._hasPhase = false;
+    this._lastFrameDrawn = false;
+    this._xfadeCv = null;
+    this._xfadeCtx = null;
+    this._xfadeLeft = 0;
+    /* gradients whose geometry and stops depend only on size and theme */
+    this._gradCache = new Map();
+    this._seed = 0x2545f491;
     this.history = [];
     this.particles = [];
     this.peaks = [];
@@ -178,6 +227,7 @@ export class Renderer {
     this.canvas.width = safeDimension(this.w * scale);
     this.canvas.height = safeDimension(this.h * scale);
     this._floorGrads = null;
+    this._gradCache.clear();
   }
 
   setQuality(q) {
@@ -186,7 +236,32 @@ export class Renderer {
     this.resize();
   }
 
+  /* Reduce flashing (photosensitivity). Off by default; main.js sets it from
+     the "Reduce flashing" setting. When on, the beat drives a slow, capped
+     swell instead of per-beat flashes, camera drop shake is cut, the chop
+     glitch overlay is removed, and the raytraced stage follows the same
+     envelope (RayStage.calm). Whole-frame motion is kept. */
+  get calm() { return this._calm; }
+  set calm(v) { this._calm = !!v; }
+
+  /** The beat value the chrome (CSS --beat, chips) should show. */
+  get chromeBeat() { return this._calm ? this._calmBeat : this.beat; }
+
   setMode(m) {
+    /* a dissolve from the frame on screen: copy it now, before the new mode
+       draws over it, if that frame came from this renderer */
+    if (m !== this.mode && this._lastFrameDrawn && this.canvas.width > 0) {
+      if (!this._xfadeCv) {
+        this._xfadeCv = document.createElement('canvas');
+        this._xfadeCtx = this._xfadeCv.getContext('2d');
+      }
+      if (this._xfadeCtx) {
+        this._xfadeCv.width = this.canvas.width;
+        this._xfadeCv.height = this.canvas.height;
+        this._xfadeCtx.drawImage(this.canvas, 0, 0);
+        this._xfadeLeft = XFADE_S;
+      }
+    }
     this.mode = m;
     if (!CORE_MODES.has(m) && !extrasReady && !isPluginMode(m)) {
       loadExtraModes(Renderer).catch(() => {});
@@ -195,6 +270,12 @@ export class Renderer {
     this.echo = null;
     this.terrainRows = [];
     this.cityCols = [];
+    /* a particle or peak left over from the last mode drew into this one
+       until it decayed; the trail buffer held the last mode's frames */
+    this.particles = [];
+    this.peaks = [];
+    this.peakVels = [];
+    if (this.trailCtx && this.trailCv) this.trailCtx.clearRect(0, 0, this.trailCv.width, this.trailCv.height);
     this._scopeW = 0;
     this.scopeCv = null;
     this.scopeCtx = null;
@@ -216,6 +297,7 @@ export class Renderer {
     this.theme = t;
     this._cacheTheme = null;
     this._bgTheme = null;
+    this._gradCache.clear();
     /* the spectro buffer bakes palette-tinted pixels; force a rebuild */
     this.specCv = null;
   }
@@ -385,6 +467,9 @@ export class Renderer {
        frame, which is the only thing its readers want. */
     const levels = sanitizeLevels(rawLevels, this._lvScratch || (this._lvScratch = {}));
     this.beatInfo = levels;
+    /* a missing beatPhase is not a phase of zero: beat-lock stays off */
+    this._hasPhase = !!rawLevels && Number.isFinite(rawLevels.beatPhase);
+    this._lastFrameDrawn = false;
     this.beat = beatEnergy(this.beat, levels, dt);
     this._updateLevels(levels, dt);
     return dt;
@@ -392,7 +477,6 @@ export class Renderer {
 
   render(idle, freq, wave, levels, dtMs = 16.7, stereoL = null, stereoR = null) {
     if (this._dead || !this.ctx) return;
-    const { ctx, w, h } = this;
     /* kept for the scope: a true L/R goniometer when the source is stereo */
     this.stereoL = stereoL;
     this.stereoR = stereoR;
@@ -404,6 +488,68 @@ export class Renderer {
       freq = this._silentFreq;
     }
     const dt = this.updateAnalysis(levels, dtMs);
+    /* Beat-lock and calm change what the scene reads, not what the analysis
+       tracks: for this frame the beat envelope and the drop/chop flags are
+       swapped for their effective values and restored afterwards, so the
+       smoothing that feeds the next frame still sees the real ones. */
+    const realBeat = this.beat;
+    const realInfo = this.beatInfo;
+    this.beat = this._effectBeat(dt);
+    if (this._calm) {
+      const info = Object.assign(this._calmInfo || (this._calmInfo = {}), realInfo, { drop: (realInfo.drop || 0) * CALM_DROP });
+      this.beatInfo = info;
+      info.chop = false;
+    }
+    const drawLevels = this._calm && levels
+      ? Object.assign(this._calmLevels || (this._calmLevels = {}), levels, { drop: (levels.drop || 0) * CALM_DROP, chop: false })
+      : levels;
+    try {
+      this._drawFrame(idle, freq, wave, drawLevels, dt);
+    } finally {
+      this.beat = realBeat;
+      this.beatInfo = realInfo;
+    }
+    this._lastFrameDrawn = true;
+    this._crossfade(dt);
+  }
+
+  /** The beat envelope this frame draws with: beat-lock, then calm's slow swell. */
+  _effectBeat(dt) {
+    const locked = LOCK_MODES.has(this.mode) ? lockedBeat(this.beatInfo, this._hasPhase, this.beat) : this.beat;
+    if (this._calm) this._calmBeat = calmEnvelope(this._calmBeat, locked, dt);
+    return this._calm ? this._calmBeat : locked;
+  }
+
+  /* the outgoing mode dissolves over the new frame for XFADE_S seconds */
+  _crossfade(dt) {
+    if (this._xfadeLeft <= 0 || !this._xfadeCv) return;
+    const { ctx, w, h } = this;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = Math.min(1, this._xfadeLeft / XFADE_S);
+    ctx.drawImage(this._xfadeCv, 0, 0, w, h);
+    ctx.restore();
+    this._xfadeLeft -= dt;
+  }
+
+  /* Seeded generator for the per-frame spawns. Math.random made every frame
+     non-deterministic, so render tests could not compare frames. This is the
+     same uniform distribution from a fixed seed (Park-Miller). */
+  _rnd() {
+    this._seed = (this._seed * 16807) % 2147483647;
+    return this._seed / 2147483647;
+  }
+
+  /* Gradients whose geometry and stops depend only on the canvas size and the
+     theme are built once. Cleared on resize and theme change. */
+  _cachedGrad(key, make) {
+    let g = this._gradCache.get(key);
+    if (!g) { g = make(); this._gradCache.set(key, g); }
+    return g;
+  }
+
+  _drawFrame(idle, freq, wave, levels, dt) {
+    const { ctx, w, h } = this;
     const dt60 = dt * 60;
     this._buildCache();
 
@@ -491,7 +637,7 @@ export class Renderer {
       const sliceY = (this.t * 380) % h;
       ctx.translate((Math.sin(this.t * 62) * 7) * motion, 0);
       ctx.beginPath();
-      ctx.rect(0, sliceY, w, 18 + Math.random()*22);
+      ctx.rect(0, sliceY, w, 18 + this._rnd()*22);
       ctx.clip();
     }
     this._scene(freq, wave, dt, dt60);
@@ -522,9 +668,12 @@ export class Renderer {
       );
       ctx.restore();
       // fade the reflection
-      const fade = ctx.createLinearGradient(0, sy, 0, h);
-      fade.addColorStop(0, 'rgba(15,14,13,0)');
-      fade.addColorStop(1, 'rgba(15,14,13,0.96)');
+      const fade = this._cachedGrad(`fade:${sy}:${h}`, () => {
+        const g = ctx.createLinearGradient(0, sy, 0, h);
+        g.addColorStop(0, 'rgba(15,14,13,0)');
+        g.addColorStop(1, 'rgba(15,14,13,0.96)');
+        return g;
+      });
       ctx.fillStyle = fade;
       ctx.fillRect(0, sy, w, fh);
     }
@@ -766,7 +915,7 @@ export class Renderer {
       const img = nc.createImageData(c.width, c.height);
       const d = img.data;
       for (let i = 0; i < d.length; i += 4) {
-        const v = Math.random();
+        const v = this._rnd();
         if (v > 0.90) {
           d[i] = d[i + 1] = d[i + 2] = 255;
           d[i + 3] = (v - 0.90) * 420;
@@ -799,17 +948,17 @@ export class Renderer {
 
     if (this.idleDots.length < 40) {
       this.idleDots.push({
-        x: Math.random() * w,
-        y: h + Math.random() * h * 0.3,
-        s: 0.4 + Math.random() * 0.9,
-        v: 0.15 + Math.random() * 0.5,
-        ph: Math.random() * Math.PI * 2,
+        x: this._rnd() * w,
+        y: h + this._rnd() * h * 0.3,
+        s: 0.4 + this._rnd() * 0.9,
+        v: 0.15 + this._rnd() * 0.5,
+        ph: this._rnd() * Math.PI * 2,
       });
     }
     const sprite = this._dot(this._color(0));
     for (const d of this.idleDots) {
       d.y -= d.v * dt60;
-      if (d.y < -10) { d.y = h + 10; d.x = Math.random() * w; }
+      if (d.y < -10) { d.y = h + 10; d.x = this._rnd() * w; }
       const a = 0.05 + 0.12 * (0.5 + 0.5 * Math.sin(this.t * 1.2 + d.ph));
       const r = d.s * 4;
       ctx.globalAlpha = a;
@@ -1199,17 +1348,17 @@ export class Renderer {
        (re-seeds after every mode switch since setMode empties the pool) */
     if (this.particles.length === 0) {
       for (let i = 0; i < cap * 0.5 && this.particles.length < cap; i++) {
-        const ang = Math.random() * Math.PI * 2;
-        const sp = 0.3 + Math.random() * 0.9;
+        const ang = this._rnd() * Math.PI * 2;
+        const sp = 0.3 + this._rnd() * 0.9;
         this.particles.push({
-          x: cx + (Math.random() - 0.5) * w * 0.5,
-          y: cy + (Math.random() - 0.5) * h * 0.6,
+          x: cx + (this._rnd() - 0.5) * w * 0.5,
+          y: cy + (this._rnd() - 0.5) * h * 0.6,
           vx: Math.cos(ang) * sp,
           vy: Math.sin(ang) * sp - 0.35,
-          r: 0.8 + Math.random() * 2.4,
-          c: Math.floor(Math.random() * this.theme.colors.length),
-          life: 0.5 + Math.random() * 0.5,
-          decay: 0.004 + Math.random() * 0.009,
+          r: 0.8 + this._rnd() * 2.4,
+          c: Math.floor(this._rnd() * this.theme.colors.length),
+          life: 0.5 + this._rnd() * 0.5,
+          decay: 0.004 + this._rnd() * 0.009,
         });
       }
     }
@@ -1220,17 +1369,17 @@ export class Renderer {
     this._spawnAcc -= spawn;
 
     for (let i = 0; i < spawn && this.particles.length < cap; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const sp = (0.4 + Math.random() * 1.3 + this.sm.bass * 4.5) * this.sensitivity;
+      const ang = this._rnd() * Math.PI * 2;
+      const sp = (0.4 + this._rnd() * 1.3 + this.sm.bass * 4.5) * this.sensitivity;
       this.particles.push({
-        x: cx + (Math.random() - 0.5) * 40,
-        y: cy + (Math.random() - 0.5) * 40,
+        x: cx + (this._rnd() - 0.5) * 40,
+        y: cy + (this._rnd() - 0.5) * 40,
         vx: Math.cos(ang) * sp,
         vy: Math.sin(ang) * sp - 0.45,
-        r: 0.8 + Math.random() * 2.6,
-        c: Math.floor(Math.random() * this.theme.colors.length),
+        r: 0.8 + this._rnd() * 2.6,
+        c: Math.floor(this._rnd() * this.theme.colors.length),
         life: 1,
-        decay: 0.005 + Math.random() * 0.011,
+        decay: 0.005 + this._rnd() * 0.011,
       });
     }
 

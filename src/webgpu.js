@@ -1,10 +1,17 @@
+/* canvases that have taken a 'webgpu' context. Such a canvas can never take
+   'webgl2', so a failure after the claim has to be recovered by the caller on
+   a fresh element (see gpu-init.js). */
+const claimed = new WeakSet();
+export function webgpuClaimed(canvas) { return claimed.has(canvas); }
+
 // WebGPU 3D ray-marched stage — fallback to canvas if unavailable
 export async function initWebGPU(canvas) {
   if (!navigator.gpu) return null;
+  let device = null;
   try {
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) return null;
-    const device = await adapter.requestDevice();
+    device = await adapter.requestDevice();
     const format = navigator.gpu.getPreferredCanvasFormat();
     /* Everything that can fail is built before the canvas is touched.
        A canvas keeps the first context type it is given, so once
@@ -64,7 +71,10 @@ export async function initWebGPU(canvas) {
 
     // last step, and the only one that consumes the canvas
     const context = canvas.getContext('webgpu');
-    if (!context) return null;
+    if (!context) { device.destroy?.(); return null; }
+    claimed.add(canvas);
+    // configure() can still throw after the claim; the caller then swaps the
+    // canvas rather than trying WebGL2 on this one
     context.configure({ device, format, alphaMode: 'opaque' });
     const state = { device, context, pipeline, bindGroup, timeBuf, levelBuf, format, lost: false };
     // a lost device (driver reset, tab backgrounded on some platforms) never
@@ -74,7 +84,11 @@ export async function initWebGPU(canvas) {
       console.warn('webgpu device lost:', info?.message || info?.reason || 'unknown');
     });
     return state;
-  } catch { return null; }
+  } catch {
+    // a device made for an attempt that did not succeed is released here
+    device?.destroy?.();
+    return null;
+  }
 }
 
 // writeBuffer copies its source synchronously, so one scratch pair is reused

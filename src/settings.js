@@ -11,6 +11,8 @@
 export const SETTINGS_KEY = 'audiovisor.settings.v2';
 export const LEGACY_SETTINGS_KEY = 'audiovisor.settings.v1';
 export const SETTINGS_VERSION = 6;
+/** Largest settings file the importer will read. Real exports are a few KB. */
+export const MAX_SETTINGS_BYTES = 64 * 1024;
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -33,7 +35,26 @@ export function serializeSettings(src) {
     volume: src.volume,
     loop: !!src.loop,
     autoDj: !!src.autoDj,
+    reduceFlashing: !!src.reduceFlashing,
   };
+}
+
+/**
+ * The OS asks for less motion. This is the Reduce flashing default until the
+ * viewer picks one for themselves.
+ * @param {{matchMedia?: (q: string) => {matches: boolean}}} [win]
+ */
+export function prefersReducedMotion(win = globalThis) {
+  try {
+    return !!win.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+
+/** Parsed JSON that can hold settings: a plain object, not an array or null. */
+export function isSettingsObject(raw) {
+  return !!raw && typeof raw === 'object' && !Array.isArray(raw);
 }
 
 /**
@@ -56,6 +77,7 @@ export function validateSettings(raw, vocab) {
   if (vocab.rayQualities.includes(raw.rayQuality)) out.rayQuality = raw.rayQuality;
   if (typeof raw.loop === 'boolean') out.loop = raw.loop;
   if (typeof raw.autoDj === 'boolean') out.autoDj = raw.autoDj;
+  if (typeof raw.reduceFlashing === 'boolean') out.reduceFlashing = raw.reduceFlashing;
 
   const vol = num(raw.volume);
   if (vol !== null) out.volume = clamp01(vol);

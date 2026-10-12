@@ -1,5 +1,6 @@
 // @ts-check
 import { fmtStamp } from './utils.js';
+import { requestFrameCopy } from './render-loop.js';
 
 /**
  * Share card.
@@ -25,11 +26,17 @@ export function cardRoundRect(x, cx, cy, w, h, r) {
  * @param {() => { colors?: string[], name?: string } | undefined} deps.getTheme
  * @param {() => string} deps.getModeName
  * @param {() => string | null | undefined} deps.getTrackName
- * @param {() => HTMLCanvasElement} deps.getLiveCanvas
+ * @param {() => HTMLCanvasElement} deps.getLiveCanvas the live stage canvas;
+ *   only read as a fallback, since the stage no longer keeps its pixels
+ * @param {() => Promise<HTMLCanvasElement|null>} [deps.captureFrame] resolves
+ *   with a copy of the next drawn frame; defaults to the render loop's
  * @param {(blob: Blob, name: string) => void} deps.download
  * @param {(msg: string, opts?: object) => void} deps.toast
  */
-export function createShareCard({ getTheme, getModeName, getTrackName, getLiveCanvas, download, toast }) {
+export function createShareCard({
+  getTheme, getModeName, getTrackName, getLiveCanvas, download, toast,
+  captureFrame = requestFrameCopy,
+}) {
   async function renderShareCard() {
     const cv = document.createElement('canvas');
     cv.width = CARD_W;
@@ -37,8 +44,9 @@ export function createShareCard({ getTheme, getModeName, getTrackName, getLiveCa
     const x = cv.getContext('2d');
     const accent = getTheme()?.colors?.[0] || '#d9b089';
 
-    /* stage frame, cover-fit */
-    const src = getLiveCanvas();
+    /* stage frame, cover-fit. The frame is copied by the render loop as it
+       draws, because the stage no longer keeps its pixels between frames. */
+    const src = (await captureFrame()) || getLiveCanvas();
     if (src.width > 0 && src.height > 0) {
       const sR = src.width / src.height;
       const tR = CARD_W / CARD_H;

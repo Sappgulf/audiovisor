@@ -1,5 +1,5 @@
 // @ts-check
-import { initWebGPU } from './webgpu.js';
+import { initWebGPU, webgpuClaimed } from './webgpu.js';
 import { initWebGL2 } from './webgl2.js';
 
 /**
@@ -19,7 +19,15 @@ export function createGpuStage(doc = document) {
   let resolveReady;
   const ready = new Promise((resolve) => { resolveReady = resolve; });
 
-  const canvas = doc.getElementById('webgpu-canvas');
+  let canvas = doc.getElementById('webgpu-canvas');
+  /* A canvas that took a 'webgpu' context cannot take 'webgl2' for good. When
+     WebGPU claimed it and then failed, WebGL2 gets a fresh element in the same
+     place instead of silently getting nothing. */
+  const freshCanvas = (old) => {
+    const fresh = old.cloneNode(false);
+    old.parentNode?.replaceChild(fresh, old);
+    return fresh;
+  };
   /* Lazy: the GPU Core canvas only draws when the raytraced stage is off and
      that mode is showing. Initialising at load requested a second GPU device
      and built its pipeline on every visit, competing with the ray stage's
@@ -36,6 +44,7 @@ export function createGpuStage(doc = document) {
           webgpuState = s;
           backend = 'webgpu';
         } else {
+          if (webgpuClaimed(canvas)) canvas = freshCanvas(canvas);
           webgl2State = initWebGL2(canvas);
           backend = webgl2State ? 'webgl2' : null;
         }
@@ -44,7 +53,8 @@ export function createGpuStage(doc = document) {
   }
 
   return {
-    canvas,
+    /* a getter: the element can be replaced after a failed WebGPU claim */
+    get canvas() { return canvas; },
     start,
     getWebgpu: () => webgpuState,
     getWebgl2: () => webgl2State,

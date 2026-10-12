@@ -7,7 +7,7 @@ let dbPromise = null;
 /* one connection per page: every call used to open a new one and never close it */
 function openDB() {
   if (!dbPromise) {
-    dbPromise = new Promise((resolve, reject) => {
+    const opening = new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VER);
       req.onupgradeneeded = () => {
         const db = req.result;
@@ -23,18 +23,36 @@ function openDB() {
       };
       req.onerror = () => { dbPromise = null; reject(req.error); };
     });
+    dbPromise = opening;
+    /* a failed open must not stay cached. A synchronous throw (no
+       indexedDB, a sandboxed frame) rejects before onerror can clear the
+       cache, so the rejection would otherwise stick for the page's life. */
+    opening.catch(() => { if (dbPromise === opening) dbPromise = null; });
   }
   return dbPromise;
 }
 
+const isArrayBuffer = (v) => Object.prototype.toString.call(v) === '[object ArrayBuffer]';
+
 /* records come back as stored; repair what the UI reads so one damaged row
-   cannot break the whole list or its sort */
+   cannot break the whole list, its sort, or the load path */
 function readRecord(r) {
   if (!r || typeof r !== 'object' || typeof r.id !== 'string') return null;
+  const num = (v) => (Number.isFinite(v) ? v : 0);
   return {
     ...r,
     name: typeof r.name === 'string' ? r.name : 'Untitled',
-    created: Number.isFinite(r.created) ? r.created : 0,
+    ext: typeof r.ext === 'string' ? r.ext : 'WAV',
+    kind: r.kind === 'video' ? 'video' : 'audio',
+    fileName: typeof r.fileName === 'string' ? r.fileName : null,
+    sampleRate: num(r.sampleRate),
+    channels: num(r.channels),
+    duration: num(r.duration),
+    // a non-object edits value would reach Object.entries in the panel
+    edits: r.edits && typeof r.edits === 'object' ? r.edits : null,
+    // a string here would be wrapped into a Blob and decode as garbage
+    arrayBuffer: isArrayBuffer(r.arrayBuffer) ? r.arrayBuffer : null,
+    created: num(r.created),
   };
 }
 
@@ -56,12 +74,16 @@ export function uid() {
   return Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
 }
 
-export async function addToLibrary({ name, ext, sampleRate, channels, duration, arrayBuffer, edits, sourceName }) {
+/* kind is 'audio' or 'video' (anything else is stored as audio); fileName is
+   the original file name with its extension */
+export async function addToLibrary({ name, ext, kind = 'audio', fileName = null, sampleRate, channels, duration, arrayBuffer, edits, sourceName }) {
   const id = uid();
   const rec = {
     id,
     name: name || 'Untitled',
     ext: ext || 'WAV',
+    kind: kind === 'video' ? 'video' : 'audio',
+    fileName: fileName || null,
     sampleRate,
     channels,
     duration,
@@ -78,9 +100,10 @@ export async function listLibrary() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const t = db.transaction(STORE, 'readonly');
-    const o = t.objectStore(STORE);
-    const idx = o.index('created');
-    const req = idx.getAll();
+    // read the store, not the 'created' index: an index leaves out any row
+    // whose created value is missing or not a valid key, which made such a
+    // row invisible (and so impossible to delete) in the list
+    const req = t.objectStore(STORE).getAll();
     req.onsuccess = () => resolve(req.result.map(readRecord).filter(Boolean).sort((a,b)=>b.created-a.created));
     req.onerror = () => reject(req.error);
   });

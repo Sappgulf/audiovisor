@@ -9,6 +9,60 @@ import {
   TIERS, SEVERE, climbCeiling, windowCost,
 } from './adaptive.js';
 
+/* ---- frame copies ----
+   The stage canvases are not preserved between frames: the raytraced stage
+   runs without preserveDrawingBuffer, so the browser is free to discard its
+   pixels once composited, and reading them later returns black. Anything that
+   needs the picture (the share card) asks for a copy here. The loop takes it
+   straight after the frame has drawn, while the pixels are still in the
+   buffer, so the cost is paid only on the frames someone asked for. */
+let copyWaiters = [];
+/* the canvas the current frame drew to, or null if it drew nothing */
+let frameDrawn = null;
+const COPY_TIMEOUT_MS = 1500;
+/* a frame gap longer than this is a resume from the background */
+const RESUME_GAP_MS = 500;
+
+/**
+ * A copy of the next frame that is drawn. Resolves with a 2D canvas holding
+ * that frame's pixels, or null if no frame is drawn within the timeout (the
+ * loop is not running, or the stage is still on the first-run card).
+ * @returns {Promise<HTMLCanvasElement|null>}
+ */
+export function requestFrameCopy() {
+  return new Promise((resolve) => {
+    const waiter = { resolve, timer: 0 };
+    waiter.timer = setTimeout(() => {
+      copyWaiters = copyWaiters.filter((w) => w !== waiter);
+      resolve(null);
+    }, COPY_TIMEOUT_MS);
+    copyWaiters.push(waiter);
+  });
+}
+
+/* a 2D copy of a drawn stage canvas, or null if it cannot be read */
+function copyOf(src) {
+  try {
+    const cv = document.createElement('canvas');
+    cv.width = src.width;
+    cv.height = src.height;
+    cv.getContext('2d').drawImage(src, 0, 0);
+    return cv;
+  } catch {
+    return null;
+  }
+}
+
+function serviceCopies(src) {
+  const waiters = copyWaiters;
+  copyWaiters = [];
+  const copy = copyOf(src);
+  for (const w of waiters) {
+    clearTimeout(w.timer);
+    w.resolve(copy);
+  }
+}
+
 /**
  * The animation loop.
  *
@@ -81,6 +135,7 @@ export function createRenderLoop({
   let settleFrames = SETTLE_AFTER_MODE_CHANGE;
   let lastFrameTs = performance.now();
   let _frameErrors = 0;
+  let _calmCls = null;
 
   /** Change the effective tier and report it, so the UI can show what is
       actually running rather than only the ceiling the user chose. */
@@ -93,9 +148,12 @@ export function createRenderLoop({
   }
 
   function frame(now) {
+    frameDrawn = null;
     try {
       frameStep(now);
       _frameErrors = 0;
+      // still inside the frame: the drawn pixels are only valid until the task ends
+      if (copyWaiters.length && frameDrawn) serviceCopies(frameDrawn);
     } catch (err) {
       if (_frameErrors++ < 3) console.error('frame error', err);
       // a renderer that throws every frame would otherwise spin forever; drop
@@ -129,6 +187,10 @@ export function createRenderLoop({
     const frameGap = now - lastFrameTs;
     const dtMs = Math.min(50, frameGap);
     lastFrameTs = now;
+    /* A gap this long is the page coming back from the background, not a slow
+       frame. Counted as one, it lands in the sampler's window as a multi-second
+       frame and steps the stage down a tier on every tab restore. */
+    const resumed = frameGap > RESUME_GAP_MS;
 
     const input = engine.activeInput;
     const idle = input === 'none';
@@ -172,6 +234,12 @@ export function createRenderLoop({
     /* Plugin modes are Canvas2D-only, so the raytraced stage steps aside
        while one is selected. */
     const rtOn = !audioOnly && state.raytraceWanted && ray.ok && !raySuspended && !isPluginMode(state.modeId);
+    /* reduce-flashing is a renderer setting; the ray stage reads its own copy */
+    if (ray.calm !== renderer.calm) ray.calm = renderer.calm;
+    if (renderer.calm !== _calmCls) {
+      _calmCls = renderer.calm;
+      doc.documentElement.classList.toggle('calm', _calmCls);
+    }
     // Surface a runtime GPU context loss instead of silently swapping
     // renderers. A browser without WebGL2 is an expected capability fallback,
     // not an error to put over the first-run experience; the effective backend
@@ -189,7 +257,7 @@ export function createRenderLoop({
        BPM chip). The value moves in tiny increments 60+ times a second, so
        only touch the style when it has moved enough to see. */
     {
-      const beatVal = audioOnly ? 0 : rtOn ? ray.beat : renderer.beat;
+      const beatVal = audioOnly ? 0 : rtOn ? (ray.chromeBeat ?? ray.beat) : renderer.chromeBeat;
       if (Math.abs(beatVal - _lastBeatWritten) > 0.004) {
         _lastBeatWritten = beatVal;
         shellEl.style.setProperty('--beat', beatVal.toFixed(3));
@@ -214,6 +282,7 @@ export function createRenderLoop({
       const drop = levels?.drop || 0;
       const dtMotion = dtMs * (1 - 0.45 * drop);
       ray.render(idle, freq, wave, levels, dtMotion, null, stereoL, stereoR);
+      frameDrawn = ray.canvas;
     } else {
       doc.getElementById('ray-canvas').classList.remove('is-live');
       if (state.modeId === 'gpu') startGpu?.();
@@ -224,9 +293,12 @@ export function createRenderLoop({
       const gpuWebgl2 = webgl2State && !webgl2State.lost ? webgl2State : null;
       const gpuReady = !!(gpuWebgpu || gpuWebgl2);
       const gpuMode = state.modeId === 'gpu' && gpuReady;
-      if (webgpuCanvas && gpuReady && (webgpuCanvas.width !== Math.round(renderer.w * renderer.dpr) || webgpuCanvas.height !== Math.round(renderer.h * renderer.dpr))) {
-        webgpuCanvas.width = Math.round(renderer.w * renderer.dpr);
-        webgpuCanvas.height = Math.round(renderer.h * renderer.dpr);
+      /* the GPU Core canvas backs onto the same pixels as the 2D stage: the
+         effective scale already carries the backing-pixel cap and quality */
+      const backing = renderer._scale || renderer.dpr;
+      if (webgpuCanvas && gpuReady && (webgpuCanvas.width !== Math.round(renderer.w * backing) || webgpuCanvas.height !== Math.round(renderer.h * backing))) {
+        webgpuCanvas.width = Math.round(renderer.w * backing);
+        webgpuCanvas.height = Math.round(renderer.h * backing);
       }
       if (webgpuCanvas) webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
       doc.getElementById('viz-canvas').classList.toggle('is-off', gpuMode);
@@ -240,6 +312,7 @@ export function createRenderLoop({
         if (effMode) renderer.setMode(effMode);
         renderer.render(idle, freq, wave, levels, dtMs * (1 - 0.45 * (levels?.drop || 0)), stereoL, stereoR);
         if (effMode) renderer.setMode('gpu');
+        frameDrawn = gpuMode ? webgpuCanvas : renderer.canvas;
       }
     }
 
@@ -301,6 +374,7 @@ export function createRenderLoop({
     // Sources without decoded audio have a still player view. No renderer
     // frame or adaptation sample should run against inaccessible audio.
     if (audioOnly) return;
+    if (resumed) { frameTimes.length = 0; severeRun = 0; }
 
     // the interval, not this callback's CPU time — see src/adaptive.js
     rayBaselineEstimate = estimateBaseline(frameTimes, rayBaselineEstimate);
@@ -324,7 +398,7 @@ export function createRenderLoop({
         const { tier } = nextTier(ray.quality, frameGap, state.rayQuality, rayBaseline);
         applyTier(ray, tier);
       }
-    } else if (Number.isFinite(frameGap) && frameGap > 0) frameTimes.push(frameGap);
+    } else if (!resumed && Number.isFinite(frameGap) && frameGap > 0) frameTimes.push(frameGap);
     /* Normally this waits for a full window before judging, but that window
        costs more wall-clock the slower things are — on a mode running several
        times over budget that was seconds of stutter before anything happened. shouldEvaluate() acts on a

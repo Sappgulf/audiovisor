@@ -32,6 +32,11 @@ export function createKeyboardShortcuts({
 }) {
   const $ = (id) => doc.getElementById(id);
 
+  function isSliderTarget(el) {
+    if (!(el instanceof HTMLElement)) return false;
+    return (el instanceof HTMLInputElement && el.type === 'range') || el.getAttribute('role') === 'slider';
+  }
+
   function isModePickerTarget(el) {
     if (!el || !(el instanceof HTMLElement)) return false;
     if (el.id === 'mode-filter') return true;
@@ -58,6 +63,10 @@ export function createKeyboardShortcuts({
     }
     if (isTypingTarget(e.target)) return;
     if (isModePickerTarget(e.target) || isModePickerTarget(doc.activeElement)) return;
+    /* a focused range input or slider takes its own arrows (EQ, sliders, the
+       seek and volume tracks). The global arrows used to fire on top of it,
+       so one press of the EQ slider also skipped the track by ten seconds */
+    if (isSliderTarget(e.target) && e.key.startsWith('Arrow')) return;
     // Space on a focused button is that button's activation, not play/pause:
     // a chip used to toggle and start playback together
     if (e.code === 'Space' && e.target instanceof HTMLElement && e.target.closest('button, [role="button"]')) return;

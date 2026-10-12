@@ -140,3 +140,48 @@ describe('AppleMusicClient (MusicKit v3 API)', () => {
     expect(c.music.play).toHaveBeenCalled();
   });
 });
+
+describe('Apple Music availability once the token endpoint answers', () => {
+  const hadWindowBefore = 'window' in globalThis;
+  const answer = (status, body = {}) => {
+    globalThis.fetch = async () => ({ ok: status < 300, status, json: async () => body });
+  };
+  beforeEach(() => {
+    _resetTokenCache();
+    // a live hostname: the configured getter is only true off localhost
+    globalThis.window = { location: { hostname: 'audiovisor.example' } };
+  });
+  afterEach(() => {
+    delete globalThis.fetch;
+    if (!hadWindowBefore) delete globalThis.window;
+    _resetTokenCache();
+  });
+
+  it('is configured and available before the endpoint has answered', () => {
+    const c = new AppleMusicClient();
+    expect(c.configured).toBe(true);
+    expect(c.unavailable).toBe(false);
+  });
+
+  it('remembers a 501 as unavailable for the rest of the page', async () => {
+    answer(501, { error: 'Apple Music server credentials are not configured' });
+    await expect(developerToken()).rejects.toThrow();
+    const c = new AppleMusicClient();
+    expect(c.unavailable).toBe(true);
+    expect(c.configured).toBe(false);
+  });
+
+  it('treats another 4xx as permanent too', async () => {
+    answer(403, { error: 'Origin not allowed' });
+    await expect(developerToken()).rejects.toThrow('Origin not allowed');
+    expect(new AppleMusicClient().unavailable).toBe(true);
+  });
+
+  it('leaves a 503 retryable, so the card keeps offering Connect', async () => {
+    answer(503, { error: 'Apple Music token unavailable' });
+    await expect(developerToken()).rejects.toThrow();
+    const c = new AppleMusicClient();
+    expect(c.unavailable).toBe(false);
+    expect(c.configured).toBe(true);
+  });
+});

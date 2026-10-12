@@ -86,12 +86,66 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
 
   $('prev-btn').addEventListener('click', () => engine.prevTrack());
   $('next-btn').addEventListener('click', () => engine.nextTrack());
+  /* engine.loop is an A-B region ({start, end}) or null. The repeat toggle
+     used to own that property as a boolean, so while a region is set it
+     steps aside instead of overwriting the region. */
+  const regionOf = () => (engine.loop && typeof engine.loop === 'object' ? engine.loop : null);
   $('loop-btn').addEventListener('click', () => {
+    if (regionOf()) { toast('A-B loop is on, clear it with <b>A-B</b> first', { duration: 1600 }); return; }
     engine.loop = !engine.loop;
-    setToggle($('loop-btn'), engine.loop);
+    setToggle($('loop-btn'), engine.loop === true);
     saveSettings();
     toast(engine.loop ? 'LOOP <b>ON</b>' : 'LOOP <b>OFF</b>', { duration: 1200 });
   });
+
+  /* Tempo and A-B loop sit in the Studio tab, where a phone has the room.
+     Every engine call is optional: the audio engine adds these methods
+     alongside this UI, so a missing one leaves the label as it was. */
+  const tapBtn = $('tap-tempo-btn');
+  const tapLabel = $('tap-tempo-label');
+  tapBtn?.addEventListener('click', () => {
+    const r = engine.tapTempo?.();
+    if (r && r.bpm && tapLabel) tapLabel.textContent = `${Math.round(r.bpm)} BPM`;
+  });
+
+  // 0: nothing, 1: A set and waiting for B, 2: loop set (the third press clears it)
+  const abBtn = $('loop-ab-btn');
+  const abLabel = $('loop-ab-label');
+  let abStep = 0;
+  let abStart = 0;
+  let abEnd = 0;
+  const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  function paintAb() {
+    if (!abBtn) return;
+    const r = regionOf();
+    if (r) abStep = 2;
+    else if (engine.loop === null && abStep === 2) abStep = 0;   // cleared by the engine
+    setToggle(abBtn, abStep === 2, 'is-active');
+    if (!abLabel) return;
+    const [a, b] = r ? [r.start, r.end] : [abStart, abEnd];
+    if (abStep === 2) abLabel.textContent = `A-B ${clock(a)}-${clock(b)}`;
+    else if (abStep === 1) abLabel.textContent = `A ${clock(abStart)}, set B`;
+    else abLabel.textContent = 'A-B loop';
+  }
+  abBtn?.addEventListener('click', () => {
+    if (abStep === 0) {
+      abStart = engine.getTime();
+      abStep = 1;
+    } else if (abStep === 1) {
+      const end = engine.getTime();
+      if (end <= abStart) { toast('B must come after <b>A</b>', { duration: 1600 }); return; }
+      engine.setLoop?.(abStart, end);
+      abEnd = end;
+      abStep = 2;
+    } else {
+      engine.clearLoop?.();
+      abStep = 0;
+    }
+    paintAb();
+  });
+  // a new source has no loop to keep, so the A-B state starts over with it
+  engine.on?.('source', () => { abStep = 0; paintAb(); });
+  paintAb();
 
   bindDragTrack(seekTrack, (ratio) => {
     const d = engine.getDuration();
@@ -179,11 +233,23 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
      Safari withholds it, and elsewhere it arrives after a 300ms delay — so
      taps are paired here. A second tap only counts if it lands near the first,
      which keeps a quick tap on two different controls from triggering it. */
-  stage.addEventListener('dblclick', () => $('fullscreen-btn').click());
+  /* Taps on a control inside the stage (Play demo, the file label) are not
+     gestures on the stage. And a touch pair that already toggled cinema must
+     not be toggled back by the dblclick a browser sends after it, or one
+     double-tap would enter and leave in the same moment. */
+  const onControl = (e) => e.target instanceof Element && !!e.target.closest('button, label, a, input, [role="button"], [role="slider"]');
+  let touchToggleAt = -Infinity;
+  stage.addEventListener('dblclick', (e) => {
+    if (onControl(e) || e.timeStamp - touchToggleAt < 800) return;
+    $('fullscreen-btn').click();
+  });
   const stageDoubleTap = makeDoubleTap();
   stage.addEventListener('pointerup', (e) => {
-    if (e.pointerType === 'mouse') return;   // dblclick already covers the mouse
-    if (stageDoubleTap(e.clientX, e.clientY, e.timeStamp)) $('fullscreen-btn').click();
+    if (e.pointerType === 'mouse' || onControl(e)) return;   // dblclick covers the mouse
+    if (stageDoubleTap(e.clientX, e.clientY, e.timeStamp)) {
+      touchToggleAt = e.timeStamp;
+      $('fullscreen-btn').click();
+    }
   });
 
   return { transportToggle, setVolumeUI, updateMediaSession, seekTrack };

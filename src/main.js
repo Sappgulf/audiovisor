@@ -28,7 +28,7 @@ import { createOnboarding } from './onboarding.js';
 import { registerServiceWorker } from './pwa.js';
 import { createGpuStage } from './gpu-init.js';
 import { createTransport } from './transport.js';
-import { SETTINGS_KEY, readSettings } from './settings.js';
+import { SETTINGS_KEY, readSettings, prefersReducedMotion } from './settings.js';
 /* localStorage writes throw in Safari private browsing and once the origin
    quota is full. Nothing here is worth failing over. See src/storage.js. */
 import { writeJSON } from './storage.js';
@@ -49,6 +49,12 @@ import { registerMode, registeredModes, isPluginMode } from './plugins.js';
 import { createMidiInput } from './midi.js';
 
 const $ = (id) => document.getElementById(id);
+
+/* A side feature that throws while starting must not stop the rest of the app
+   from wiring up. Core pieces below are not wrapped: without them there is no app. */
+function boot(name, fn) {
+  try { return fn(); } catch (err) { console.error(`${name} failed to start:`, err); return null; }
+}
 
 const engine = new AudioEngine();
 const renderer = new Renderer($('viz-canvas'));
@@ -111,6 +117,8 @@ const state = {
   // offline tempo analysis for the current track, 0 until it lands
   analyzedBpm: 0,
   fx: { reverb: false, limiter: false, lowpass: false, speed: false, autotune: false, chorus: false, echo: false, crush: false, chop: false, widener: false },
+  // Reduce flashing: the renderer's calm mode. Defaults from the OS, then the stored choice.
+  reduceFlashing: false,
 };
 /* ---------- toasts ---------- */
 
@@ -189,7 +197,7 @@ function setSliderNormalized(id, norm) {
 }
 
 /* MIDI input — opt-in via the MIDI chip in the Look tab. */
-createMidiInput({
+boot('midi', () => createMidiInput({
   chip: $('midi-chip'),
   fxNames: FX,
   modes: MODES,
@@ -198,7 +206,7 @@ createMidiInput({
   setMode,
   toast,
   setToggle,
-});
+}));
 
 // Auto DJ
 let autoDj = false;
@@ -211,7 +219,7 @@ document.getElementById('autodj-chip')?.addEventListener('click', () => {
 });
 
 // Sleep timer — cycles OFF → 15 → 30 → 60 min, then fades out & pauses
-createSleepTimer({
+boot('sleep timer', () => createSleepTimer({
   engine,
   toast,
   refreshStatus: () => refreshStatus(),
@@ -219,11 +227,11 @@ createSleepTimer({
   volumeFill: $('volume-fill'),
   chip: $('sleep-chip'),
   label: $('sleep-label'),
-});
+}));
 
 /* ---------- look presets, AI studio, collab ---------- */
 
-const { savePreset, loadPreset } = createLookPresets({
+const { savePreset, loadPreset } = boot('look presets', () => createLookPresets({
   state,
   fxNames: FX,
   toast,
@@ -232,11 +240,11 @@ const { savePreset, loadPreset } = createLookPresets({
   setFx,
   saveSettings,
   row: document.getElementById('preset-row'),
-});
+})) ?? { savePreset() {}, loadPreset() {} };
 
-createAiStudio({ engine, toast, setFx, setTheme, saveSettings });
+boot('AI studio', () => createAiStudio({ engine, toast, setFx, setTheme, saveSettings }));
 
-createCollab({ state, toast, setMode, setTheme, setFx });
+boot('collab', () => createCollab({ state, toast, setMode, setTheme, setFx }));
 
 
 /* ---------- mode / theme switching ---------- */
@@ -403,7 +411,7 @@ function randomizeLook() {
 
 /* ---------- autopilot ---------- */
 
-const { setAutopilot } = createAutopilot({
+const { setAutopilot } = boot('autopilot', () => createAutopilot({
   state,
   chip: $('autopilot-chip'),
   shuffleBtn: $('shuffle-btn'),
@@ -411,7 +419,7 @@ const { setAutopilot } = createAutopilot({
   setToggle,
   saveSettings,
   randomizeLook,
-});
+})) ?? { setAutopilot() {} };
 
 
 /* ---------- persistence ---------- */
@@ -484,6 +492,7 @@ function applySettings(s, { eq = false } = {}) {
   }
   if (s.autopilot) setAutopilot(true, { silent: true });
   if (s.autoDj) { autoDj = true; setToggle(document.getElementById('autodj-chip'), true, 'is-active'); }
+  if (typeof s.reduceFlashing === 'boolean') applyReduceFlashing(s.reduceFlashing);
 }
 
 function loadSettings() {
@@ -496,7 +505,7 @@ function loadSettings() {
 
 /* ---------- queue & library panels ---------- */
 
-createTempoPrime({ engine, state });
+boot('tempo prime', () => createTempoPrime({ engine, state }));
 
 const panels = createPanels({
   shell: $('shell'),
@@ -666,11 +675,11 @@ $('capture-btn').addEventListener('click', async () => {
 
 /* ---------- autoplay policy safety net ---------- */
 
-const { ensureAudible } = createAutoplayGuard({ engine, toast, refreshStatus });
+const { ensureAudible } = boot('autoplay guard', () => createAutoplayGuard({ engine, toast, refreshStatus })) ?? { ensureAudible() {} };
 
 /* ---------- overflow menu ---------- */
 
-const { closeMore } = createOverflowMenu();
+const { closeMore } = boot('overflow menu', () => createOverflowMenu()) ?? { closeMore() {} };
 
 /* ---------- file loading ---------- */
 
@@ -680,6 +689,8 @@ const { openFilePicker, dropzone } = createFileLoader({
   updateTrackUI,
   ensureAudible,
   closeMore,
+  // a playlist dropped on the stage queues its links, same as the queue's Import
+  onPlaylist: (items, name) => { void import('./queue-import.js').then((m) => m.queueEntries(items, { engine, toast, onQueued: panels.renderQueue }, name)); },
 });
 
 $('play-demo')?.addEventListener('click', async () => {
@@ -773,7 +784,7 @@ const about = createAboutPanel({
   themeCount: THEMES.length,
 });
 
-createDrawer({ state });
+boot('drawer', () => createDrawer({ state }));
 
 // The empty state offers a clear path into the mode browser without requiring
 // users to understand the settings dock first.
@@ -844,6 +855,16 @@ const { setRaytrace, setRayQuality, showEffectiveTier } = createRaytraceControls
   resume: renderLoop.resume,
 });
 
+/* Reduce flashing drives the renderer's calm mode. The OS preference is the
+   default; a stored choice replaces it once settings load. */
+let paintReduceFlashing = () => {};
+function applyReduceFlashing(on) {
+  state.reduceFlashing = !!on;
+  if ('calm' in renderer) renderer.calm = state.reduceFlashing;
+  paintReduceFlashing();
+}
+applyReduceFlashing(prefersReducedMotion());
+
 loadSettings();
 setModeStory(state.modeId);
 /* The CSS ships the brass tokens and state defaults to the brass theme, so
@@ -868,7 +889,7 @@ updateFavicon();
 renderLoop.start();
 
 // Onboarding tour
-createOnboarding({ toast, modeCount: MODES.length, themeCount: THEMES.length });
+boot('onboarding', () => createOnboarding({ toast, modeCount: MODES.length, themeCount: THEMES.length }));
 
 // Command palette (Cmd+K)
 function buildCommands() {
@@ -904,7 +925,7 @@ function buildCommands() {
   return cmds;
 }
 
-createCommandPalette({ commands: buildCommands() });
+boot('command palette', () => createCommandPalette({ commands: buildCommands() }));
 
 function isTypingTarget(el) {
   if (!el || !(el instanceof HTMLElement)) return false;
@@ -913,7 +934,7 @@ function isTypingTarget(el) {
   return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
 }
 
-const { currentSettings } = createSettingsUI({
+const { currentSettings, paintFlash } = boot('settings UI', () => createSettingsUI({
   state,
   engine,
   sliderEls,
@@ -924,10 +945,15 @@ const { currentSettings } = createSettingsUI({
   saveSettings,
   download: downloadBlob,
   toast,
-});
+  setReduceFlashing: (on) => { applyReduceFlashing(on); saveSettings(); },
+})) ?? {};
+paintReduceFlashing = paintFlash ?? (() => {});
 
-// PWA — register + force update so stale cache-first HTML self-heals
-registerServiceWorker();
+// PWA — register + force update so stale cache-first HTML self-heals. A reload
+// waits while audio is playing or capture is live, since either would be cut off.
+boot('service worker', () => registerServiceWorker(document, {
+  isBusy: () => engine.playing || engine.captureActive,
+}));
 
 // WebGPU init with WebGL2 fallback — started by the render loop on first use
 const gpu = createGpuStage();
@@ -944,14 +970,14 @@ gpu.whenReady().then((backend) => {
 });
 
 // Voice AI
-createVoiceInput({ engine, renderer, toast });
+boot('voice', () => createVoiceInput({ engine, renderer, toast }));
 
 // Social feed wiring
-createSocialFeed({ state, toast });
+boot('social feed', () => createSocialFeed({ state, toast }));
 
 /* ---------- drawer tabs (v8.7) ---------- */
 
-createDrawerTabs({ onSourceTab: connectLoader.ensureConnect });
+boot('drawer tabs', () => createDrawerTabs({ onSourceTab: connectLoader.ensureConnect }));
 
 /* ---------- keyboard shortcuts overlay ---------- */
 

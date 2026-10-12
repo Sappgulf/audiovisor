@@ -11,6 +11,7 @@ function fakeWebGL2Context() {
     createProgram: () => ({}), attachShader: () => {}, linkProgram: () => {},
     getProgramParameter: () => true, useProgram: () => {},
     getUniformLocation: () => ({}),
+    deleteShader: () => {}, deleteProgram: () => {},
   };
 }
 

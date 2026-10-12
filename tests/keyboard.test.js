@@ -74,4 +74,26 @@ describe('global keyboard shortcuts', () => {
     press(document.body, 'ArrowRight', 'ArrowRight');
     expect(deps.engine.skip).toHaveBeenCalledWith(10);
   });
+  it('leaves arrows to a focused range input instead of seeking the track', () => {
+    const deps = setup();
+    const eq = document.createElement('input');
+    eq.type = 'range';
+    document.body.appendChild(eq);
+    eq.focus();
+    press(eq, 'ArrowLeft', 'ArrowLeft');
+    press(eq, 'ArrowRight', 'ArrowRight', { shiftKey: true });
+    expect(deps.engine.skip).not.toHaveBeenCalled();
+  });
+
+  it('leaves arrows to a focused slider role instead of seeking the track', () => {
+    const deps = setup();
+    press(document.getElementById('seek'), 'ArrowRight', 'ArrowRight');
+    expect(deps.engine.skip).not.toHaveBeenCalled();
+  });
+
+  it('still seeks on arrows when focus is on plain page content', () => {
+    const deps = setup();
+    press(document.getElementById('chip'), 'ArrowRight', 'ArrowRight');
+    expect(deps.engine.skip).toHaveBeenCalledWith(10);
+  });
 });

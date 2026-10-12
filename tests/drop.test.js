@@ -4,7 +4,7 @@
  * breakdown, resets on seeks, and the envelope actually decays.
  */
 import { describe, it, expect } from 'vitest';
-import { DropDetector } from '../src/drop.js';
+import { DropDetector, collectDroppedFiles, isMediaFile } from '../src/drop.js';
 
 /** Feed a bass level at 60fps starting from t=1 (after leading silence). */
 function run(det, steps, bassAt) {
@@ -128,5 +128,98 @@ describe('DropDetector', () => {
       peak = Math.max(peak, det.process(bass(t), 0.12 + bass(t) * 0.75, t));
     }
     expect(peak).toBe(0);
+  });
+});
+
+/* ---------- dropped files and folders ---------- */
+
+/* Minimal FileSystemEntry stand-ins. readEntries hands out children in
+   batches of two, then an empty batch, so the batching loop is exercised. */
+function fileEntry(name, { fail = false } = {}) {
+  return {
+    isFile: true, isDirectory: false, name,
+    file(ok, err) { if (fail) err(new Error('unreadable')); else ok({ name }); },
+  };
+}
+function dirEntry(name, children = []) {
+  return {
+    isFile: false, isDirectory: true, name,
+    createReader() {
+      let pos = 0;
+      return {
+        readEntries(ok) {
+          const batch = children.slice(pos, pos + 2);
+          pos += batch.length;
+          ok(batch);
+        },
+      };
+    },
+  };
+}
+/** A DataTransfer with one item per top-level dropped entry. */
+const dropOf = (...entries) => ({
+  files: [],
+  items: entries.map((e) => ({ kind: 'file', webkitGetAsEntry: () => e })),
+});
+const namesOf = (files) => files.map((f) => f.name);
+
+describe('isMediaFile', () => {
+  it('accepts known audio and video extensions, whatever the MIME type says', () => {
+    expect(isMediaFile({ name: 'a.FLAC', type: '' })).toBe(true);
+    expect(isMediaFile({ name: 'clip.mp4', type: '' })).toBe(true);
+    expect(isMediaFile({ name: 'song', type: 'audio/x-unknown' })).toBe(true);
+  });
+
+  it('refuses playlists and documents', () => {
+    expect(isMediaFile({ name: 'list.m3u', type: '' })).toBe(false);
+    expect(isMediaFile({ name: 'notes.txt', type: 'text/plain' })).toBe(false);
+  });
+});
+
+describe('collectDroppedFiles', () => {
+  it('returns plain dropped files as they came', async () => {
+    const a = { name: 'a.mp3' };
+    const b = { name: 'b.txt' };
+    const files = await collectDroppedFiles({ files: [a, b], items: [] });
+    expect(files).toEqual([a, b]);
+  });
+
+  it('walks a dropped folder, keeping media in name order and skipping the rest', async () => {
+    const root = dirEntry('Album', [
+      fileEntry('b.flac'),
+      fileEntry('cover.jpg'),
+      fileEntry('a.mp3'),
+      dirEntry('Bonus', [fileEntry('clip.mp4'), fileEntry('readme.txt')]),
+    ]);
+    const files = await collectDroppedFiles(dropOf(root));
+    expect(namesOf(files)).toEqual(['a.mp3', 'b.flac', 'clip.mp4']);
+  });
+
+  it('stops descending after four levels below the dropped folder', async () => {
+    // f0 sits in the dropped folder, f3 four levels down; f4 is one level deeper than the walk goes
+    let dir = dirEntry('d4', [fileEntry('f4.mp3')]);
+    for (let k = 3; k >= 0; k--) dir = dirEntry(`d${k}`, [fileEntry(`f${k}.mp3`), dir]);
+    const files = await collectDroppedFiles(dropOf(dir));
+    // nested folders are walked in name order, so compare as a set
+    expect(namesOf(files).sort()).toEqual(['f0.mp3', 'f1.mp3', 'f2.mp3', 'f3.mp3']);
+  });
+
+  it('caps a walk at 500 files', async () => {
+    const many = Array.from({ length: 600 }, (_, i) => fileEntry(`t${String(i).padStart(3, '0')}.mp3`));
+    const files = await collectDroppedFiles(dropOf(dirEntry('Big', many)));
+    expect(files).toHaveLength(500);
+    expect(files[0].name).toBe('t000.mp3');
+  });
+
+  it('skips a file the browser refuses to open, rather than failing the drop', async () => {
+    const root = dirEntry('Mixed', [fileEntry('bad.mp3', { fail: true }), fileEntry('good.mp3')]);
+    const files = await collectDroppedFiles(dropOf(root));
+    expect(namesOf(files)).toEqual(['good.mp3']);
+  });
+
+  it('falls back to the plain file list when the browser has no entry API', async () => {
+    const a = { name: 'a.wav' };
+    const files = await collectDroppedFiles({ files: [a], items: [{ kind: 'file' }] });
+    expect(files).toEqual([a]);
   });
 });

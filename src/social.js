@@ -1,13 +1,15 @@
 // Social Feed — localStorage mock of discover/follow/remix chain
-import { readJSON, writeJSON } from './storage.js';
+import { readArray, writeJSON } from './storage.js';
 
 const KEY = 'audiovisor.social.feed';
 const FOLLOW_KEY = 'audiovisor.social.follows';
+/* The follow list is stored and rendered; cap it so it cannot grow without bound. */
+const FOLLOW_CAP = 200;
 
 const newId = () => Math.random().toString(36).slice(2, 9);
 
 export function getFeed() {
-  const feed = readJSON(KEY, []);
+  const feed = readArray(KEY);
   // one null or non-object row would throw inside the renderer and blank the whole feed
   return Array.isArray(feed) ? feed.filter((e) => e && typeof e === 'object') : [];
 }
@@ -37,17 +39,19 @@ export function likeFeed(id) {
 }
 
 export function getFollows() {
-  const list = readJSON(FOLLOW_KEY, []);
-  return Array.isArray(list) ? list.filter((u) => typeof u === 'string') : [];
+  return readArray(FOLLOW_KEY).filter((u) => typeof u === 'string').slice(-FOLLOW_CAP);
 }
 
 export function toggleFollow(user) {
+  if (typeof user !== 'string' || !user) return false;
   const list = getFollows();
   const i = list.indexOf(user);
   if (i >= 0) list.splice(i, 1);
   else list.push(user);
-  writeJSON(FOLLOW_KEY, list);
-  return list.includes(user);
+  // the oldest follows drop off first once the cap is reached
+  const capped = list.slice(-FOLLOW_CAP);
+  writeJSON(FOLLOW_KEY, capped);
+  return capped.includes(user);
 }
 
 /**

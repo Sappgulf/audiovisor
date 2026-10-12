@@ -14,7 +14,11 @@ import { clamp } from './utils.js';
  *  phase      0..1 position within the predicted beat
  *  pulse      1→0 envelope fired on each detected onset
  *  confidence 0..1 stability of the tempo lock
+ *  beats      integer, +1 each time the locked grid reaches a new beat
  */
+
+const round2 = (v) => Math.round(v * 100) / 100;
+
 export class BeatTracker {
   constructor({ minBpm = 70, maxBpm = 180, decaySec = 3.2 } = {}) {
     this.minBpm = minBpm;
@@ -25,6 +29,7 @@ export class BeatTracker {
     this.phase = 0;
     this.pulse = 0;
     this.confidence = 0;
+    this.beats = 0;          /* grid beats reached; never goes backwards */
 
     this._t = -1;            /* last processed audio time          */
     this._prev = null;       /* previous spectrum, for flux        */
@@ -38,7 +43,14 @@ export class BeatTracker {
     this._intervalCount = 0;
     this._intervalScratch = new Float32Array(24);
     this._anchor = 0;        /* grid point phase-locked to onsets  */
+    this._gridMax = -1;      /* highest grid index already counted */
     this._pendingOnset = null; /* onset detected, not yet audible    */
+    /* tempo changes wait for repeat estimates before the lock follows them */
+    this._pendingBpm = 0;
+    this._pendingHits = 0;
+    /* onsets are ignored until this audio time, after a settle() */
+    this._quietUntil = -Infinity;
+    this._settleSec = 0;
     /* Peak-hold estimate of the ambient flux level. The fixed 0.008 onset
        floor this scales was measured against loud material; on a quiet
        acoustic track the kick flux sits around 0.005 and never fired at
@@ -53,6 +65,8 @@ export class BeatTracker {
        start for the octave voter), then relaxes toward the measured room
        level. Attacks instantly, releases slowly. */
     this._floor = 0.008;
+    /* reused by the `info` getter so reading it per frame allocates nothing */
+    this._info = { bpm: 0, phase: 0, pulse: 0, confidence: 0 };
   }
 
   reset() {
@@ -68,8 +82,66 @@ export class BeatTracker {
     this._lastOnset = -1e9;
     this._pendingOnset = null;
     this._intervalCount = 0;
+    this._gridMax = -1;
+    this._pendingHits = 0;
+    this._quietUntil = -Infinity;
+    this._settleSec = 0;
     this._fluxPeak = 0;
     this._floor = 0.008;
+  }
+
+  /**
+   * Forget the past, then ignore onsets for `sec` of audio time from the next
+   * frame on. Used when the context resumes after a suspend: the analyser
+   * jumps from silence to music, and that step would otherwise register as a
+   * burst of onsets before any real tempo is known.
+   */
+  settle(sec) {
+    this.reset();
+    this._settleSec = sec > 0 ? sec : 0;
+    this._quietUntil = Infinity;
+  }
+
+  /**
+   * Re-anchor the grid so a beat lands on `heardSec` (song position being
+   * heard now). Used by tap tempo. Seeds the tempo when nothing is locked.
+   */
+  nudgeTo(heardSec, bpm = 0, confidence = 0) {
+    if (!Number.isFinite(heardSec)) return;
+    this._anchor = heardSec;
+    this._gridMax = -1;
+    this.phase = 0;
+    if (this.bpm === 0 && bpm > 0) {
+      this.bpm = round2(bpm);
+      this.confidence = clamp(confidence, 0, 1);
+    }
+    // keep a seeded tempo alive for decaySec from now rather than dropping it
+    this._lastOnset = this._t >= 0 ? this._t : heardSec;
+  }
+
+  /**
+   * The song jumped to `tSec` on purpose (an A-B loop wrap). The grid is in
+   * song time, so the lock stays; only the flux history and pending onset are
+   * dropped, so the jump is not read as a backwards seek or as a transient.
+   */
+  jumpTo(tSec) {
+    if (!Number.isFinite(tSec) || this._t < 0) return;
+    this._t = tSec;
+    this._lastOnset = tSec;   // the onset gap and silence timer run from the jump
+    this._prev = null;
+    this._prevFlux = 0;
+    this._fluxHistCount = 0;
+    this._fluxHistPos = 0;
+    this._pendingOnset = null;
+    this._gridMax = this.bpm > 0 ? Math.floor((tSec - this._anchor) * this.bpm / 60) : -1;
+  }
+
+  /** Grid phase at a song position, 0 on the beat, always in [0, 1). */
+  phaseAt(heardSec) {
+    if (!(this.bpm > 0)) return 0;
+    const x = (heardSec - this._anchor) * this.bpm / 60;
+    const p = x - Math.floor(x);
+    return p >= 0 && p < 1 ? p : 0;
   }
 
   /**
@@ -95,6 +167,7 @@ export class BeatTracker {
     const firstCall = this._t < 0;
     const dt = firstCall ? 0 : Math.max(0, tSec - this._t);
     this._t = tSec;
+    if (this._quietUntil === Infinity) this._quietUntil = tSec + this._settleSec;
 
     const lat = Number.isFinite(latency) ? clamp(latency, 0, 0.5) : 0;
     const heard = tSec - lat;   // song position leaving the speaker right now
@@ -155,7 +228,7 @@ export class BeatTracker {
     const gap = this.bpm > 0 ? Math.max(0.12, (60 / this.bpm) * 0.33) : 0.14;
     const riseGate = clamp(this._fluxPeak * 0.06, 0.0004, 0.0015);
     const rising = firstCall || flux > this._prevFlux * 1.06 + riseGate;
-    if (this._prev && flux > thresh && rising && tSec - this._lastOnset >= gap) {
+    if (this._prev && flux > thresh && rising && tSec - this._lastOnset >= gap && tSec >= this._quietUntil) {
       // with no latency to wait out, flash immediately
       if (lat <= 0) this.pulse = 1;
       else this._pendingOnset = tSec;
@@ -170,15 +243,19 @@ export class BeatTracker {
       this.confidence = 0;
       this.phase = 0;
       this._intervalCount = 0;
+      this._gridMax = -1;
+      this._pendingHits = 0;
     }
 
     /* advance predicted phase along the locked grid, read at the position
-       the listener is actually hearing */
+       the listener is actually hearing, and count each grid beat once */
     if (this.bpm > 0) {
-      const period = 60 / this.bpm;
-      let ph = ((heard - this._anchor) / period) % 1;
-      if (ph < 0) ph += 1;
-      this.phase = ph;
+      this.phase = this.phaseAt(heard);
+      const k = Math.floor((heard - this._anchor) * this.bpm / 60);
+      if (k > this._gridMax) {
+        this.beats += k - this._gridMax;
+        this._gridMax = k;
+      }
     }
   }
 
@@ -217,6 +294,7 @@ export class BeatTracker {
   _onOnset(t) {
     const minIv = 60 / this.maxBpm;
     const maxIv = 60 / this.minBpm;
+    const wasLocked = this.bpm > 0;
 
     if (this._lastOnset > -1e8) {
       const iv = t - this._lastOnset;
@@ -238,18 +316,19 @@ export class BeatTracker {
     }
 
     /* snap the beat grid toward this onset with limited correction so a
-       single late/early hit nudges rather than teleports the phase */
-    if (this.bpm > 0) {
+       single late/early hit nudges rather than teleports the phase. A lock
+       acquired on this onset starts its grid here rather than at a stale
+       anchor, which would otherwise pull it up to a quarter beat off. */
+    if (!wasLocked || this.bpm <= 0) {
+      this._anchor = t;
+    } else {
       const period = 60 / this.bpm;
       const k = Math.round((t - this._anchor) / period);
       if (k >= 1) {
         const corr = clamp(t - k * period - this._anchor, -period * 0.22, period * 0.22);
         this._anchor += corr;
       }
-    } else {
-      this._anchor = t;
     }
-
   }
 
   _estimateTempo() {
@@ -278,16 +357,57 @@ export class BeatTracker {
     if (!best || best.count < 3) return;
 
     const raw = 60 / best.iv;
+    const target = clamp(best.count / 7, 0, 1);
     if (this.bpm === 0) {
-      this.bpm = Math.round(raw * 100) / 100;
-    } else {
-      const k = clamp(0.12 + best.count / 48, 0, 0.35);
-      this.bpm = Math.round((this.bpm + (raw - this.bpm) * k) * 100) / 100;
+      this.bpm = round2(raw);
+      this.confidence = target;
+      return;
     }
-    this.confidence = clamp(best.count / 7, 0, 1);
+    /* confidence eases toward each estimate, so one noisy frame cannot jump it */
+    this.confidence += (target - this.confidence) * 0.3;
+    this._followTempo(raw, best.count);
+  }
+
+  /**
+   * Decide whether a new estimate moves the locked tempo.
+   *
+   * Three rules keep the displayed BPM still under noise:
+   *  - a 0.5% dead-band: estimates this close are measurement jitter
+   *  - a repeat requirement: a single estimate never moves the lock; a
+   *    drift needs two agreeing estimates, an octave flip needs three
+   *  - octave hysteresis: a half- or double-time estimate is only followed
+   *    when it sits nearer 120 BPM by a margin, so the lock cannot flip
+   *    back and forth between the two octaves
+   */
+  _followTempo(raw, count) {
+    const cur = this.bpm;
+    if (Math.abs(raw - cur) / cur <= 0.005) { this._pendingHits = 0; return; }
+
+    const octave = Math.abs(raw / cur - 2) < 0.04 || Math.abs(raw / cur - 0.5) < 0.02;
+    if (octave && !(Math.abs(raw - 120) + 8 < Math.abs(cur - 120))) {
+      this._pendingHits = 0;
+      return;
+    }
+
+    if (this._pendingHits > 0 && Math.abs(raw - this._pendingBpm) / raw < 0.02) this._pendingHits++;
+    else { this._pendingBpm = raw; this._pendingHits = 1; }
+    if (this._pendingHits < (octave ? 3 : 2)) return;
+    this._pendingHits = 0;
+
+    if (octave) {
+      this.bpm = round2(raw);
+    } else {
+      const k = clamp(0.12 + count / 48, 0, 0.35);
+      this.bpm = round2(cur + (raw - cur) * k);
+    }
   }
 
   get info() {
-    return { bpm: this.bpm, phase: this.phase, pulse: this.pulse, confidence: this.confidence };
+    const o = this._info;
+    o.bpm = this.bpm;
+    o.phase = this.phase;
+    o.pulse = this.pulse;
+    o.confidence = this.confidence;
+    return o;
   }
 }

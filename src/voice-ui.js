@@ -59,6 +59,10 @@ export function createVoiceInput({ engine, renderer, toast, doc = document }) {
         raf = requestAnimationFrame(loop);
       };
       loop();
-    } catch { toast('<b>Mic denied</b>'); }
+    } catch {
+      // a grant followed by a failed audio setup would leave the mic light on
+      if (stream) { stream.getTracks().forEach((tr) => tr.stop()); stream = null; }
+      toast('<b>Mic denied</b>');
+    }
   });
 }

@@ -42,7 +42,6 @@
   <meta property="og:image:alt" content="AUDIOVISOR — a raytraced neon city stage pulsing to music" />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary_large_image" />
-  <script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js" async></script>
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -181,7 +180,7 @@
                   <span class="sr-only">Explore visual modes</span>
                 </button>
               </div>
-              <p class="drop-meta sr-only"><span>MP3 / WAV / FLAC / OGG</span><span class="drop-meta-sep" aria-hidden="true"></span><span>23 modes · 32 themes</span><span class="drop-meta-sep" aria-hidden="true"></span><span>Runs locally</span></p>
+              <p class="drop-meta">MP3, WAV, FLAC, M4A, OGG, OPUS, AIFF and the audio of MP4 or WebM video</p>
             </div>
           </div>
 
@@ -296,6 +295,15 @@
               <div class="fx-row" id="ai-stems"></div>
               <div class="fx-row" id="ai-presets" style="margin-top:8px"></div>
               <button class="fx-chip" id="ai-suggest" style="margin-top:10px"><span class="chip-dot"></span><span class="chip-txt">AI Suggest</span></button>
+            </section>
+            <div class="divider"></div>
+            <section>
+              <h3 class="section-title">Tempo &amp; Loop</h3>
+
+              <div class="fx-row">
+                <button class="fx-chip" id="tap-tempo-btn" type="button" title="Tap the beat to set the tempo"><span class="chip-dot"></span><span class="chip-txt" id="tap-tempo-label">Tap tempo</span></button>
+                <button class="fx-chip" id="loop-ab-btn" type="button" title="Set loop start (A), end (B), then clear"><span class="chip-dot"></span><span class="chip-txt" id="loop-ab-label">A-B loop</span></button>
+              </div>
             </section>
             <div class="divider"></div>
             <section>
@@ -423,7 +431,7 @@
         <div id="cmd-list" class="cmd-list"></div>
       </div>
     </div>
-    <input type="file" id="file-input" accept="audio/*" multiple class="sr-file" tabindex="-1" aria-hidden="true" />
+    <input type="file" id="file-input" accept="audio/*,video/mp4,video/webm,video/quicktime,video/ogg,.m4a,.aac,.aif,.aiff,.caf,.opus,.oga,.weba,.flac,.m4v,.ogv,.mov,.m3u,.m3u8,.pls,.mp3,.wav,.ogg,.mp4,.webm" multiple class="sr-file" tabindex="-1" aria-hidden="true" />
   </div>
 
   <noscript><p style="text-align:center; font:500 15px/1.5 system-ui, sans-serif; color:#f5e6d3; padding:24px">AUDIOVISOR needs JavaScript to run.</p></noscript>

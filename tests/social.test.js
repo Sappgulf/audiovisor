@@ -170,3 +170,34 @@ describe('legacy feeds written before entries had ids', () => {
     expect(() => Social.seedFeed()).not.toThrow();
   });
 });
+
+describe('follow list bounds', () => {
+  beforeEach(() => working());
+
+  it('caps the follow list at 200, dropping the oldest first', () => {
+    const map = working({ 'audiovisor.social.follows': JSON.stringify(Array.from({ length: 200 }, (_, i) => `user${i}`)) });
+    expect(Social.toggleFollow('newcomer')).toBe(true);
+    const stored = JSON.parse(map['audiovisor.social.follows']);
+    expect(stored).toHaveLength(200);
+    expect(stored.at(-1)).toBe('newcomer');
+    expect(stored).not.toContain('user0');
+  });
+
+  it('bounds a stored list that was already too long', () => {
+    working({ 'audiovisor.social.follows': JSON.stringify(Array.from({ length: 500 }, (_, i) => `u${i}`)) });
+    expect(Social.getFollows()).toHaveLength(200);
+  });
+
+  it('refuses a non-string or empty user without touching storage', () => {
+    const map = working();
+    expect(Social.toggleFollow('')).toBe(false);
+    expect(Social.toggleFollow({ name: 'x' })).toBe(false);
+    expect(map['audiovisor.social.follows']).toBeUndefined();
+  });
+
+  it('ignores a stored follow value that is not a list', () => {
+    working({ 'audiovisor.social.follows': '{"not":"a list"}' });
+    expect(Social.getFollows()).toEqual([]);
+    expect(Social.toggleFollow('bob')).toBe(true);
+  });
+});

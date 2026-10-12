@@ -30,13 +30,26 @@ export function createDrawer({ state, doc = document }) {
     drawer.setAttribute('aria-hidden', String(!state.drawerOpen));
     drawer.inert = !state.drawerOpen;
     $('shell').classList.toggle('drawer-open', state.drawerOpen);
-    // a sheet covers the page, so the topbar, stage and transport behind it
-    // leave the focus order too; Tab used to walk into them under the scrim
+    // a sheet covers the topbar and the stage, so both leave the focus order.
+    // Not the workspace: the sheet is a child of it, and inert is inherited,
+    // which made the open sheet untappable. The transport stays live, since
+    // the sheet rests on top of it.
     const modal = state.drawerOpen && isSheet();
-    for (const el of [doc.querySelector('.topbar'), doc.querySelector('.workspace'), doc.querySelector('.transport')]) {
+    for (const el of [doc.querySelector('.topbar'), doc.querySelector('.stage')]) {
       if (el) el.inert = modal;
     }
   }
+
+  // the phone sheet rests on the transport, so its offset follows the
+  // transport's measured height (wrapping, track-name length, fonts)
+  const transport = $('transport');
+  const fitSheetToTransport = () => {
+    if (!transport) return;
+    const gap = parseFloat(win.getComputedStyle(transport).marginBottom) || 0;
+    doc.documentElement.style.setProperty('--tp-h', `${transport.offsetHeight + gap}px`);
+  };
+  if (win.ResizeObserver && transport) new win.ResizeObserver(fitSheetToTransport).observe(transport);
+  fitSheetToTransport();
 
   function syncDrawer() {
     drawer.classList.toggle('is-closed', !state.drawerOpen);

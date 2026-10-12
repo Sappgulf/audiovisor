@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   SETTINGS_KEY, LEGACY_SETTINGS_KEY, SETTINGS_VERSION,
   serializeSettings, validateSettings, readSettings,
+  prefersReducedMotion, isSettingsObject, MAX_SETTINGS_BYTES,
 } from '../src/settings.js';
 
 const VOCAB = {
@@ -133,5 +134,49 @@ describe('readSettings', () => {
   it('survives storage that throws (Safari private mode)', () => {
     const hostile = { getItem() { throw new Error('SecurityError'); } };
     expect(readSettings(hostile, VOCAB)).toEqual({});
+  });
+});
+
+describe('reduceFlashing', () => {
+  it('round-trips through serialize and validate', () => {
+    const out = serializeSettings({ reduceFlashing: true });
+    expect(out.reduceFlashing).toBe(true);
+    expect(validateSettings(out, VOCAB).reduceFlashing).toBe(true);
+  });
+
+  it('accepts only a real boolean from storage', () => {
+    expect(validateSettings({ reduceFlashing: 'yes' }, VOCAB).reduceFlashing).toBeUndefined();
+    expect(validateSettings({ reduceFlashing: 1 }, VOCAB).reduceFlashing).toBeUndefined();
+    expect(validateSettings({ reduceFlashing: false }, VOCAB).reduceFlashing).toBe(false);
+  });
+});
+
+describe('prefersReducedMotion', () => {
+  it('follows the OS reduced-motion query', () => {
+    const asked = [];
+    const win = { matchMedia: (q) => { asked.push(q); return { matches: true }; } };
+    expect(prefersReducedMotion(win)).toBe(true);
+    expect(asked).toEqual(['(prefers-reduced-motion: reduce)']);
+  });
+
+  it('is off when the OS does not ask, or cannot say', () => {
+    expect(prefersReducedMotion({ matchMedia: () => ({ matches: false }) })).toBe(false);
+    expect(prefersReducedMotion({})).toBe(false);
+    expect(prefersReducedMotion({ matchMedia() { throw new Error('nope'); } })).toBe(false);
+  });
+});
+
+describe('isSettingsObject', () => {
+  it('accepts only a plain object', () => {
+    expect(isSettingsObject({ mode: 'bars' })).toBe(true);
+    for (const bad of [null, undefined, [], [1], 'x', 3, true]) {
+      expect(isSettingsObject(bad)).toBe(false);
+    }
+  });
+});
+
+describe('import bounds', () => {
+  it('caps a settings file at 64 KB', () => {
+    expect(MAX_SETTINGS_BYTES).toBe(64 * 1024);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 class FakeParam {
   constructor(value) { this.value = value; }
@@ -419,7 +419,8 @@ describe('AudioEngine', () => {
     await engine.addToQueue([makeFile('good.mp3')]);
     engine.ctx.failDecodeCount = 2; // both promise + callback attempts fail for bad.mp3
     const errors = await engine.addToQueue([makeFile('bad.mp3'), makeFile('fine.mp3')]);
-    expect(errors).toEqual(['bad.mp3']);
+    expect(errors.map((e) => e.name)).toEqual(['bad.mp3']);
+    expect(errors[0].error).toBeTruthy();
     expect(engine.queue.length).toBe(2);
     expect(engine.queue[1].meta.name).toBe('fine');
   });
@@ -770,5 +771,286 @@ describe('playback clock, transitions and recovery', () => {
       if (prev) Object.defineProperty(globalThis, 'navigator', prev);
       else delete globalThis.navigator;
     }
+  });
+});
+
+describe('graph hygiene: sources, crossfade and resume', () => {
+  let engine;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+  });
+
+  it('play retires a source it replaces instead of letting two run', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+    const first = engine.source;
+    // a rehydrate clears `playing` and calls play() again
+    engine.playing = false;
+    engine.play();
+    expect(first.stopped).toBe(true);
+    expect(first.onended).toBeNull();
+    expect(engine.source).not.toBe(first);
+  });
+
+  it('crossfade into an unloaded track starts no silent source', async () => {
+    await engine.addToQueue([makeFile('a.wav'), makeFile('b.wav')]);
+    engine.play();
+    engine.queue[1].buffer = null;          // released under memory pressure
+    engine.crossfadeTo(1, 0.1);
+    expect(engine.queueIndex).toBe(0);      // waits for the decode
+    await new Promise((r) => setTimeout(r, 0));
+    expect(engine.queueIndex).toBe(1);
+    const started = engine.ctx.sources.filter((s) => s.startCalls.length > 0);
+    expect(started.length).toBeGreaterThan(0);
+    expect(started.filter((s) => !s.buffer)).toHaveLength(0);
+  });
+
+  it('a resume from suspend restarts the beat grid settle window', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+    const spy = vi.spyOn(engine.beat, 'settle');
+    engine.ctx.state = 'suspended';
+    engine.ctx.state = 'running';
+    engine.ctx.onstatechange?.();
+    expect(spy).toHaveBeenCalledWith(0.6);
+  });
+});
+
+describe('beat clock contract', () => {
+  let engine;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+    await engine.addToQueue([makeFile()]);
+  });
+
+  it('beatPhase, beatConfidence and beatCount are zero with no tempo', () => {
+    expect(engine.beatPhase).toBe(0);
+    expect(engine.beatConfidence).toBe(0);
+    expect(engine.beatCount).toBe(0);
+  });
+
+  it('beatPhase is latency-compensated and always in [0, 1)', () => {
+    engine.ctx.currentTime = 0;
+    engine.play();
+    engine.ctx.currentTime = 2.0;
+    engine.tapTempo(5000);
+    engine.ctx.currentTime = 2.5;
+    engine.tapTempo(5500);             // grid now on 120 BPM, a beat at 2.5s
+    engine.ctx.currentTime = 2.5;
+    expect(engine.beatPhase).toBeCloseTo(0, 6);
+    engine.ctx.currentTime = 2.75;
+    expect(engine.beatPhase).toBeCloseTo(0.5, 6);
+
+    // a 100ms output latency means the listener is 100ms behind the graph
+    engine.ctx.outputLatency = 0.1;
+    engine.ctx.currentTime = 2.5;
+    expect(engine.beatPhase).toBeCloseTo(0.8, 6);
+    for (let t = 0; t < 4; t += 0.037) {
+      engine.ctx.currentTime = t;
+      expect(engine.beatPhase).toBeGreaterThanOrEqual(0);
+      expect(engine.beatPhase).toBeLessThan(1);
+    }
+  });
+
+  it('outputLatencyMs reports the compensated latency in milliseconds', () => {
+    engine.ctx.outputLatency = 0.12;
+    engine.ctx.baseLatency = 0.01;
+    expect(engine.outputLatencyMs).toBeCloseTo(130, 6);
+    delete engine.ctx.outputLatency;
+    delete engine.ctx.baseLatency;
+    expect(engine.outputLatencyMs).toBe(0);
+    expect(Number.isNaN(engine.outputLatencyMs)).toBe(false);
+  });
+
+  it('beatPhase follows the playback rate: a 1.5x run keeps the grid on the song', () => {
+    engine.ctx.currentTime = 0;
+    engine.play();
+    engine.ctx.currentTime = 1;
+    engine.tapTempo(9000);
+    engine.ctx.currentTime = 1.5;
+    engine.tapTempo(9500);             // beat at song time 1.5s
+    engine.setSpeed(1.5);
+    // a 1.5x rate covers 0.5 song seconds in a third of a wall second
+    engine.ctx.currentTime = 1.5 + 1 / 3;
+    expect(engine.getTime()).toBeCloseTo(2.0, 6);
+    // on the beat, which reads as 0 or a hair under 1 after float rounding
+    const p = engine.beatPhase;
+    expect(Math.min(p, 1 - p)).toBeCloseTo(0, 5);
+  });
+
+  it('chop wobble does not drift the song clock', () => {
+    vi.useFakeTimers();
+    try {
+      engine.ctx.currentTime = 0;
+      engine.play();
+      engine.setFx('chop', true);
+      engine.ctx.currentTime = 1;
+      const before = engine.startedAt;
+      vi.advanceTimersByTime(420);
+      // the wobble plays about 13ms less song than the clock counts
+      expect(engine.startedAt - before).toBeCloseTo(0.0132, 6);
+      engine.setFx('chop', false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('turning chop off restores the rate the speed FX asked for', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.setFx('speed', true);
+    engine.play();
+    expect(engine.speed).toBe(1.5);
+    engine.setFx('chop', true);
+    engine.setFx('chop', false);
+    expect(engine.speed).toBe(1.5);
+    expect(engine.source.playbackRate.value).toBe(1.5);
+  });
+});
+
+describe('tap tempo', () => {
+  let engine;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+  });
+
+  it('needs two taps before it reports a tempo', () => {
+    expect(engine.tapTempo(1000)).toBeNull();
+    const r = engine.tapTempo(1500);
+    expect(r.bpm).toBe(120);
+    expect(r.confidence).toBeGreaterThan(0);
+    expect(r.confidence).toBeLessThanOrEqual(1);
+  });
+
+  it('ignores taps closer than 200ms to the last one', () => {
+    engine.tapTempo(1000);
+    engine.tapTempo(1500);
+    expect(engine.tapTempo(1550).bpm).toBe(120);
+    expect(engine._taps).toHaveLength(2);
+  });
+
+  it('starts a new run after 2.5s of silence', () => {
+    engine.tapTempo(1000);
+    engine.tapTempo(1500);
+    expect(engine.tapTempo(4100)).toBeNull();
+    expect(engine._taps).toEqual([4100]);
+  });
+
+  it('uses only the last eight taps', () => {
+    for (let i = 0; i < 12; i++) engine.tapTempo(1000 + i * 500);
+    expect(engine._taps.length).toBe(8);
+    expect(engine.tapTempo(1000 + 12 * 500).bpm).toBe(120);
+  });
+
+  it('a steady tap run scores higher than a ragged one', () => {
+    const steady = [1000, 1500, 2000, 2500].map((t) => engine.tapTempo(t));
+    // 3.5s later is a new run
+    const ragged = [6000, 6260, 6780, 7100].map((t) => engine.tapTempo(t));
+    expect(steady.at(-1).confidence).toBeGreaterThan(ragged.at(-1).confidence);
+  });
+});
+
+describe('A-B loop', () => {
+  let engine;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+    await engine.addToQueue([makeFile('a.wav'), makeFile('b.wav')]);
+  });
+
+  afterEach(() => engine.clearLoop());
+
+  it('rejects start >= end and leaves no region behind', () => {
+    expect(engine.setLoop(10, 5)).toBeNull();
+    expect(engine.setLoop(7, 7)).toBeNull();
+    expect(engine.loopRange).toBeNull();
+  });
+
+  it('clamps the region to the track', () => {
+    expect(engine.setLoop(-5, 1000)).toEqual({ start: 0, end: 100 });
+    expect(engine.loopRange).toEqual({ start: 0, end: 100 });
+  });
+
+  it('wraps to the start without resetting the beat grid', () => {
+    engine.ctx.currentTime = 0;
+    engine.play();
+    engine.setLoop(10, 20);
+    const spy = vi.spyOn(engine.beat, 'reset');
+    engine.ctx.currentTime = 21;
+    engine.getLevels();
+    expect(engine.getTime()).toBeCloseTo(10, 6);
+    expect(spy).not.toHaveBeenCalled();
+    const last = engine.source.startCalls.at(-1);
+    expect(last.offset).toBe(10);
+  });
+
+  it('wraps through the source-ended path when the region reaches the end of the file', () => {
+    engine.ctx.currentTime = 0;
+    engine.play();
+    engine.setLoop(50, 100);
+    const src = engine.source;
+    src.onended();
+    expect(engine.playing).toBe(true);
+    expect(engine.getTime()).toBeCloseTo(50, 6);
+  });
+
+  it('survives pause and resume', () => {
+    engine.setLoop(10, 20);
+    engine.play();
+    engine.pause();
+    engine.play();
+    expect(engine.loopRange).toEqual({ start: 10, end: 20 });
+  });
+
+  it('is cleared when another track loads', () => {
+    engine.setLoop(10, 20);
+    engine.playTrack(1);
+    expect(engine.loopRange).toBeNull();
+  });
+
+  it('needs a loaded file; streams and idle engines get null', () => {
+    const idle = new (engine.constructor)();
+    expect(idle.setLoop(1, 2)).toBeNull();
+  });
+});
+
+describe('sleep fade output scale', () => {
+  let engine;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+    await engine.addToQueue([makeFile()]);
+  });
+
+  it('scales the master gain without touching the user volume', () => {
+    engine.setVolume(0.8);
+    engine.setOutputScale(0.5);
+    expect(engine.master.gain.value).toBeCloseTo(0.4, 6);
+    expect(engine.volume).toBe(0.8);
+    // a slider moved during the fade lands on the faded output
+    engine.setVolume(0.6);
+    expect(engine.master.gain.value).toBeCloseTo(0.3, 6);
+    engine.setOutputScale(1);
+    expect(engine.master.gain.value).toBeCloseTo(0.6, 6);
+    expect(engine.volume).toBe(0.6);
   });
 });

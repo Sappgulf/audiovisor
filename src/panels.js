@@ -4,6 +4,8 @@ import { esc, fmtTime } from './utils.js';
 import { clampActive } from './palette.js';
 // The library (IndexedDB + WAV encoder) loads on first use, not at boot.
 const lib = () => import('./library.js');
+// Playlist import and stream rows load on first use too (src/queue-import.js).
+const queueImport = () => import('./queue-import.js');
 
 /**
  * Queue and library panels.
@@ -82,6 +84,14 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   }
 
   function playQueueRow(index) {
+    const item = engine.queue[index];
+    if (item?.url) {
+      void queueImport().then((m) => m.playStreamItem(engine, item, toast)).then(() => {
+        renderQueue();
+        setQueueActive(index, true);
+      });
+      return;
+    }
     if (engine.captureActive || engine.micActive || engine.mode !== 'file') return;
     engine.playTrack(index);
     renderQueue();
@@ -114,6 +124,10 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   });
 
   queuePanel.addEventListener('click', (e) => {
+    if (e.target.closest('#queue-import-btn')) {
+      void queueImport().then((m) => m.pickPlaylist(shell, { engine, toast, onQueued: renderQueue }));
+      return;
+    }
     const clear = e.target.closest('#queue-clear-btn');
     const shuffle = e.target.closest('#queue-shuffle-btn');
     const close = e.target.closest('#queue-close-btn');
@@ -322,6 +336,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
       <span class="ic ic-lime" data-icon="list"></span>
       <span class="mono queue-title">QUEUE · ${q.length}${totalText}</span>
       <button class="mini-btn queue-clear-btn" id="queue-clear-btn" title="Clear queue" ${q.length ? '' : 'disabled'}>CLEAR</button>
+      <button class="mini-btn" id="queue-import-btn" title="Import a playlist (.m3u, .m3u8, .pls)">IMPORT</button>
       <button class="icon-x" id="queue-shuffle-btn" title="Shuffle queue"><span class="ic ic-sm" data-icon="shuffle"></span></button>
       <button class="icon-x" id="queue-close-btn" title="Close"><span class="ic ic-sm" data-icon="close"></span></button>
     </div>`;
@@ -332,7 +347,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
       <div class="queue-row${i === engine.queueIndex ? ' is-active' : ''}" data-i="${i}" data-index="${i}" role="option" id="queue-row-${i}" tabindex="-1" aria-selected="false">
         <span class="mono queue-idx">${i === engine.queueIndex ? '▶' : String(i + 1).padStart(2, '0')}</span>
         <span class="queue-name">${esc(t.meta.name)}</span>
-        <span class="mono queue-dur">${fmtTime(t.meta.duration)}</span>
+        <span class="mono queue-dur">${t.url ? 'STREAM' : fmtTime(t.meta.duration)}</span>
         <button class="icon-x queue-remove" data-i="${i}" title="Remove"><span class="ic ic-sm" data-icon="close"></span></button>
       </div>`).join('') + `</div>`;
     }
@@ -355,6 +370,8 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
     queuePanel.setAttribute('aria-hidden', String(!show));
     setToggle(triggerQueue, show);
     if (show) {
+      // warm the import module now: opening a file picker must happen inside the click, not after a network fetch
+      void queueImport();
       queueActiveIndex = clampActive(engine.queueIndex, engine.queue.length);
       renderQueue();
       requestAnimationFrame(() => {

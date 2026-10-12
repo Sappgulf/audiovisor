@@ -54,10 +54,21 @@ function buildProgram(gl) {
       return s;
     };
     const prog = gl.createProgram();
-    gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
-    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+    const vsh = compile(gl.VERTEX_SHADER, vs);
+    const fsh = compile(gl.FRAGMENT_SHADER, fs);
+    gl.attachShader(prog, vsh);
+    gl.attachShader(prog, fsh);
     gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null;
+    /* once linked the program holds the code, so the shader objects can go.
+       Previously they leaked on every build, and every context restore built
+       a fresh pair on top. The shaders are only flagged for deletion here; the
+       program keeps its own copy until it is deleted. */
+    gl.deleteShader(vsh);
+    gl.deleteShader(fsh);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      gl.deleteProgram(prog);
+      return null;
+    }
     gl.useProgram(prog);
     return {
       gl, prog,

@@ -55,4 +55,25 @@ describe('createToasts', () => {
     expect(root.children).toHaveLength(3);
     expect([...root.children].map((el) => el.textContent)).toEqual(['t2', 't3', 't4']);
   });
+  it('keeps only <b> from a message and reduces every other tag to text', () => {
+    toast('Stream <b>ok</b> <img src="x" onerror="window.__pwned=1"><script>window.__pwned=2</script> <a href="javascript:0">go</a>');
+    const el = root.firstChild;
+    expect(el.querySelector('img, script, a')).toBeNull();
+    expect(el.querySelector('b').textContent).toBe('ok');
+    expect(window.__pwned).toBeUndefined();
+    expect(el.textContent).toContain('go');
+  });
+
+  it('shows escaped user text as literal characters, not markup', () => {
+    toast('<b>Capture blocked</b> — 5 &lt;3 &amp; &lt;img src=x&gt;');
+    expect(root.firstChild.textContent).toBe('Capture blocked — 5 <3 & <img src=x>');
+    expect(root.firstChild.querySelector('img')).toBeNull();
+  });
+
+  it('drops attributes on a <b> so only the bare emphasis tag survives', () => {
+    toast('<b onclick="x()" class="y">hi</b>');
+    const b = root.firstChild.querySelector('b');
+    expect(b.attributes.length).toBe(0);
+    expect(b.textContent).toBe('hi');
+  });
 });

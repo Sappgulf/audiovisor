@@ -66,6 +66,18 @@ export function decodeMidi(data) {
 export function createMidiInput({ chip, fxNames, modes, setSlider, setFx, setMode, toast, setToggle }) {
   let access = null;
   let enabled = false;
+  /* what the user last asked for; the chip reads this, not `enabled`, so a
+     second click during the permission prompt cancels the first */
+  let wanted = false;
+  /* enable() and disable() run one at a time. Without this, a disable that
+     lands during requestMIDIAccess finishes first and the enable then binds
+     listeners to a feature that was just turned off. */
+  let queue = Promise.resolve();
+  const serial = (fn) => {
+    const run = queue.then(fn);
+    queue = run.catch(() => {});
+    return run;
+  };
   /** @type {boolean[]} */
   const fxState = fxNames.map(() => false);
 
@@ -90,39 +102,51 @@ export function createMidiInput({ chip, fxNames, modes, setSlider, setFx, setMod
     for (const input of access.inputs.values()) input.onmidimessage = onMessage;
   }
 
-  async function enable() {
-    if (enabled) return true;
-    if (!navigator.requestMIDIAccess) {
-      toast('<b>MIDI unavailable</b> — this browser has no Web MIDI', { duration: 3000 });
-      return false;
-    }
-    try {
-      access = await navigator.requestMIDIAccess();
-      enabled = true;
-      bindInputs();
-      access.onstatechange = bindInputs;
-      setToggle(chip, true, 'is-active');
-      const count = access.inputs.size;
-      toast(count ? `MIDI <b>on</b> — ${count} device${count > 1 ? 's' : ''}` : 'MIDI <b>on</b> — waiting for a device', { duration: 2200 });
-      return true;
-    } catch {
-      toast('<b>MIDI blocked</b> — permission denied', { duration: 3000 });
-      return false;
-    }
+  function enable() {
+    wanted = true;
+    return serial(async () => {
+      if (enabled || !wanted) return enabled;
+      if (!navigator.requestMIDIAccess) {
+        wanted = false;
+        toast('<b>MIDI unavailable</b> — this browser has no Web MIDI', { duration: 3000 });
+        return false;
+      }
+      try {
+        const granted = await navigator.requestMIDIAccess();
+        // a disable() that arrived during the prompt has already run; honour it
+        if (!wanted) return false;
+        access = granted;
+        enabled = true;
+        bindInputs();
+        access.onstatechange = bindInputs;
+        setToggle(chip, true, 'is-active');
+        const count = access.inputs.size;
+        toast(count ? `MIDI <b>on</b> — ${count} device${count > 1 ? 's' : ''}` : 'MIDI <b>on</b> — waiting for a device', { duration: 2200 });
+        return true;
+      } catch {
+        wanted = false;
+        toast('<b>MIDI blocked</b> — permission denied', { duration: 3000 });
+        return false;
+      }
+    });
   }
 
   function disable() {
-    if (access) {
-      for (const input of access.inputs.values()) input.onmidimessage = null;
-      access.onstatechange = null;
-    }
-    access = null;
-    enabled = false;
-    setToggle(chip, false, 'is-active');
-    toast('MIDI <b>off</b>', { duration: 1400 });
+    wanted = false;
+    return serial(() => {
+      if (!enabled) { setToggle(chip, false, 'is-active'); return; }
+      if (access) {
+        for (const input of access.inputs.values()) input.onmidimessage = null;
+        access.onstatechange = null;
+      }
+      access = null;
+      enabled = false;
+      setToggle(chip, false, 'is-active');
+      toast('MIDI <b>off</b>', { duration: 1400 });
+    });
   }
 
-  chip?.addEventListener('click', () => { if (enabled) disable(); else enable(); });
+  chip?.addEventListener('click', () => { if (wanted) disable(); else enable(); });
 
   return { enable, disable, isEnabled: () => enabled, handleMessage: onMessage };
 }

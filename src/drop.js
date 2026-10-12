@@ -1,4 +1,5 @@
 import { clamp } from './utils.js';
+import { AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, extOf } from './formats.js';
 
 /**
  * Drop detection — the "wait for it… NOW" moment.
@@ -128,4 +129,40 @@ export class DropDetector {
 
     return this.drop;
   }
+}
+
+/* ---------- dropped files and folders ---------- */
+
+const MEDIA_EXTENSIONS = [...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS];
+
+/**
+ * True for a file the browser can decode: a known extension, or a MIME type
+ * that says audio or video. Playlists are checked by the caller first, since
+ * their MIME type can read as audio.
+ * @param {{ name?: string, type?: string }} file
+ */
+export function isMediaFile(file) {
+  return MEDIA_EXTENSIONS.includes(extOf(file?.name)) || /^(audio|video)\//.test(file?.type || '');
+}
+
+/**
+ * The files in a drop, with dropped folders walked recursively (see
+ * drop-folder.js). Plain files come back exactly as `dataTransfer.files` gives them.
+ *
+ * The browser invalidates drop entries once the drop event returns, so every
+ * entry is read synchronously here before the first await.
+ *
+ * @param {DataTransfer | null | undefined} dt
+ * @returns {Promise<File[]>}
+ */
+export async function collectDroppedFiles(dt) {
+  const entries = [];
+  for (const item of dt?.items ? [...dt.items] : []) {
+    const entry = item.kind === 'file' && item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+    if (entry) entries.push(entry);
+  }
+  if (!entries.some((e) => e.isDirectory)) return dt?.files ? [...dt.files] : [];
+  // only a dropped folder needs the walk, so only then is its module fetched
+  const { walkDroppedEntries } = await import('./drop-folder.js');
+  return walkDroppedEntries(entries);
 }

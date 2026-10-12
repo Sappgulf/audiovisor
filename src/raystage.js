@@ -3,6 +3,7 @@ import { MODES } from './themes.js';
 import { beatEnergy } from './beatenergy.js';
 import { sanitizeLevels, usableSpectrum, safeDimension } from './levels.js';
 import { motionScale } from './motion.js';
+import { calmEnvelope, lockedBeat, LOCK_MODES, CALM_DROP } from './visualizers.js';
 
 /**
  * RayStage — WebGL2 raytraced stage renderer (v8.7).
@@ -134,7 +135,7 @@ export class RayStage {
     try {
       gl = canvas.getContext('webgl2', {
         alpha: false, antialias: false, depth: false, stencil: false,
-        powerPreference: 'high-performance', preserveDrawingBuffer: true,
+        powerPreference: 'high-performance',
       });
     } catch { /* context creation can throw on locked-down GPUs */ }
     // jsdom and some headless contexts hand back a stub that isn't a real
@@ -150,13 +151,15 @@ export class RayStage {
     // kills the context. Without this the stage would stay black forever;
     // instead we drop to ok=false so the caller falls back to Canvas2D, then
     // rebuild everything when the browser hands the context back.
-    canvas.addEventListener('webglcontextlost', (e) => {
+    this._onLost = (e) => {
       e.preventDefault();
       this.ok = false;
       this.lost = true;
       this.targets = {};
-    });
-    canvas.addEventListener('webglcontextrestored', () => this._recover());
+    };
+    this._onRestored = () => this._recover();
+    canvas.addEventListener('webglcontextlost', this._onLost);
+    canvas.addEventListener('webglcontextrestored', this._onRestored);
     // Some browsers never fire webglcontextrestored for a backgrounded page,
     // so poll as well and rebuild as soon as the driver hands the context back.
     this._watchdog = setInterval(() => {
@@ -187,19 +190,64 @@ export class RayStage {
     this.t = 0;
     this.beat = 0;
     this.frames = 0;
+    /* Reduce flashing, set by the render loop from the renderer's flag. When
+       on, the beat reaches the shader as a slow capped swell and the drop
+       camera term is scaled down (see render()). The raw envelope stays in
+       `beat`, which the chrome reads through chromeBeat. */
+    this.calm = false;
+    this._calmBeat = 0;
+    this._beatFx = 0;
+    this._disposed = false;
 
     this._init();
   }
 
+  /** The beat value the chrome should show: the calm swell when calm is on. */
+  get chromeBeat() { return this.calm ? this._calmBeat : this.beat; }
+
   _recover() {
-    if (!this.gl || this.gl.isContextLost()) return;
+    // The restored event and the watchdog can both fire for one restore. Only a
+    // stage that really lost its context rebuilds; a second _init would leak the
+    // first one's programs and textures and start a second prewarm chain.
+    if (this._disposed || !this.lost || !this.gl || this.gl.isContextLost()) return;
     this.lost = false;
     this._init();
     if (this.ok && this.w) this.resize(this.w, this.h);
   }
 
+  /* Release timers, listeners and GL objects. The stage is not drawn again
+     afterwards. Safe to call twice. */
+  dispose() {
+    if (this._disposed) return;
+    this._disposed = true;
+    clearInterval(this._watchdog);
+    clearTimeout(this._prewarmTimer);
+    this._watchdog = 0;
+    this._prewarmTimer = 0;
+    this.canvas.removeEventListener('webglcontextlost', this._onLost);
+    this.canvas.removeEventListener('webglcontextrestored', this._onRestored);
+    this.ok = false;
+    const gl = this.gl;
+    if (gl && !gl.isContextLost?.()) {
+      for (const t of Object.values(this.targets)) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+      for (const sp of this._scenes?.values() ?? []) {
+        if (sp.prog) gl.deleteProgram(sp.prog);
+        if (sp.handle) gl.deleteProgram(sp.handle.p);
+      }
+      for (const p of [this.pBlur, this.pAccum, this.pPost]) if (p) gl.deleteProgram(p);
+      for (const t of [this.noiseTex, this.specTex, this.waveTex, this.histTex]) if (t) gl.deleteTexture(t);
+      if (this.vao) gl.deleteVertexArray(this.vao);
+    }
+    this.targets = {};
+    this._scenes = new Map();
+  }
+
   _init() {
     this.ok = false;
+    // a rebuild must not leave the previous generation's prewarm chain running
+    clearTimeout(this._prewarmTimer);
+    this._prewarmTimer = 0;
+    this._gen = (this._gen || 0) + 1;
     const gl = this.gl;
     this.float = !!gl.getExtension('EXT_color_buffer_float');
     gl.getExtension('OES_texture_float_linear');
@@ -305,9 +353,10 @@ export class RayStage {
   _prewarm() {
     if (!this._parallel || this._prewarmTimer) return;
     const gl = this.gl;
+    const gen = this._gen;
     const next = () => {
       this._prewarmTimer = 0;
-      if (!this.ok || this.lost) return;
+      if (gen !== this._gen || !this.ok || this.lost) return;
       let pending = false;
       for (let m = 0; m < MODES.length; m++) {
         const sp = this._scenes.get(m);
@@ -564,7 +613,7 @@ export class RayStage {
   _flowPal() {
     const out = this._flowBuf || (this._flowBuf = [0, 1, 2, 3, 4].map(() => new Float32Array(3)));
     const pal = this.pal, n = pal.length, t = this.t;
-    const beat = this.beat * motionScale();
+    const beat = this._beatFx * motionScale();
     for (let i = 0; i < 5; i++) {
       const u = i / 4;
       const w = u + 0.16 * Math.sin(t * 0.071 + u * 2.3) + 0.09 * Math.sin(t * 0.043 - u * 3.7) + beat * 0.05;
@@ -619,8 +668,16 @@ export class RayStage {
        as garbage. See src/levels.js. The scratch object is this stage's own;
        nothing outside reads it before the next frame overwrites it. */
     const lv = sanitizeLevels(levels, this._lvScratch || (this._lvScratch = {}));
-    this._drop = lv.drop;
+    const dropK = this.calm ? CALM_DROP : 1;
+    this._drop = lv.drop * dropK;
     this.beat = beatEnergy(this.beat, lv, dt);
+    /* beat-lock in the modes that use it, otherwise the onset envelope as
+       before; calm then swaps in its slow capped swell. Everything below that
+       reads the beat reads _beatFx, so calm reaches every term. */
+    const locked = LOCK_MODES.has(MODES[this.mode]?.id)
+      ? lockedBeat(lv, Number.isFinite(levels?.beatPhase), this.beat)
+      : this.beat;
+    this._beatFx = this.calm ? (this._calmBeat = calmEnvelope(this._calmBeat, locked, dt)) : locked;
     if (usableSpectrum(freq)) {
       this._uploadAudio(freq, wave, this._stereoL, this._stereoR);
       // fixed 45 rows/sec so the spectrogram and terrain scroll at the same
@@ -720,14 +777,14 @@ export class RayStage {
     gl.uniform1f(u.uHigh, lv.high || 0);
     gl.uniform1f(u.uLevel, idle ? 0.12 : (lv.level || 0));
     if (drawMode === SCOPE_MODE) gl.uniform4fv(u.uScope, this._scopePoints(idle ? 0.12 : (lv.level || 0)));
-    gl.uniform1f(u.uBeat, this.beat);
+    gl.uniform1f(u.uBeat, this._beatFx);
     gl.uniform1f(u.uSens, this.sensitivity);
     gl.uniform1f(u.uPop, this.colorPop);
     gl.uniform1f(u.uBassFocus, this.bassFocus);
     gl.uniform1f(u.uIdle, idle ? 1 : 0);
     /* the drop drives whole-frame camera motion, so it scales with the same
        reduced-motion factor as the beat punch */
-    gl.uniform1f(u.uDrop, (lv.drop || 0) * motionScale());
+    gl.uniform1f(u.uDrop, (lv.drop || 0) * motionScale() * dropK);
     gl.uniform1f(u.uHistRow, this.histRow / HIST_H);
     gl.uniform1f(u.uSeed, (this.frames % 64) * 0.618 + 0.13);
     this._fullscreen();
@@ -746,7 +803,7 @@ export class RayStage {
     this._lastKeyH = this.rh;
     // a beat softens the blend so hits stay crisp, but killing it entirely
     // left every beat frame full of sampling noise
-    const blend = stable ? q.blend * (1 - Math.min(this.beat, 0.6) * 0.5) : 0;
+    const blend = stable ? q.blend * (1 - Math.min(this._beatFx, 0.6) * 0.5) : 0;
 
     // when blend is 0 the accumulation pass is a straight copy — skip it and
     // let the rest of the chain read the scene buffer directly
@@ -799,7 +856,7 @@ export class RayStage {
        the beat — both whole-frame effects. Zeroing this term under
        prefers-reduced-motion leaves the scene animating while the camera
        stops throbbing. See src/motion.js. */
-    gl.uniform1f(this.uPost.uBeat, this.beat * motionScale());
+    gl.uniform1f(this.uPost.uBeat, this._beatFx * motionScale());
     gl.uniform1f(this.uPost.uPop, this.colorPop);
     const tints = this._tints();
     gl.uniform3fv(this.uPost.uTintLo, tints.lo);

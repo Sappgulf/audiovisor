@@ -189,9 +189,18 @@ export function nextTier(current, avgMs, ceiling, baseline = DEFAULT_BASELINE_MS
   const i = TIERS.indexOf(current);
   if (i < 0 || !Number.isFinite(avgMs)) return { tier: current, streak: 0 };
   const max = TIERS.indexOf(ceiling);
+  /* a negative streak is a penalty: the tier was just lost, so the climb back
+     needs twice the usual run of healthy windows. Without it a stage on the
+     edge of its budget climbs, judders, falls, and climbs again every
+     seven windows for as long as the mode runs. */
+  const carry = healthyStreak < 0 ? healthyStreak : 0;
+  const fall = (drop) => {
+    const tier = TIERS[Math.max(0, i - drop)];
+    return { tier, streak: tier !== current ? -CLIMB_STREAK : carry };
+  };
 
-  if (avgMs > baseline * SEVERE) return { tier: TIERS[Math.max(0, i - 2)], streak: 0 };
-  if (avgMs > baseline * OVER_BUDGET) return { tier: TIERS[Math.max(0, i - 1)], streak: 0 };
+  if (avgMs > baseline * SEVERE) return fall(2);
+  if (avgMs > baseline * OVER_BUDGET) return fall(1);
 
   if (avgMs <= baseline * HEALTHY) {
     const streak = healthyStreak + 1;
@@ -200,7 +209,7 @@ export function nextTier(current, avgMs, ceiling, baseline = DEFAULT_BASELINE_MS
     }
     return { tier: current, streak };
   }
-  return { tier: current, streak: 0 };
+  return { tier: current, streak: carry };
 }
 
 /** Canvas2D has one step rather than four tiers. */

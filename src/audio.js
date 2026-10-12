@@ -1,6 +1,16 @@
-import { safe } from './utils.js';
+import { safe, clamp } from './utils.js';
 import { BeatTracker } from './beattracker.js';
 import { DropDetector } from './drop.js';
+import { VIDEO_EXTENSIONS, extOf } from './formats.js';
+
+/** Onsets are ignored this long after the context resumes from a suspend. */
+const RESUME_SETTLE_SEC = 0.6;
+/* chop FX wobbles the source rate: 0.88x ramping back over 0.22s. The clock
+   assumes a constant rate, so the lost song time is put back here. */
+const CHOP_DIP = 0.88;
+const CHOP_RAMP = 0.22;
+/** Wall-clock seconds the clock must be pushed forward per chop wobble. */
+const CHOP_CLOCK_DEBT = CHOP_RAMP * (1 - (CHOP_DIP + 1) / 2);
 
 /**
  * smoothingTimeConstant for the beat-detection analyser.
@@ -49,6 +59,13 @@ export function stereoWidth(bufL, bufR) {
  *  - 'stream'   HTMLMediaElement URLs (radio/podcast/direct links)
  *  - 'apple' account playback (no decoded audio access)
  */
+/** Mean of freq[a..b) scaled to 0..1. Module-level so the frame path allocates no closure. */
+function bandAvg(freq, a, b) {
+  let s = 0;
+  for (let i = a; i < b; i++) s += freq[i];
+  return s / Math.max(1, b - a) / 255;
+}
+
 export class AudioEngine {
   constructor() {
     this.ctx = null;
@@ -88,8 +105,16 @@ export class AudioEngine {
     this.external = null;
 
     this.playing = false;
+    /* whole-track repeat (boolean, read by the transport and settings) */
     this.loop = false;
+    /* A-B region {start, end} in seconds, or null. Named loopRange because
+       `loop` above is the boolean the UI toggles. */
+    this._range = null;
+    this._loopTimer = null;
+    this._taps = [];
     this.volume = 0.75;
+    /* 0..1 multiplier for sleep fades; the user's volume is never touched */
+    this._outputScale = 1;
     this.sensitivity = 1.4;
     this.smoothing = 0.55;
     this.bassFocus = 0.5;
@@ -155,6 +180,12 @@ export class AudioEngine {
     if (!this.ctx) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       this.ctx = new Ctx();
+      /* a context that comes back from suspended/interrupted has a silent
+         analyser history; restart the beat grid rather than read the jump
+         from silence to music as a burst of onsets */
+      this.ctx.onstatechange = () => {
+        if (this.ctx.state === 'running') this.beat.settle(RESUME_SETTLE_SEC);
+      };
 
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 2048;
@@ -354,7 +385,9 @@ export class AudioEngine {
       file,          // kept so the buffer can be released and decoded again
       meta: {
         name: file.name.replace(/\.[^.]+$/, ''),
+        fileName: file.name,
         ext: file.name.split('.').pop().toUpperCase(),
+        kind: VIDEO_EXTENSIONS.includes(extOf(file.name)) ? 'video' : 'audio',
         sampleRate: audioBuf.sampleRate,
         channels: audioBuf.numberOfChannels,
         duration: audioBuf.duration,
@@ -370,8 +403,9 @@ export class AudioEngine {
         const decoded = await this.decodeFile(file);
         this.queue.push(decoded);
         this.evicted += this._trimQueue();
-      } catch {
-        errors.push(file.name || 'file');
+      } catch (err) {
+        // name and cause, so the caller can say why (unsupported, no audio track, corrupt)
+        errors.push({ name: file.name || 'file', error: err ?? null });
       }
     }
     if (this.queueIndex === -1 && this.queue.length) {
@@ -453,6 +487,7 @@ export class AudioEngine {
     this.track = item.meta;
     this.offset = 0;
     this.beat.reset();
+    this.clearLoop();
     this._setMode('file');
     // buffer was released to save memory — decode it again, then resume
     if (!item.buffer && item.file) {
@@ -516,6 +551,11 @@ export class AudioEngine {
     this.sourceGain.connect(this.filter);
     src.onended = () => {
       if (src._fade) return; // crossfade handled by crossfadeTo
+      // an A-B region that reaches the end of the buffer wraps instead of ending
+      if (this._range && this.playing && this.source === src) {
+        this._wrapLoop();
+        return;
+      }
       if (this.playing) {
         this.playing = false;
         if (!this.loop && this.queueIndex < this.queue.length - 1) {
@@ -551,6 +591,9 @@ export class AudioEngine {
     if (!this.buffer) return;
     this._ensureCtx();
     if (this.playing) return;
+    /* a rehydrate or crossfade can leave a live source behind; it must not
+       keep sounding under the one we are about to start */
+    this._retireSource();
     this._connectSource();
     this.source.start(0, this.offset % this.buffer.duration);
     this.startedAt = this.ctx.currentTime - this.offset / this.speed;
@@ -598,7 +641,16 @@ export class AudioEngine {
       return;
     }
     if (!this.buffer) return;
-    t = Math.max(0, Math.min(t, this.buffer.duration - 0.05));
+    this._seekFile(Math.max(0, Math.min(t, this.buffer.duration - 0.05)));
+    this._emit();
+  }
+
+  /**
+   * Move the file playhead to `t` and restart the source there if playing.
+   * seek() and the A-B loop wrap both go through here; the wrap skips the
+   * beat-grid reset because a loop is the same song, not a new one.
+   */
+  _seekFile(t) {
     this.offset = t;
     if (this.playing) {
       this._retireSource();
@@ -606,7 +658,51 @@ export class AudioEngine {
       this.source.start(0, this.offset);
       this.startedAt = this.ctx.currentTime - this.offset / this.speed;
     }
-    this._emit();
+  }
+
+  /**
+   * Repeat a region of the current file. Rejects start >= end and clamps to
+   * the track. Returns the accepted {start, end}, or null if nothing changed.
+   * Survives pause and resume; cleared when another track loads.
+   */
+  setLoop(startSec, endSec) {
+    if (this.mode !== 'file' || !this.buffer) return null;
+    let s = Number(startSec);
+    let e = Number(endSec);
+    if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
+    s = Math.max(0, s);
+    e = Math.min(this.buffer.duration, e);
+    if (!(s < e)) return null;
+    this._range = { start: s, end: e };
+    if (!this._loopTimer) this._loopTimer = setInterval(() => this._checkLoop(), 100);
+    this._checkLoop();
+    return { ...this._range };
+  }
+
+  clearLoop() {
+    this._range = null;
+    if (this._loopTimer) { clearInterval(this._loopTimer); this._loopTimer = null; }
+  }
+
+  /** The active A-B region as {start, end}, or null. */
+  get loopRange() {
+    return this._range ? { ...this._range } : null;
+  }
+
+  /** Wrap to the region start once the playhead passes its end. True if it wrapped. */
+  _checkLoop() {
+    const r = this._range;
+    if (!r || !this.playing || this.mode !== 'file' || !this.buffer) return false;
+    if (this.getTime() < r.end) return false;
+    this._wrapLoop();
+    return true;
+  }
+
+  _wrapLoop() {
+    const start = this._range.start;
+    this._seekFile(start);
+    // the grid is in song time, so it survives the wrap; see BeatTracker.jumpTo
+    this.beat.jumpTo(start);
   }
 
   skip(delta) {
@@ -726,8 +822,24 @@ export class AudioEngine {
 
   setVolume(v) {
     this.volume = v;
-    if (this.master) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
-    if (this.external?.setVolume) this.external.setVolume(v);
+    this._applyOutputGain();
+  }
+
+  /**
+   * Scale the output by k (0..1) without changing the user's volume. The
+   * sleep fade uses this so `volume` stays what the listener chose: a page
+   * closed mid-fade saves the real level, and a slider moved during the fade
+   * is respected when the fade ends.
+   */
+  setOutputScale(k) {
+    this._outputScale = Number.isFinite(k) ? clamp(k, 0, 1) : 1;
+    this._applyOutputGain();
+  }
+
+  _applyOutputGain() {
+    const g = this.volume * this._outputScale;
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(g, this.ctx.currentTime, 0.02);
+    if (this.external?.setVolume) this.external.setVolume(g);
   }
 
   setSpeed(mult) {
@@ -797,8 +909,10 @@ export class AudioEngine {
             this.chopGate.gain.linearRampToValueAtTime(1, now + 0.14);
             if (this.source && this.source.playbackRate) {
               this.source.playbackRate.cancelScheduledValues(now);
-              this.source.playbackRate.setValueAtTime(this.speed * 0.88, now);
-              this.source.playbackRate.linearRampToValueAtTime(this.speed, now + 0.22);
+              this.source.playbackRate.setValueAtTime(this.speed * CHOP_DIP, now);
+              this.source.playbackRate.linearRampToValueAtTime(this.speed, now + CHOP_RAMP);
+              // the wobble plays less song than the clock counts; claw it back
+              if (this.playing) this.startedAt += CHOP_CLOCK_DEBT;
             }
           } catch {}
         }, 420);
@@ -807,13 +921,15 @@ export class AudioEngine {
         try {
           this.chopGate.gain.cancelScheduledValues(t);
           this.chopGate.gain.setValueAtTime(1, t);
-          if (this.source) this.source.playbackRate.setValueAtTime(this.fx.speed ? 1.5 : 1, t);
+          if (this.source) this.source.playbackRate.cancelScheduledValues(t);
         } catch {}
         // restore filter if lowpass not active
         if (!this.fx.lowpass) this.filter.frequency.setTargetAtTime(22050, t, 0.12);
         else this.filter.frequency.setTargetAtTime(400, t, 0.08);
-        // restore speed if needed
-        if (!this.fx.speed) this.setSpeed(this._chopPrevSpeed ?? 1);
+        /* restore the rate through setSpeed, which re-anchors the clock. The
+           old code wrote 1 or 1.5 straight to the source, so with the speed
+           FX on the source ran at 1.5 while the clock still said 0.66 */
+        this.setSpeed(this.fx.speed ? 1.5 : 1);
       }
     }
   }
@@ -826,6 +942,20 @@ export class AudioEngine {
 
   crossfadeTo(i, fadeSec = 4) {
     if (!this.queue[i] || i === this.queueIndex) return;
+    /* a released buffer would start a source with no audio in it: that source
+       plays nothing, ends at once, and its onended advances the queue. Decode
+       first, then crossfade. */
+    if (!this.queue[i].buffer && this.queue[i].file) {
+      const item = this.queue[i];
+      this._rehydrate(i).then(() => {
+        if (this.queue[i] !== item || this.queueIndex === i) return;
+        if (item.buffer) this.crossfadeTo(i, fadeSec);
+        else this.playTrack(i);
+      }).catch(() => {
+        if (this.queue[i] === item) this._fire('error', 'Could not reload this track — the file may be gone');
+      });
+      return;
+    }
     const oldSrc = this.source;
     const oldGain = this.sourceGain;
     // beat-match: start next track at same beat phase
@@ -1221,15 +1351,12 @@ export class AudioEngine {
        The high band picks up the same edge so cymbal air is no longer
        thrown away at 8kHz. */
     const iTOP = Math.min(n, Math.ceil(16000 / binHz));
-    const avg = (a, b) => {
-      let s = 0;
-      for (let i = a; i < b; i++) s += freq[i];
-      return s / Math.max(1, b - a) / 255;
-    };
-    const bass = avg(2, iBass);
-    const mid = avg(iBass, iMid);
-    const high = avg(iMid, iTOP);
-    const level = avg(2, iTOP);
+    const bass = bandAvg(freq, 2, iBass);
+    const mid = bandAvg(freq, iBass, iMid);
+    const high = bandAvg(freq, iMid, iTOP);
+    const level = bandAvg(freq, 2, iTOP);
+    /* a loop wrap moves the playhead, so the caller's timeSec is stale */
+    if (this._checkLoop()) timeSec = null;
 
     /* beat clock runs on song position + full spectrum, not wall time;
        live inputs have no song clock so use the audio context clock */
@@ -1263,6 +1390,73 @@ export class AudioEngine {
   /** Live tempo/phase state for beat-synced visuals. */
   get beatInfo() {
     return this.beat.info;
+  }
+
+  /** Clock the beat grid runs on: live input has none, so it uses the context. */
+  _beatClock() {
+    return this.micActive || this.captureActive ? (this.ctx?.currentTime || 0) : this.getTime();
+  }
+
+  /**
+   * Position within the current beat, [0, 1), 0 exactly on the beat as the
+   * listener hears it. Read from the clock right now, not the last analysis
+   * frame, so it is as fresh as the frame it is drawn into. 0 with no tempo.
+   */
+  get beatPhase() {
+    if (!(this.beat.bpm > 0)) return 0;
+    return this.beat.phaseAt(this._beatClock() - this.outputLatency());
+  }
+
+  /** Grid beats reached since the session started. Increments once per beat. */
+  get beatCount() {
+    return this.beat.beats;
+  }
+
+  /** Stability of the tempo lock, 0..1. 0 with no tempo. */
+  get beatConfidence() {
+    return this.beat.bpm > 0 ? this.beat.confidence : 0;
+  }
+
+  /** outputLatency() in milliseconds. */
+  get outputLatencyMs() {
+    return this.outputLatency() * 1000;
+  }
+
+  /**
+   * Tap tempo. Taps closer than 200ms are ignored; 2.5s of silence starts a
+   * new run; only the last 8 taps count. Every accepted tap also moves the
+   * grid so a beat lands on it. Returns {bpm, confidence} from two taps on,
+   * otherwise null.
+   */
+  tapTempo(nowMs = performance.now()) {
+    const taps = this._taps;
+    const last = taps.length ? taps[taps.length - 1] : -Infinity;
+    if (nowMs - last > 2500) taps.length = 0;
+    else if (nowMs - last < 200) return this._tapEstimate();
+    taps.push(nowMs);
+    if (taps.length > 8) taps.shift();
+
+    const est = this._tapEstimate();
+    // the beat the listener is hearing now is the one they just tapped
+    this.beat.nudgeTo(this._beatClock() - this.outputLatency(), est ? est.bpm : 0, est ? est.confidence : 0);
+    return est;
+  }
+
+  _tapEstimate() {
+    const taps = this._taps;
+    const n = taps.length;
+    if (n < 2) return null;
+    const intervals = n - 1;
+    const mean = (taps[n - 1] - taps[0]) / intervals;
+    if (!(mean > 0)) return null;
+    let v = 0;
+    for (let i = 1; i < n; i++) {
+      const d = taps[i] - taps[i - 1] - mean;
+      v += d * d;
+    }
+    // steadier taps score higher; four intervals is a full sample
+    const steady = clamp(1 - (Math.sqrt(v / intervals) / mean) * 5, 0, 1);
+    return { bpm: Math.round(60000 / mean * 100) / 100, confidence: steady * Math.min(1, intervals / 4) };
   }
 
   _emit() {

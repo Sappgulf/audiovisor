@@ -1,5 +1,7 @@
 // @ts-check
-import { SETTINGS_KEY, serializeSettings, validateSettings } from './settings.js';
+import {
+  SETTINGS_KEY, MAX_SETTINGS_BYTES, serializeSettings, validateSettings, isSettingsObject,
+} from './settings.js';
 import { remove as removeStored } from './storage.js';
 
 /**
@@ -20,12 +22,13 @@ import { remove as removeStored } from './storage.js';
  * @param {() => void} deps.saveSettings
  * @param {(blob: Blob, name: string) => void} deps.download
  * @param {(msg: string, opts?: object) => void} deps.toast
+ * @param {(on: boolean) => void} deps.setReduceFlashing applies and remembers the choice
  * @param {Document} [deps.doc]
  * @param {Location} [deps.location]
  */
 export function createSettingsUI({
   state, engine, sliderEls, eqFreqs, getAutoDj, vocab, applySettings, saveSettings, download, toast,
-  doc = document, location = window.location,
+  setReduceFlashing, doc = document, location = window.location,
 }) {
   function currentSettings() {
     return serializeSettings({
@@ -40,8 +43,27 @@ export function createSettingsUI({
       volume: engine.volume,
       loop: engine.loop,
       autoDj: getAutoDj(),
+      reduceFlashing: state.reduceFlashing,
     });
   }
+
+  /* Reduce flashing sits with the other settings tools. Built here rather than
+     in index.html so the toggle lives next to the code that persists it. */
+  const flashChip = doc.createElement('button');
+  flashChip.className = 'fx-chip';
+  flashChip.id = 'reduce-flashing-chip';
+  flashChip.title = 'Calmer stage: no rapid flashing or strobing';
+  flashChip.innerHTML = '<span class="chip-dot"></span><span class="chip-txt">Reduce flashing</span>';
+  const paintFlash = () => {
+    flashChip.classList.toggle('is-on', !!state.reduceFlashing);
+    flashChip.setAttribute('aria-pressed', String(!!state.reduceFlashing));
+  };
+  flashChip.addEventListener('click', () => {
+    setReduceFlashing(!state.reduceFlashing);
+    paintFlash();
+  });
+  paintFlash();
+  doc.getElementById('settings-export')?.parentElement?.prepend(flashChip);
 
   doc.getElementById('settings-reset')?.addEventListener('click', () => {
     removeStored(SETTINGS_KEY);
@@ -58,18 +80,22 @@ export function createSettingsUI({
   doc.getElementById('settings-file')?.addEventListener('change', (e) => {
     const input = /** @type {HTMLInputElement} */ (e.target);
     const f = input.files[0];
-    if (!f) return;
-    f.text().then(txt => {
-      try {
-        const s = validateSettings(JSON.parse(txt), vocab);
-        if (!Object.keys(s).length) { toast('<b>Import failed</b> — nothing usable in that file'); return; }
-        applySettings(s, { eq: true });
-        saveSettings();
-        toast('Settings <b>imported</b>');
-      } catch { toast('<b>Import failed</b>'); }
-    });
     input.value = '';
+    if (!f) return;
+    // a settings file is a few KB; anything larger is not one, so do not read it
+    if (f.size > MAX_SETTINGS_BYTES) { toast('<b>Import failed</b> — the file is larger than 64 KB'); return; }
+    f.text().then(txt => {
+      let raw;
+      try { raw = JSON.parse(txt); } catch { toast('<b>Import failed</b> — not a valid JSON file'); return; }
+      if (!isSettingsObject(raw)) { toast('<b>Import failed</b> — not a settings file'); return; }
+      // validateSettings keeps only the keys this build knows, so unknown keys are never stored
+      const s = validateSettings(raw, vocab);
+      if (!Object.keys(s).length) { toast('<b>Import failed</b> — nothing usable in that file'); return; }
+      applySettings(s, { eq: true });
+      saveSettings();
+      toast('Settings <b>imported</b>');
+    }).catch(() => toast('<b>Import failed</b>'));
   });
 
-  return { currentSettings };
+  return { currentSettings, paintFlash };
 }

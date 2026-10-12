@@ -131,6 +131,11 @@ export class AppleMusicClient {
     return !['localhost', '127.0.0.1'].includes(window.location.hostname);
   }
 
+  /** True once the token endpoint has refused this deployment (501 or another 4xx) for the life of the page. */
+  get unavailable() {
+    return tokenUnavailable !== null;
+  }
+
   get authed() {
     return !!this.music?.isAuthorized;
   }

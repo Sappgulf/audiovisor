@@ -300,3 +300,47 @@ describe('starting tier', () => {
     expect(tier).toBe('high');
   });
 });
+
+describe('climb penalty after a step-down', () => {
+  it('needs twice the healthy run before climbing back after a fall', () => {
+    let r = nextTier('high', 30, 'high', B, 0);
+    expect(r.tier).toBe('medium');
+    let windows = 0;
+    while (r.tier !== 'high' && windows < 50) {
+      r = nextTier(r.tier, 16.7, 'high', B, r.streak);
+      windows++;
+    }
+    expect(windows).toBe(CLIMB_STREAK * 2);
+  });
+
+  it('a window in the hold band keeps the penalty rather than clearing it', () => {
+    const fell = nextTier('high', 30, 'high', B, 0);
+    const held = nextTier(fell.tier, 19.5, 'high', B, fell.streak);
+    expect(held.tier).toBe('medium');
+    expect(held.streak).toBe(fell.streak);
+  });
+
+  it('a flapping signal makes climb attempts far apart', () => {
+    // a stage that is fine for six windows and then over budget for one: the
+    // old rule climbed every seven windows forever. Each climb attempt still
+    // fails at once, but the attempts are now at least a dozen windows apart.
+    let tier = 'low';
+    let streak = 0;
+    const climbs = [];
+    for (let i = 0; i < 70; i++) {
+      const avg = i % 7 === 6 ? 30 : 16.7;
+      const r = nextTier(tier, avg, 'high', B, streak);
+      if (TIERS.indexOf(r.tier) > TIERS.indexOf(tier)) climbs.push(i);
+      tier = r.tier;
+      streak = r.streak;
+    }
+    expect(climbs.length).toBeGreaterThan(1);
+    for (let k = 1; k < climbs.length; k++) {
+      expect(climbs[k] - climbs[k - 1]).toBeGreaterThanOrEqual(CLIMB_STREAK * 2);
+    }
+  });
+
+  it('a hold window with no penalty still resets the healthy streak', () => {
+    expect(nextTier('low', 19.5, 'high', B, 4).streak).toBe(0);
+  });
+});

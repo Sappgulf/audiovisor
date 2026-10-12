@@ -285,3 +285,134 @@ describe('tab capture', () => {
     });
   });
 });
+
+describe('isDeveloperSite', () => {
+  it('is true on the dev server regardless of host', async () => {
+    const { isDeveloperSite } = await import('../src/connect.js');
+    expect(isDeveloperSite({ dev: true, hostname: 'audiovisor-one.vercel.app' })).toBe(true);
+  });
+
+  it('is true on local hosts outside dev', async () => {
+    const { isDeveloperSite } = await import('../src/connect.js');
+    expect(isDeveloperSite({ dev: false, hostname: 'localhost' })).toBe(true);
+    expect(isDeveloperSite({ dev: false, hostname: '127.0.0.1' })).toBe(true);
+  });
+
+  it('is false for the live site', async () => {
+    const { isDeveloperSite } = await import('../src/connect.js');
+    expect(isDeveloperSite({ dev: false, hostname: 'audiovisor-one.vercel.app' })).toBe(false);
+  });
+});
+
+describe('Apple Music card', () => {
+  const DEV_WORDS = /APPLE_MUSIC_|Vercel|Apple Developer|MusicKit key|SETUP|<details/;
+  const liveRoot = () => document.createElement('div');
+
+  /** A panel on the live site (not a developer site), with the Apple client set to `configured`. */
+  function livePanel({ configured }) {
+    const el = liveRoot();
+    document.body.appendChild(el);
+    const p = new ConnectPanel(el, { engine: makeEngine(), toast: vi.fn(), onExternalTrack: vi.fn(), isDeveloper: () => false });
+    appleInstances.at(-1).configured = configured;
+    p.render();
+    return { p, el, apple: appleInstances.at(-1) };
+  }
+
+  it('offers one Connect button and one line of note when configured', () => {
+    const { el } = livePanel({ configured: true });
+    const card = el.querySelector('.provider-apple');
+    expect(card.querySelector('.sp-note').textContent)
+      .toBe("Sign in with your Apple Music subscription. Playback stays in Apple's player.");
+    const btn = card.querySelector('#am-connect');
+    expect(btn.textContent).toBe('Connect Apple Music');
+    expect(btn.disabled).toBe(false);
+    expect(card.querySelectorAll('.sp-note')).toHaveLength(1);
+    expect(card.querySelector('.sp-help')).toBeNull();
+  });
+
+  it('says Apple Music is unavailable with a disabled button, and no setup steps, on the live site', () => {
+    const { el } = livePanel({ configured: false });
+    const card = el.querySelector('.provider-apple');
+    expect(card.querySelector('.sp-note').textContent).toBe("Apple Music isn't available on this site yet.");
+    expect(card.querySelector('#am-connect').disabled).toBe(true);
+    expect(card.querySelector('.sp-badge').textContent).toBe('UNAVAILABLE');
+  });
+
+  it('never shows env var, Vercel, key or Apple Developer copy to a visitor on the live site', () => {
+    const { el } = livePanel({ configured: false });
+    expect(el.querySelector('.provider-apple').textContent).not.toMatch(DEV_WORDS);
+    expect(el.innerHTML).not.toMatch(DEV_WORDS);
+  });
+
+  it('shows the setup steps only on a developer site', () => {
+    const el = liveRoot();
+    document.body.appendChild(el);
+    const p = new ConnectPanel(el, { engine: makeEngine(), toast: vi.fn(), onExternalTrack: vi.fn(), isDeveloper: () => true });
+    appleInstances.at(-1).configured = false;
+    p.render();
+    const help = el.querySelector('.provider-apple .sp-help');
+    expect(help).not.toBeNull();
+    expect(help.textContent).toContain('APPLE_MUSIC_TEAM_ID');
+  });
+
+  it('keeps the disabled, setup-free card after a 501 has been remembered', () => {
+    // the client reports unavailable once the token endpoint has refused the deployment
+    const { p, el, apple } = livePanel({ configured: true });
+    apple.configured = false;
+    apple.unavailable = true;
+    p.render();
+    expect(el.querySelector('#am-connect').disabled).toBe(true);
+    expect(el.querySelector('.sp-help')).toBeNull();
+  });
+
+  it('turns the card into its unavailable state when a login is refused', async () => {
+    const { p, el, apple } = livePanel({ configured: true });
+    apple.login = vi.fn(async () => {
+      apple.unavailable = true;
+      apple.configured = false;
+      throw new Error('Apple Music server credentials are not configured');
+    });
+    el.querySelector('#am-connect').click();
+    await vi.waitFor(() => expect(el.querySelector('#am-connect')?.disabled).toBe(true));
+    const toast = p.toast.mock.calls.at(-1)[0];
+    expect(toast).toContain("isn't available on this site yet");
+    expect(toast).not.toContain('credentials');
+  });
+
+  it('keeps the real message for a retryable login failure', async () => {
+    const { p, el, apple } = livePanel({ configured: true });
+    apple.login = vi.fn(async () => { throw new Error('Apple Music token unavailable'); });
+    el.querySelector('#am-connect').click();
+    await vi.waitFor(() => expect(p.toast).toHaveBeenCalledWith(expect.stringContaining('token unavailable'), expect.anything()));
+    expect(el.querySelector('#am-connect').disabled).toBe(false);
+  });
+});
+
+describe('URL stream handover', () => {
+  it('detaches the Apple track at once and pauses MusicKit', async () => {
+    panel.setCurrentTrack({ provider: 'apple', name: 'Song' });
+    appleInstances[0].pause = vi.fn();
+    root.querySelector('#url-input').value = 'https://cdn.example.com/a.mp3';
+    root.querySelector('#url-play').click();
+    // detached synchronously, before the stream promise settles
+    expect(panel.currentTrack).toBeNull();
+    await vi.waitFor(() => expect(appleInstances[0].pause).toHaveBeenCalled());
+  });
+
+  it('leaves no Apple track current when the stream fails', async () => {
+    panel.setCurrentTrack({ provider: 'apple', name: 'Song' });
+    engine.playUrl.mockRejectedValueOnce(new Error('nope'));
+    root.querySelector('#url-input').value = 'https://cdn.example.com/broken.mp3';
+    root.querySelector('#url-play').click();
+    await vi.waitFor(() => expect(toast.mock.calls.at(-1)[0]).toContain('Stream failed'));
+    expect(panel.currentTrack).toBeNull();
+  });
+
+  it('ignores a late MusicKit track event while a direct stream owns the output', () => {
+    engine.mode = 'stream';
+    appleInstances[0].onTrackChange({ name: 'Late', durationMs: 1000 });
+    expect(engine.setExternal).not.toHaveBeenCalled();
+    expect(panel.currentTrack).toBeNull();
+    engine.mode = undefined;
+  });
+});

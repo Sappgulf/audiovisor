@@ -1,5 +1,5 @@
 // @ts-check
-import { readJSON, writeJSON } from './storage.js';
+import { readArray, writeJSON } from './storage.js';
 import { esc } from './utils.js';
 
 /**
@@ -29,7 +29,7 @@ export function createCollab({ state, toast, setMode, setTheme, setFx, doc = doc
     const url = location.origin + location.pathname + '#share=' + data;
     try { await navigator.clipboard.writeText(url); toast('Link <b>copied</b>'); } catch { prompt('Copy link', url); }
     // store in local collab history
-    const hist = readJSON(COLLAB_KEY, []);
+    const hist = readArray(COLLAB_KEY);
     hist.unshift({ url, at: Date.now() });
     writeJSON(COLLAB_KEY, hist.slice(0, 20));
   });
@@ -56,8 +56,7 @@ export function createCollab({ state, toast, setMode, setTheme, setFx, doc = doc
   const MAX_COMMENTS = 200;
   const MAX_COMMENT_LEN = 280;
   function loadComments() {
-    const list = readJSON(COMMENTS_KEY, []);
-    return Array.isArray(list) ? list.filter((c) => c && typeof c === 'object') : [];
+    return readArray(COMMENTS_KEY).filter((c) => c && typeof c === 'object');
   }
   function saveComments(list) {
     writeJSON(COMMENTS_KEY, list.slice(-MAX_COMMENTS));

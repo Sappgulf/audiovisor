@@ -45,6 +45,12 @@ export function writeText(key, value) {
   }
 }
 
+/** @returns the stored array, or `fallback` when missing, unreadable or not an array */
+export function readArray(key, fallback = []) {
+  const v = readJSON(key, null);
+  return Array.isArray(v) ? v : fallback;
+}
+
 export function readText(key, fallback = null) {
   try {
     const v = localStorage.getItem(key);

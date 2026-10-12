@@ -150,7 +150,13 @@ class ExtraModes {
     while (this._specAcc >= COLINT) {
       this._specAcc -= COLINT;
       this.specCtx.drawImage(this.specCv, -colW, 0);
-      const img = this.specCtx.createImageData(colW, H);
+      /* one column buffer per size: every pixel is rewritten below and
+         putImageData copies it out, so this was a fresh allocation ~30 times
+         a second for nothing */
+      if (!this._specImg || this._specImg.width !== colW || this._specImg.height !== H) {
+        this._specImg = this.specCtx.createImageData(colW, H);
+      }
+      const img = this._specImg;
       const d = img.data;
       for (let y = 0; y < H; y++) {
         const t = 1 - y / H;
@@ -250,9 +256,13 @@ class ExtraModes {
       ctx.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
       ctx.stroke();
     }
-    const vig = ctx.createRadialGradient(cx, cy, maxR * 0.7, cx, cy, maxR * 1.25);
-    vig.addColorStop(0, 'rgba(0,0,0,0)');
-    vig.addColorStop(1, 'rgba(0,0,0,0.32)');
+    /* geometry is the canvas size alone, so one gradient serves every frame */
+    const vig = this._cachedGrad(`tvig:${w}:${h}`, () => {
+      const g = ctx.createRadialGradient(cx, cy, maxR * 0.7, cx, cy, maxR * 1.25);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,0.32)');
+      return g;
+    });
     ctx.fillStyle = vig;
     ctx.fillRect(0, 0, w, h);
     ctx.globalCompositeOperation = 'source-over';
@@ -339,10 +349,10 @@ class ExtraModes {
     if (this._starSig !== starSig || !this.stars.length) {
       this._starSig = starSig;
       this.stars = Array.from({ length: 60 }, () => ({
-        x: Math.random() * w,
-        y: Math.random() * horizon * 0.85,
-        r: 0.5 + Math.random() * 1.2,
-        ph: Math.random() * Math.PI * 2,
+        x: this._rnd() * w,
+        y: this._rnd() * horizon * 0.85,
+        r: 0.5 + this._rnd() * 1.2,
+        ph: this._rnd() * Math.PI * 2,
       }));
     }
     ctx.globalCompositeOperation = 'lighter';
@@ -473,10 +483,10 @@ class ExtraModes {
     if (this._starSig !== starSig || !this.stars.length) {
       this._starSig = starSig;
       this.stars = Array.from({ length: 80 }, () => ({
-        x: Math.random() * w,
-        y: Math.random() * baseline * 0.9,
-        r: 0.6 + Math.random() * 1.2,
-        ph: Math.random() * Math.PI * 2,
+        x: this._rnd() * w,
+        y: this._rnd() * baseline * 0.9,
+        r: 0.6 + this._rnd() * 1.2,
+        ph: this._rnd() * Math.PI * 2,
       }));
     }
     ctx.globalCompositeOperation = 'lighter';
@@ -526,9 +536,12 @@ class ExtraModes {
       const x = i * bw - bw * 0.35;
       ctx.fillRect(x, baseline - bh, bw * 0.62, bh);
     }
-    const gGrad = ctx.createLinearGradient(0, baseline, 0, h);
-    gGrad.addColorStop(0, hexRgba(this._color(0), 0.14));
-    gGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    const gGrad = this._cachedGrad(`cityfloor:${baseline}:${h}:${this._color(0)}`, () => {
+      const g = ctx.createLinearGradient(0, baseline, 0, h);
+      g.addColorStop(0, hexRgba(this._color(0), 0.14));
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      return g;
+    });
     ctx.fillStyle = gGrad;
     ctx.fillRect(0, baseline, w, h - baseline);
     const tall = [];
@@ -746,15 +759,15 @@ class ExtraModes {
        many satellites at 144Hz as at 60Hz (same complement form as the
        city peak falloff) */
     if (this.beat > 0.72 && this.orbSat.length < 40
-        && Math.random() < 1 - Math.pow(1 - 0.55, dt60)) {
-      const ang = Math.random() * Math.PI * 2;
+        && this._rnd() < 1 - Math.pow(1 - 0.55, dt60)) {
+      const ang = this._rnd() * Math.PI * 2;
       this.orbSat.push({
         ang,
-        dist: baseR * (1.45 + Math.random() * 0.7),
-        spd: (0.5 + Math.random() * 1.0) * (Math.random() < 0.5 ? 1 : -1),
-        c: Math.floor(Math.random() * this.theme.colors.length),
+        dist: baseR * (1.45 + this._rnd() * 0.7),
+        spd: (0.5 + this._rnd() * 1.0) * (this._rnd() < 0.5 ? 1 : -1),
+        c: Math.floor(this._rnd() * this.theme.colors.length),
         life: 1,
-        decay: 0.006 + Math.random() * 0.011,
+        decay: 0.006 + this._rnd() * 0.011,
       });
     }
     for (let i = this.orbSat.length - 1; i >= 0; i--) {
@@ -931,17 +944,17 @@ class ExtraModes {
        alone threw 2.4x as many droplets at 144Hz as at 60Hz. */
     this.fluidDrops ||= [];
     if (this.beat > 0.5 && this.fluidDrops.length < 30
-        && Math.random() < Math.min(1, dt60)) {
+        && this._rnd() < Math.min(1, dt60)) {
       const n = 1 + Math.round(this.beat * 2);
       for (let k = 0; k < n; k++) {
-        const i = Math.floor(Math.random() * cols);
+        const i = Math.floor(this._rnd() * cols);
         this.fluidDrops.push({
           x: i * step,
           y: surf[i],
-          vx: (Math.random() - 0.5) * w * 0.06,
-          vy: -h * (0.20 + Math.random() * 0.28) * (0.6 + this.beat * 0.6),
-          r: Math.min(w, h) * (0.008 + Math.random() * 0.014),
-          c: Math.random() < 0.5 ? 0 : 2,
+          vx: (this._rnd() - 0.5) * w * 0.06,
+          vy: -h * (0.20 + this._rnd() * 0.28) * (0.6 + this.beat * 0.6),
+          r: Math.min(w, h) * (0.008 + this._rnd() * 0.014),
+          c: this._rnd() < 0.5 ? 0 : 2,
         });
       }
     }
@@ -1419,7 +1432,7 @@ class ExtraModes {
         ang: this._sweepAng,
         dist: R * (0.25 + this.sm.bass * 0.6),
         life: 1,
-        decay: 0.22 + Math.random() * 0.12,
+        decay: 0.22 + this._rnd() * 0.12,
         c: 0,
         big: true,
       });
@@ -1427,10 +1440,10 @@ class ExtraModes {
     const blipP = 0.35 + this.sm.level * 0.5;
     const dt60 = Number.isFinite(dt) && dt > 0 ? dt * 60 : 1;
     if (freq && this.radarBlips.length < 64
-        && Math.random() < 1 - Math.pow(1 - blipP, dt60)) {
-      const u = Math.random();
+        && this._rnd() < 1 - Math.pow(1 - blipP, dt60)) {
+      const u = this._rnd();
       this.radarBlips.push({
-        ang: this._sweepAng - Math.random() * Math.PI * 1.15,
+        ang: this._sweepAng - this._rnd() * Math.PI * 1.15,
         dist: R * (0.18 + u * 0.74),
         life: 1,
         decay: 0.1 + logSample(freq, u) * 0.12,

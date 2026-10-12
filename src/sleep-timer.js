@@ -25,19 +25,27 @@ export function createSleepTimer({ engine, toast, refreshStatus, saveSettings, v
     if (tick) { clearInterval(tick); tick = null; }
   }
 
+  /*
+   * The fade scales the output, it does not set the volume. The old version
+   * wrote faded levels into engine.volume and restored a volume saved at the
+   * start, so a slider moved during the fade was lost, and a page closed
+   * mid-fade saved the quiet level as the user's volume.
+   */
   async function fire() {
     stopTick();
     end = 0;
-    const baseVol = engine.volume;
+    const showFill = (k) => {
+      if (volumeFill) volumeFill.style.width = `${engine.volume * k * 100}%`;
+    };
     for (let i = 10; i > 0; i--) {
       if (!engine.playing && !engine.micActive && !engine.captureActive) break;
-      engine.setVolume(baseVol * (i / 10));
-      if (volumeFill) volumeFill.style.width = `${engine.volume * 100}%`;
+      engine.setOutputScale(i / 10);
+      showFill(i / 10);
       await new Promise((r) => setTimeout(r, 700));
     }
     engine.pause();
-    engine.setVolume(baseVol);
-    if (volumeFill) volumeFill.style.width = `${baseVol * 100}%`;
+    engine.setOutputScale(1);
+    showFill(1);
     step = 0;
     if (label) label.textContent = 'Sleep';
     refreshStatus();

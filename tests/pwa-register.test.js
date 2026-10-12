@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { registerServiceWorker } from '../src/pwa.js';
+import { readFileSync } from 'node:fs';
 
 let listeners, sw, doc, reload;
 
@@ -68,5 +69,24 @@ describe('registerServiceWorker reload', () => {
     busy = false;
     vi.advanceTimersByTime(15000);
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('main.js wiring for the reload guard and calm mode', () => {
+  // read the source rather than boot the app: the wiring is the point, not the behaviour
+  const main = readFileSync('src/main.js', 'utf8');
+  const audio = readFileSync('src/audio.js', 'utf8');
+
+  it('holds the reload while audio plays or capture is live', () => {
+    expect(main).toMatch(/isBusy: \(\) => engine\.playing \|\| engine\.captureActive/);
+  });
+
+  it('the engine really exposes the two properties the busy check reads', () => {
+    expect(audio).toMatch(/this\.playing = false;/);
+    expect(audio).toMatch(/this\.captureActive = false;/);
+  });
+
+  it('sets the renderer calm mode only when the renderer has that property', () => {
+    expect(main).toMatch(/if \('calm' in renderer\) renderer\.calm = state\.reduceFlashing;/);
   });
 });

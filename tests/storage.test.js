@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { readJSON, writeJSON, readText, writeText, remove } from '../src/storage.js';
+import { readJSON, writeJSON, readText, writeText, remove, readArray } from '../src/storage.js';
 
 /** A store whose writes reject, as in Safari private browsing or at quota. */
 const hostile = (init = {}) => ({
@@ -87,5 +87,26 @@ describe('reads fall back rather than throw', () => {
     expect(readJSON('zero', 'fb')).toBe(0);
     expect(readJSON('false', 'fb')).toBe(false);
     expect(readJSON('empty', 'fb')).toBe('');
+  });
+});
+
+describe('readArray', () => {
+  beforeEach(() => { delete globalThis.localStorage; });
+
+  it('returns a stored array', () => {
+    globalThis.localStorage = working({ k: '[1,2]' });
+    expect(readArray('k')).toEqual([1, 2]);
+  });
+
+  it('returns the fallback for anything that is not an array', () => {
+    for (const raw of ['{"a":1}', '"text"', '42', 'null', '{not json']) {
+      globalThis.localStorage = working({ k: raw });
+      expect(readArray('k', ['fb'])).toEqual(['fb']);
+    }
+  });
+
+  it('returns an empty array by default and never throws on hostile storage', () => {
+    globalThis.localStorage = { getItem() { throw new Error('SecurityError'); } };
+    expect(readArray('k')).toEqual([]);
   });
 });
