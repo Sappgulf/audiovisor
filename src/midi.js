@@ -148,5 +148,5 @@ export function createMidiInput({ chip, fxNames, modes, setSlider, setFx, setMod
 
   chip?.addEventListener('click', () => { if (wanted) disable(); else enable(); });
 
-  return { enable, disable, isEnabled: () => enabled, handleMessage: onMessage };
+  return { enable, disable, isEnabled: () => enabled, isWanted: () => wanted, handleMessage: onMessage };
 }

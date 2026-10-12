@@ -5,9 +5,9 @@ import { readText, writeText } from './storage.js';
  * Drawer tab strip.
  *
  * Owns the tab/panel pairing, the sliding ink indicator and the persisted
- * selection. Opening the Source tab is reported through `onSourceTab` so the
- * lazy ConnectPanel can be fetched by main.js without this module knowing
- * anything about music providers.
+ * selection. Opening the Source and Studio tabs is reported through
+ * `onSourceTab` and `onStudioTab` so their lazy sections can be fetched by
+ * main.js without this module knowing what they contain.
  */
 
 const TAB_KEY = 'audiovisor.drawerTab';
@@ -15,9 +15,10 @@ const TAB_KEY = 'audiovisor.drawerTab';
 /**
  * @param {object} [opts]
  * @param {() => void} [opts.onSourceTab]
+ * @param {() => void} [opts.onStudioTab]
  * @param {Document} [opts.doc]
  */
-export function createDrawerTabs({ onSourceTab, doc = document } = {}) {
+export function createDrawerTabs({ onSourceTab, onStudioTab, doc = document } = {}) {
   const tabs = /** @type {HTMLElement[]} */ ([...doc.querySelectorAll('.drawer-tab')]);
   const panels = [...doc.querySelectorAll('.drawer-panel')];
   const ink = doc.getElementById('drawer-tab-ink');
@@ -43,6 +44,7 @@ export function createDrawerTabs({ onSourceTab, doc = document } = {}) {
     });
     panels.forEach((p) => p.classList.toggle('is-active', p.dataset.panel === btn.dataset.tab));
     if (btn.dataset.tab === 'source') onSourceTab?.();
+    if (btn.dataset.tab === 'studio') onStudioTab?.();
     if (scroll) scroll.scrollTop = 0;
     moveInk(btn);
     if (persist) writeText(TAB_KEY, btn.dataset.tab);

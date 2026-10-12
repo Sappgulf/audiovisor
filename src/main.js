@@ -4,18 +4,18 @@ import { MODES, THEMES } from './themes.js';
 import { modeArt } from './mode-art.js';
 import { AudioEngine } from './audio.js';
 import { Renderer, loadExtraModes } from './visualizers.js';
-import { fmtTime, pickRandom } from './utils.js';
+import { fmtTime, pickRandom, hashStr } from './utils.js';
 import { createToasts } from './toast.js';
 import { createFavicon } from './favicon.js';
-import { createShareCard } from './share-card.js';
-import { createAboutPanel } from './about.js';
+import { createShareCardLoader } from './share-card-loader.js';
+import { createAboutLoader } from './about-loader.js';
 import { createPanels } from './panels.js';
 import { createControls } from './controls.js';
 import { createModePicker } from './mode-picker.js';
 import { createDrawerTabs } from './drawer-tabs.js';
 import { createSleepTimer } from './sleep-timer.js';
 import { createLookPresets } from './look-presets.js';
-import { createAiStudio } from './ai-studio.js';
+import { createDrawerSections } from './drawer-sections.js';
 import { createCollab } from './collab.js';
 import { createStageChrome } from './stage-chrome.js';
 import { createKeyboardShortcuts } from './keyboard.js';
@@ -33,20 +33,18 @@ import { SETTINGS_KEY, readSettings, prefersReducedMotion } from './settings.js'
    quota is full. Nothing here is worth failing over. See src/storage.js. */
 import { writeJSON } from './storage.js';
 import { initialTier } from './adaptive.js';
-import { generateAlbumArt } from './albumart.js';
-import { extractPalette, paletteToTheme, hashStr } from './artpalette.js';
+import { createArtLoader } from './art-loader.js';
 
 import { createRenderLoop } from './render-loop.js';
 import { createRaytraceControls } from './raytrace-controls.js';
 import { createSettingsUI } from './settings-ui.js';
 import { createVoiceInput } from './voice-ui.js';
-import { createSocialFeed } from './social-ui.js';
 import { createPlayState } from './play-state.js';
 import { createConnectLoader } from './connect-loader.js';
 import { createAutopilot } from './autopilot.js';
 import { createTempoPrime } from './tempo-prime.js';
 import { registerMode, registeredModes, isPluginMode } from './plugins.js';
-import { createMidiInput } from './midi.js';
+import { createMidiLoader } from './midi-loader.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -196,8 +194,9 @@ function setSliderNormalized(id, norm) {
   saveSettings();
 }
 
-/* MIDI input — opt-in via the MIDI chip in the Look tab. */
-boot('midi', () => createMidiInput({
+/* MIDI input — opt-in via the MIDI chip in the Look tab. The input module is
+   fetched on the first click, so a visitor without a controller never pays for it. */
+boot('midi', () => createMidiLoader({
   chip: $('midi-chip'),
   fxNames: FX,
   modes: MODES,
@@ -241,8 +240,6 @@ const { savePreset, loadPreset } = boot('look presets', () => createLookPresets(
   saveSettings,
   row: document.getElementById('preset-row'),
 })) ?? { savePreset() {}, loadPreset() {} };
-
-boot('AI studio', () => createAiStudio({ engine, toast, setFx, setTheme, saveSettings }));
 
 boot('collab', () => createCollab({ state, toast, setMode, setTheme, setFx }));
 
@@ -297,6 +294,8 @@ function setMode(id, { restore = false } = {}) {
 let autoTheme = null;
 let currentArtworkUrl = null;
 const autoPaletteCache = new Map();
+/* the palette and procedural-art modules load on first use; see art-loader.js */
+const artLoader = createArtLoader({ toast });
 
 /**
  * Resolve state.themeId to a theme object the renderers accept. 'auto' has
@@ -326,7 +325,8 @@ function syncStageContext() {
 }
 
 function applyAutoPalette(colors, announce) {
-  autoTheme = paletteToTheme(colors);
+  // colours only get here from a cover the palette module has already read
+  autoTheme = artLoader.getPalette().paletteToTheme(colors);
   if (state.themeId !== 'auto') return;
   renderer.setTheme(autoTheme);
   ray.setTheme(autoTheme);
@@ -343,20 +343,30 @@ function applyAutoPalette(colors, announce) {
 /** Cover art finished loading: read its palette for the Auto theme and the
     transport card's artwork echo. */
 function onArtworkLoaded(url, img) {
+  let pixels;
   try {
     const cv = document.createElement('canvas');
     cv.width = cv.height = 48;
     const cx = cv.getContext('2d', { willReadFrequently: true });
     cx.drawImage(img, 0, 0, 48, 48);
-    const colors = extractPalette(cx.getImageData(0, 0, 48, 48).data);
-    if (!colors.length) return;
-    autoPaletteCache.set(url, colors);
-    applyArtColors(colors);
-    if (state.themeId === 'auto') applyAutoPalette(colors, true);
+    pixels = cx.getImageData(0, 0, 48, 48).data;
   } catch {
     /* a cross-origin cover without CORS headers taints the canvas and makes
        getImageData throw — the art stays decorative, the theme stays put */
+    return;
   }
+  // the pixels are read now, while the image is still on screen; the reader
+  // itself loads on the first cover
+  artLoader.loadPalette().then((palette) => {
+    if (!palette) return;
+    const colors = palette.extractPalette(pixels);
+    if (!colors.length) return;
+    autoPaletteCache.set(url, colors);
+    // the track may have changed while the reader loaded; only the current cover paints
+    if (url !== currentArtworkUrl) return;
+    applyArtColors(colors);
+    if (state.themeId === 'auto') applyAutoPalette(colors, true);
+  });
 }
 
 /* Artless local files still get per-track personality: the track name hashes
@@ -563,6 +573,7 @@ function updateTrackUI() {
     $('track-spec').textContent = `${t.artists} · ${t.kind}`;
     $('time-total').textContent = fmtTime(t.duration);
     const icon = 'music2';
+    trackArtEl._artReq = null;
     trackArtEl.replaceChildren();
     if (t.artwork) {
       const img = document.createElement('img');
@@ -591,6 +602,7 @@ function updateTrackUI() {
     $('track-name').textContent = 'Choose a song';
     $('track-spec').textContent = 'APPLE MUSIC';
     $('time-total').textContent = '0:00';
+    trackArtEl._artReq = null;
     trackArtEl.replaceChildren();
     const placeholder = document.createElement('span');
     placeholder.className = 'ic';
@@ -603,6 +615,7 @@ function updateTrackUI() {
     $('track-name').textContent = engine.streamTrack.name;
     $('track-spec').textContent = `LIVE STREAM · ${engine.streamTrack.ext}`;
     $('time-total').textContent = fmtTime(engine.getDuration());
+    trackArtEl._artReq = null;
     trackArtEl.innerHTML = '<span class="ic" data-icon="link"></span>';
     setIcon(trackArtEl.querySelector('.ic'), 'link');
     currentArtworkUrl = null;
@@ -619,10 +632,17 @@ function updateTrackUI() {
     // procedural album art
     if (trackArtEl && (!trackArtEl._artName || trackArtEl._artName !== t.name)) {
       trackArtEl._artName = t.name;
-      const art = generateAlbumArt(t.name, activeTheme()?.colors || ['#d9b089','#c49a6e','#f5e6d3'], 96);
-      trackArtEl.innerHTML = '';
-      trackArtEl.appendChild(art);
-      trackArtEl.querySelector('canvas')?.classList.add('track-art-img');
+      const name = t.name;
+      // a newer track, or a cover, takes the slot while the generator loads
+      const req = {};
+      trackArtEl._artReq = req;
+      artLoader.loadAlbumArt().then((albumArt) => {
+        if (!albumArt || trackArtEl._artReq !== req) return;
+        const art = albumArt.generateAlbumArt(name, activeTheme()?.colors || ['#d9b089','#c49a6e','#f5e6d3'], 96);
+        trackArtEl.innerHTML = '';
+        trackArtEl.appendChild(art);
+        trackArtEl.querySelector('canvas')?.classList.add('track-art-img');
+      });
       /* no cover to read, so Auto derives this track's look from its name */
       if (state.themeId === 'auto') applyNamePalette(t.name);
     }
@@ -630,6 +650,7 @@ function updateTrackUI() {
     $('track-name').textContent = 'No track loaded';
     $('track-spec').textContent = 'No track';
     $('time-total').textContent = '00:00';
+    trackArtEl._artReq = null;
     trackArtEl.innerHTML = '<span class="ic" data-icon="layers"></span>';
     setIcon(trackArtEl.querySelector('.ic'), 'layers');
     trackInfoEl.classList.remove('has-art');
@@ -745,7 +766,8 @@ function liveCanvas() {
 /* The snapshot used to be the raw stage canvas — a frame of pixels with no
    context, which never made it past a group chat. The compositing now lives
    in src/share-card.js; here we just supply it the current look and canvas. */
-const { snapshot } = createShareCard({
+/* the compositor loads on the first snapshot; see share-card-loader.js */
+const { snapshot } = createShareCardLoader({
   getTheme: activeTheme,
   getModeName: () => MODES.find((m) => m.id === state.modeId)?.name || 'Stage',
   getTrackName: () => $('track-name')?.textContent,
@@ -777,11 +799,13 @@ $('mic-btn').addEventListener('click', async () => {
 
 /* ---------- nav ---------- */
 
-const about = createAboutPanel({
+/* The dialog module loads on the first click of About; see about-loader.js. */
+const about = createAboutLoader({
   shell: $('shell'),
   trigger: $('nav-about'),
   modeCount: MODES.length,
   themeCount: THEMES.length,
+  toast,
 });
 
 boot('drawer', () => createDrawer({ state }));
@@ -972,12 +996,14 @@ gpu.whenReady().then((backend) => {
 // Voice AI
 boot('voice', () => createVoiceInput({ engine, renderer, toast }));
 
-// Social feed wiring
-boot('social feed', () => createSocialFeed({ state, toast }));
-
 /* ---------- drawer tabs (v8.7) ---------- */
 
-boot('drawer tabs', () => createDrawerTabs({ onSourceTab: connectLoader.ensureConnect }));
+/* the Source feed and the Studio chips load when their tab first opens */
+const drawerSections = createDrawerSections({ state, engine, toast, setFx, setTheme, saveSettings });
+boot('drawer tabs', () => createDrawerTabs({
+  onSourceTab: () => { connectLoader.ensureConnect(); drawerSections.ensureSocial(); },
+  onStudioTab: () => drawerSections.ensureStudio(),
+}));
 
 /* ---------- keyboard shortcuts overlay ---------- */
 

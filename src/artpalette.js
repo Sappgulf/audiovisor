@@ -14,6 +14,7 @@
  */
 
 import { hexToRgb, rgbToHex } from './chrome.js';
+export { hashStr } from './utils.js';
 
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 
@@ -118,11 +119,4 @@ export function paletteToTheme(colors, name = 'Auto') {
     colors: cols,
     css: `linear-gradient(135deg, ${cols[0]}, ${cols[cols.length - 1]})`,
   };
-}
-
-/** FNV-1a, for the deterministic name-derived fallback palette. */
-export function hashStr(s) {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
 }

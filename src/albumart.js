@@ -1,9 +1,6 @@
+import { hashStr } from './utils.js';
+
 // Procedural album art v2 — deterministic cover per track name + theme
-function hashStr(s) {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
 function mulberry(seed) {
   return () => {
     seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
