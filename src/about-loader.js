@@ -43,8 +43,8 @@ export function createAboutLoader({ shell, trigger, modeCount, themeCount, toast
     return load;
   }
 
-  // Only the first click reaches this listener; once the dialog exists its own
-  // trigger listener is attached and this one returns early.
+  // Clicks before the dialog exists land here. Once it does, its own trigger
+  // listener is attached and this one returns early.
   trigger.addEventListener('click', () => {
     if (about) return;
     wanted = !wanted;

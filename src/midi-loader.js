@@ -22,7 +22,7 @@ export function createMidiLoader({ chip, fxNames, modes, setSlider, setFx, setMo
   /* the user's intent while the module is still in flight; once it is loaded
      the module's own flag is the one that counts */
   let wanted = false;
-  /** @type {null | { enable: () => Promise<boolean>, disable: () => Promise<void>, isWanted: () => boolean }} */
+  /** @type {null | { enable: () => Promise<unknown>, disable: () => Promise<unknown>, isWanted: () => boolean }} */
   let midi = null;
   /** @type {Promise<typeof midi> | null} */
   let load = null;

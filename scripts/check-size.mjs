@@ -39,7 +39,14 @@ const BUDGETS = {
      module-wrapper overhead to the entry, and the offline tempo analysis
      worker adds a lazy dsp-worker chunk. Worth it: the boot payload is
      still small and main.js went from 3096 to under 900 lines. */
-  total: 101 * 1024,   // all JS chunks, gzipped
+
+  /* Feature round: MIDI, About, the share card, the album and palette art,
+     and the Source and Studio drawer sections moved out of the entry, which
+     took the boot payload from 61.8kB to 57.9kB. Each moved chunk is gzipped
+     on its own, so the total rose by about 8kB. That is the cost of splitting,
+     and the boot payload is the number this file exists to protect. Raised
+     deliberately, with the entry ceiling unchanged. */
+  total: 110 * 1024,   // all JS chunks, gzipped
 };
 
 const DIST = 'dist/assets';
