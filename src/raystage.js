@@ -461,7 +461,11 @@ export class RayStage {
   setTheme(theme) {
     if (!theme) return;
     this.pal = theme.colors.slice(0, 5).map(hexToRgb);
-    this.frames = 0;
+    /* History is kept on purpose. Zeroing the frame count dropped two frames
+       of temporal blending and restarted the sample noise, so every palette
+       change popped to a grainy frame. With history kept, the old palette
+       blends out over a few frames (the blend is 0.3-0.62 a frame) and the
+       new one takes over. */
     this._lookRev++;
   }
   setQuality(q) {

@@ -139,6 +139,8 @@ export class Renderer {
     this._xfadeLeft = 0;
     /* gradients whose geometry and stops depend only on size and theme */
     this._gradCache = new Map();
+    /* per-colour alpha strings for the bar body (see _barRgba) */
+    this._barRgbaCache = new Map();
     this._seed = 0x2545f491;
     this.history = [];
     this.particles = [];
@@ -252,21 +254,23 @@ export class Renderer {
   /** The beat value the chrome (CSS --beat, chips) should show. */
   get chromeBeat() { return this._calm ? this._calmBeat : this.beat; }
 
-  setMode(m) {
-    /* a dissolve from the frame on screen: copy it now, before the new mode
-       draws over it, if that frame came from this renderer */
-    if (m !== this.mode && this._lastFrameDrawn && this.canvas.width > 0) {
-      if (!this._xfadeCv) {
-        this._xfadeCv = document.createElement('canvas');
-        this._xfadeCtx = this._xfadeCv.getContext('2d');
-      }
-      if (this._xfadeCtx) {
-        this._xfadeCv.width = this.canvas.width;
-        this._xfadeCv.height = this.canvas.height;
-        this._xfadeCtx.drawImage(this.canvas, 0, 0);
-        this._xfadeLeft = XFADE_S;
-      }
+  /* Copy the frame on screen, if it came from this renderer, so the next frame
+     can dissolve from it. Taken before the new mode or palette draws over it. */
+  _snapshotForDissolve() {
+    if (!this._lastFrameDrawn || !(this.canvas.width > 0)) return;
+    if (!this._xfadeCv) {
+      this._xfadeCv = document.createElement('canvas');
+      this._xfadeCtx = this._xfadeCv.getContext('2d');
     }
+    if (!this._xfadeCtx) return;
+    this._xfadeCv.width = this.canvas.width;
+    this._xfadeCv.height = this.canvas.height;
+    this._xfadeCtx.drawImage(this.canvas, 0, 0);
+    this._xfadeLeft = XFADE_S;
+  }
+
+  setMode(m) {
+    if (m !== this.mode) this._snapshotForDissolve();
     this.mode = m;
     if (!CORE_MODES.has(m) && !extrasReady && !isPluginMode(m)) {
       loadExtraModes(Renderer).catch(() => {});
@@ -299,6 +303,9 @@ export class Renderer {
     this.nebula = null;
   }
   setTheme(t) {
+    /* a palette change dissolves like a mode change: the old frame fades out
+       over the new one instead of cutting. Same snapshot as setMode(). */
+    if (t !== this.theme) this._snapshotForDissolve();
     this.theme = t;
     this._cacheTheme = null;
     this._bgTheme = null;
@@ -422,6 +429,18 @@ export class Renderer {
   _soft(c) { return this._softSprites.get(c); }
   _barS(c) { return this._barSprites.get(c); }
   _color(i) { return this.theme.colors[i % this.theme.colors.length]; }
+  /* The bar body parses its theme colour into four alpha strings. Built per bar
+     per frame that was 4 hexRgba parses x 56 bars x 60fps for a palette of a
+     handful of colours, so each colour's strings are built once. The output is
+     the same strings, so the drawing is unchanged. */
+  _barRgba(col) {
+    let e = this._barRgbaCache.get(col);
+    if (!e) {
+      e = { top: hexRgba(col, 0.95), mid: hexRgba(col, 0.9), base: hexRgba(col, 0.35), refl: hexRgba(col, 0.5) };
+      this._barRgbaCache.set(col, e);
+    }
+    return e;
+  }
 
   /* ---------------- analysis smoothing ---------------- */
 
@@ -1061,10 +1080,11 @@ export class Renderer {
       const x = barX(i);
       const col = colors[i];
       const g = ctx.createLinearGradient(0, horizon - bh, 0, horizon);
-      g.addColorStop(0, hexRgba(col, 0.95));
+      const rgba = this._barRgba(col);
+      g.addColorStop(0, rgba.top);
       g.addColorStop(0.12, 'rgba(255,255,255,0.28)');
-      g.addColorStop(0.2, hexRgba(col, 0.9));
-      g.addColorStop(1, hexRgba(col, 0.35));
+      g.addColorStop(0.2, rgba.mid);
+      g.addColorStop(1, rgba.base);
       ctx.fillStyle = g;
       this._rr(ctx, x, horizon - bh, bw, bh, Math.min(4, bw / 2));
       ctx.fill();
@@ -1081,7 +1101,7 @@ export class Renderer {
       const bh = amps[i] * maxH;
       if (bh < 1.5) continue;
       const x = barX(i);
-      ctx.fillStyle = hexRgba(colors[i], 0.5);
+      ctx.fillStyle = this._barRgba(colors[i]).refl;
       this._rr(ctx, x, horizon - bh, bw, Math.min(bh, maxH * 0.3), Math.min(4, bw / 2));
       ctx.fill();
     }
