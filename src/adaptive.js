@@ -278,10 +278,11 @@ export function climbCeiling(chosen, explicit) {
  * @returns {string} the tier to start at, never above the ceiling
  */
 export function initialTier(ceiling, env = {}) {
-  const idx = TIERS.indexOf(ceiling);
-  if (idx < 0) return TIERS[TIERS.length - 2] || 'high';
+  /* an unknown ceiling still starts from the device's own tier, so a phone
+     never opens at the top quality because its ceiling was not recognised */
   const start = TIERS.indexOf(isLowPowerDevice(env) ? MOBILE_START_TIER : DESKTOP_START_TIER);
-  return TIERS[Math.min(start, idx)];
+  const idx = TIERS.indexOf(ceiling);
+  return TIERS[idx < 0 ? start : Math.min(start, idx)];
 }
 
 /**

@@ -6,8 +6,38 @@ import { renderWebGL2 } from './webgl2.js';
 import { isPluginMode } from './plugins.js';
 import {
   shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, relaxBaseline,
-  TIERS, SEVERE, climbCeiling, windowCost,
+  TIERS, SEVERE, HEALTHY, CLIMB_STREAK, climbCeiling, windowCost,
 } from './adaptive.js';
+
+/* Healthy windows a mode must hold at its cap before the cap lifts one tier.
+   The cap stops a mode oscillating between a tier it cannot hold and the one
+   below. As the only exit it was permanent: one bad window at medium pinned
+   that mode there for the rest of the session. A long clean run earns one
+   retry, at four times the usual climb streak. */
+export const CAP_RETRY_WINDOWS = CLIMB_STREAK * 4;
+
+/**
+ * Advance the per-mode climb cap by one evaluated window.
+ *
+ * The cap is only ever lifted while the stage sits at it and has been healthy
+ * for CAP_RETRY_WINDOWS windows in a row. It lifts one tier, or clears when
+ * the next tier is already the user's ceiling.
+ *
+ * @param {string|null} cap the highest tier this mode may climb to, or null
+ * @param {string} quality the tier the stage is running now
+ * @param {string} allowed the highest tier the user and climb rules permit
+ * @param {boolean} healthy whether this window was clean
+ * @param {number} capStreak healthy windows held at the cap so far
+ * @returns {{cap: string|null, capStreak: number}}
+ */
+export function nextCap(cap, quality, allowed, healthy, capStreak) {
+  if (!cap || quality !== cap || !healthy) return { cap, capStreak: 0 };
+  const streak = capStreak + 1;
+  if (streak < CAP_RETRY_WINDOWS) return { cap, capStreak: streak };
+  const up = TIERS[TIERS.indexOf(cap) + 1];
+  const lifted = up && TIERS.indexOf(up) < TIERS.indexOf(allowed) ? up : null;
+  return { cap: lifted, capStreak: 0 };
+}
 
 /* ---- frame copies ----
    The stage canvases are not preserved between frames: the raytraced stage
@@ -120,6 +150,8 @@ export function createRenderLoop({
   /* consecutive healthy windows; vsync hides headroom, so climbing back up is
      earned by a run of clean windows rather than measured directly */
   let healthyStreak = 0;
+  /* healthy windows held at the cap, toward CAP_RETRY_WINDOWS */
+  let capStreak = 0;
   /* the highest tier this mode may climb back to: set just under a tier the
      sampler had to step down from, so a mode does not oscillate between a
      tier it cannot hold and the one below. Cleared on a mode change. */
@@ -431,6 +463,10 @@ export function createRenderLoop({
           ? climbCap : allowed;
         const { tier, streak } = nextTier(ray.quality, avg, ceiling, relaxed, healthyStreak);
         healthyStreak = streak;
+        const capped = nextCap(climbCap, ray.quality, allowed, avg <= relaxed * HEALTHY, capStreak);
+        capStreak = capped.capStreak;
+        climbCap = capped.cap;
+        climbCaps.set(state.modeId, climbCap);
         if (TIERS.indexOf(tier) < TIERS.indexOf(ray.quality)) {
           climbCap = tier;
           climbCaps.set(state.modeId, tier);
@@ -467,6 +503,7 @@ export function createRenderLoop({
     /** @param {string} [modeId] the mode being switched to */
     resetAdaptation: (modeId = state.modeId) => {
       healthyStreak = 0;
+      capStreak = 0;
       climbCap = climbCaps.get(modeId) ?? null;
       severeRun = 0;
       settleFrames = SETTLE_AFTER_MODE_CHANGE;

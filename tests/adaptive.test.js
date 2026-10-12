@@ -287,6 +287,8 @@ describe('starting tier', () => {
 
   it('falls back sanely for an unknown ceiling', () => {
     expect(TIERS).toContain(initialTier('nonsense', desktop));
+    // an unrecognised ceiling must not open a phone at the top tier
+    expect(initialTier('nonsense', phone)).toBe('low');
   });
 
   it('lets the climb reach the ceiling from the starting tier', () => {

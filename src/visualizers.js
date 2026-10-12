@@ -139,8 +139,6 @@ export class Renderer {
     this._xfadeLeft = 0;
     /* gradients whose geometry and stops depend only on size and theme */
     this._gradCache = new Map();
-    /* per-colour alpha strings for the bar body (see _barRgba) */
-    this._barRgbaCache = new Map();
     this._seed = 0x2545f491;
     this.history = [];
     this.particles = [];
@@ -184,7 +182,6 @@ export class Renderer {
     /* caches */
     this._dotSprites = null;
     this._softSprites = null;
-    this._barSprites = null;
     this._floorGrads = null;
     this._cacheTheme = null;
     this._cacheQ = '';
@@ -328,7 +325,6 @@ export class Renderer {
     this._cacheQ = this.quality;
 
     this._dotSprites = new Map();
-    this._barSprites = new Map();
     for (const c of this.theme.colors) {
       // dot: warm highlight + soft outer bloom, 64x64
       const d = document.createElement('canvas');
@@ -355,26 +351,6 @@ export class Renderer {
       dc.stroke();
       this._dotSprites.set(c, d);
 
-      // bar: polished metal with top highlight and inner sheen, 8x256
-      const b = document.createElement('canvas');
-      b.width = 8;
-      b.height = 256;
-      const bc = b.getContext('2d');
-      const bg = bc.createLinearGradient(0, 0, 0, 256);
-      bg.addColorStop(0, hexRgba(c, 1));
-      bg.addColorStop(0.10, 'rgba(255,255,255,0.42)');
-      bg.addColorStop(0.14, hexRgba(c, 1));
-      bg.addColorStop(0.78, hexRgba(c, 0.62));
-      bg.addColorStop(1, hexRgba(c, 0.18));
-      bc.fillStyle = bg;
-      bc.beginPath();
-      if (bc.roundRect) bc.roundRect(0, 0, 8, 256, [4, 4, 0, 0]);
-      else bc.rect(0, 0, 8, 256);
-      bc.fill();
-      // inner sheen line
-      bc.fillStyle = 'rgba(255,255,255,0.18)';
-      bc.fillRect(1.2, 0, 1, 256);
-      this._barSprites.set(c, b);
     }
     /* rimless soft pool sprites — purely radial falloff, no rim ring or
        hot core; safe to scale huge (backdrop glows, wash gradients) */
@@ -427,20 +403,7 @@ export class Renderer {
 
   _dot(c) { return this._dotSprites.get(c); }
   _soft(c) { return this._softSprites.get(c); }
-  _barS(c) { return this._barSprites.get(c); }
   _color(i) { return this.theme.colors[i % this.theme.colors.length]; }
-  /* The bar body parses its theme colour into four alpha strings. Built per bar
-     per frame that was 4 hexRgba parses x 56 bars x 60fps for a palette of a
-     handful of colours, so each colour's strings are built once. The output is
-     the same strings, so the drawing is unchanged. */
-  _barRgba(col) {
-    let e = this._barRgbaCache.get(col);
-    if (!e) {
-      e = { top: hexRgba(col, 0.95), mid: hexRgba(col, 0.9), base: hexRgba(col, 0.35), refl: hexRgba(col, 0.5) };
-      this._barRgbaCache.set(col, e);
-    }
-    return e;
-  }
 
   /* ---------------- analysis smoothing ---------------- */
 
@@ -1080,11 +1043,10 @@ export class Renderer {
       const x = barX(i);
       const col = colors[i];
       const g = ctx.createLinearGradient(0, horizon - bh, 0, horizon);
-      const rgba = this._barRgba(col);
-      g.addColorStop(0, rgba.top);
+      g.addColorStop(0, hexRgba(col, 0.95));
       g.addColorStop(0.12, 'rgba(255,255,255,0.28)');
-      g.addColorStop(0.2, rgba.mid);
-      g.addColorStop(1, rgba.base);
+      g.addColorStop(0.2, hexRgba(col, 0.9));
+      g.addColorStop(1, hexRgba(col, 0.35));
       ctx.fillStyle = g;
       this._rr(ctx, x, horizon - bh, bw, bh, Math.min(4, bw / 2));
       ctx.fill();
@@ -1101,7 +1063,7 @@ export class Renderer {
       const bh = amps[i] * maxH;
       if (bh < 1.5) continue;
       const x = barX(i);
-      ctx.fillStyle = this._barRgba(colors[i]).refl;
+      ctx.fillStyle = hexRgba(colors[i], 0.5);
       this._rr(ctx, x, horizon - bh, bw, Math.min(bh, maxH * 0.3), Math.min(4, bw / 2));
       ctx.fill();
     }
