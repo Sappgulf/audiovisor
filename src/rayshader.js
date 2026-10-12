@@ -403,7 +403,7 @@ float scTunnel(vec3 p) {
   float sector = floor(atan2s(p.y, p.x) / (TAU / 4.0) + 0.5) * (TAU / 4.0);
   vec2 railC = vec2(cos(sector), sin(sector)) * (r - 0.45);
   float rail = length(p.xy - railC) - 0.018;
-  if (rail < d) { d = rail; g_id = 4.0; g_aux = 0.85; }
+  if (rail < d) { d = rail; g_id = 4.0; g_aux = 0.55; }
   return d;
 }
 
@@ -846,13 +846,15 @@ Mat matOf(float id, float aux, vec3 p) {
     m.emis = c * (1.0 + uLevel * 1.7 + uBeat * 0.5);
   } else if (id < 3.5) {                // glass
     m.alb = vec3(0.92); m.rough = 0.06; m.metal = 0.0; m.trans = 1.0;
-    m.emis = c * (0.06 + uLevel * 0.16);
+    // the lamp's vessel must not add its own haze: behind it that reads as milk
+    m.emis = c * (uMode == 20 ? 0.015 : 0.06 + uLevel * 0.16);
   } else if (id < 4.5) {                // pure emissive
     m.alb = c * 0.1; m.rough = 0.3; m.metal = 0.0;
     m.emis = c * (1.1 + 2.2 * spec(aux) + uBeat * 1.1);
   } else if (id < 5.5) {                // spectrogram terrace
     vec3 cc = palf(0.12 + 0.7 * pow(clamp(aux, 0.0, 1.0), 0.7));
-    m.alb = cc * 0.5; m.rough = 0.5; m.metal = 0.15;
+    /* a dark terrace: the bars and their lit faces carry the colour, not the floor */
+    m.alb = cc * 0.16; m.rough = 0.5; m.metal = 0.15;
     /* the newest edge answers treble: a hat lands and the waterfall's front
        lip lights up even where that bin's column isn't tall yet */
     float age = clamp((p.z + 5.0) / 10.0, 0.0, 1.0);
@@ -871,7 +873,7 @@ Mat matOf(float id, float aux, vec3 p) {
        used to freeze on hits — every other mode pulsed while the mountains
        sat still — so the crest line now lifts with the beat and shimmers
        with treble. */
-    m.emis = (palf(aux) * crest * 0.7 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06)
+    m.emis = (palf(0.3 + aux * 0.4) * crest * 0.7 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06)
            * (1.0 + uBeat * 0.45 + uHigh * crest * 0.35);
   } else if (id < 8.5) {                // city block + windows
     // anti-aliased window grid: hard step() speckles badly at distance
@@ -880,7 +882,7 @@ Mat matOf(float id, float aux, vec3 p) {
     float wy = smoothstep(0.42, 0.5, fw.y) * (1.0 - smoothstep(0.82, 0.9, fw.y));
     float wx = smoothstep(0.42, 0.5, fw.x) * (1.0 - smoothstep(0.82, 0.9, fw.x));
     float wz = smoothstep(0.42, 0.5, fw.z) * (1.0 - smoothstep(0.82, 0.9, fw.z));
-    float lit = step(0.28, hash13(floor(wp)));   // some windows are dark
+    float lit = step(0.4, hash13(floor(wp)));    // most windows are dark: fewer, clearer lights
     float win = wy * max(wx, wz) * lit;
     m.alb = vec3(0.02); m.rough = 0.22; m.metal = 0.5;
     m.emis = palf(aux) * win * (0.3 + aux * 0.6 + uBeat * 0.35 + uDrop * 0.4);
@@ -931,8 +933,12 @@ Mat matOf(float id, float aux, vec3 p) {
                          + sweepLine * 1.0 + crosshair * 0.035)
            + palf(0.88) * sweepLine * 0.65;
   } else if (id < 16.5) {               // gpu voxel
-    m.alb = vec3(0.012); m.rough = 0.2; m.metal = 0.85;
-    m.emis = palf(0.2 + aux * 0.55) * (0.05 + aux * 0.55 + uBeat * 0.22);
+    /* quiet cells stay dark gunmetal; only the loud ones light up, so the
+       stack reads as hardware with a few live channels instead of a cyan block */
+    /* rough past the mirror-pass gate: a smoother metal reflects the bright
+       palette sky and reads cyan-white instead of dark gunmetal */
+    m.alb = vec3(0.03); m.rough = 0.42; m.metal = 0.9;
+    m.emis = palf(0.3 + aux * 0.25) * (0.02 + pow(aux, 3.0) * 0.55 + uBeat * 0.2);
   } else if (id < 17.5) {               // prism beam / dispersion fan
     m.alb = vec3(0.0); m.rough = 1.0;
     // saturate the palette walk so the fan reads as a spectrum, not a white wedge
