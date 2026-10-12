@@ -683,6 +683,13 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible, [role=
   border-color: rgba(var(--accent-rgb), calc(0.25 + var(--beat, 0) * 0.55));
 }
 
+/* reduce flashing (html.calm, set from the setting): the chrome's beat scale
+   and glow hold still, whatever the script writes to --beat, and the look
+   change no longer flashes the stage */
+html.calm #shell { --beat: 0 !important; }
+html.calm .stage.is-look-change #viz-canvas,
+html.calm .stage.is-look-change::after { animation: none; }
+
 /* look-change transition — quick zoom + saturate pulse */
 .stage.is-look-change #viz-canvas {
   animation: stage-look-pulse 0.55s cubic-bezier(0.22, 0.9, 0.28, 1);
@@ -2280,6 +2287,7 @@ input:focus-visible,
   outline-offset: 2px;
 }
 
+
 @media (max-width: 640px) {
   .drawer-tab { font-size: 10px; letter-spacing: 0.1em; }
   .shortcuts-grid { grid-template-columns: 1fr; }
@@ -3065,6 +3073,11 @@ html, body {
   .transport { background: rgba(26, 24, 22, 0.94); }
   .drawer { background: rgba(30, 28, 26, 0.97); }
   .dropzone { background: rgba(18, 17, 16, 0.55); }
+}
+/* touch tablets are wider than phones, so the phone seek hit area never
+   reached them; a coarse pointer gets the same taller track */
+@media (pointer: coarse) and (min-width: 641px) {
+  .seek-track { height: 20px; padding-block: 12px; background-clip: content-box; margin-block: -12px; }
 }
 
 @media (max-width: 640px) {

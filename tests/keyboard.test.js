@@ -53,6 +53,23 @@ describe('global keyboard shortcuts', () => {
     expect(deps.transportToggle).not.toHaveBeenCalled();
   });
 
+  it('leaves every key to the open shortcuts sheet except Escape', () => {
+    const deps = setup();
+    const sheet = document.createElement('div');
+    sheet.id = 'shortcuts-overlay';
+    document.body.appendChild(sheet);
+    sheet.classList.remove('is-hidden');
+    // non-cancelable, so a listener left on window by an earlier test cannot
+    // mark the key as handled and hide this check
+    press(document.body, ' ', 'Space', { cancelable: false });
+    press(document.body, 'r', 'KeyR', { cancelable: false });
+    expect(deps.transportToggle).not.toHaveBeenCalled();
+    expect(deps.randomizeLook).not.toHaveBeenCalled();
+    sheet.classList.add('is-hidden');
+    press(document.body, ' ', 'Space', { cancelable: false });
+    expect(deps.transportToggle).toHaveBeenCalledTimes(1);
+  });
+
   it('ignores browser and OS chords such as Cmd+R and Ctrl+F', () => {
     const deps = setup();
     press(document.body, 'r', 'KeyR', { metaKey: true });

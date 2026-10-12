@@ -50,6 +50,11 @@ export function createKeyboardShortcuts({
        bar scrubbed and also skipped 10s. Browser chords keep their meaning
        too, so Cmd+R, Cmd+P, Cmd+F and Ctrl+L no longer trigger shortcuts. */
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    /* The shortcuts sheet is modal: while it is open, keys belong to it, so
+       Space must not also play or pause the track behind it. Escape still
+       reaches the handlers below, which close the sheet. */
+    const sheet = doc.getElementById('shortcuts-overlay');
+    if (sheet && !sheet.classList.contains('is-hidden') && e.code !== 'Escape') return;
     /* Escape closes panels even from a text field: the library focuses its
        search box on open, so with the typing guard first Escape could never
        close it — and every shortcut after that was swallowed by the focused
