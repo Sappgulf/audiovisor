@@ -177,6 +177,16 @@ describe('Apple Music availability once the token endpoint answers', () => {
     expect(new AppleMusicClient().unavailable).toBe(true);
   });
 
+  it('keeps 408 and 429 retryable, since both pass', async () => {
+    for (const status of [408, 429]) {
+      answer(status, { error: 'Apple Music token unavailable' });
+      await expect(developerToken()).rejects.toThrow();
+      const c = new AppleMusicClient();
+      expect(c.unavailable, `${status} must not be remembered`).toBe(false);
+      expect(c.configured, `${status} must leave Connect on offer`).toBe(true);
+    }
+  });
+
   it('leaves a 503 retryable, so the card keeps offering Connect', async () => {
     answer(503, { error: 'Apple Music token unavailable' });
     await expect(developerToken()).rejects.toThrow();

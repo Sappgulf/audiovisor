@@ -27,8 +27,9 @@ export async function developerToken() {
   try { body = await response.json(); } catch {}
   if (!response.ok || !body.token) {
     const message = body.error || 'Apple Music token service is not configured';
-    // 501 and 4xx describe this deployment, not a passing failure
-    if (response.status === 501 || (response.status >= 400 && response.status < 500)) {
+    // 501 and 4xx describe this deployment, not a passing failure; 408 and 429 are transient, so they stay retryable
+    const transient = response.status === 408 || response.status === 429;
+    if (!transient && (response.status === 501 || (response.status >= 400 && response.status < 500))) {
       tokenUnavailable = message;
     }
     throw new Error(message);
