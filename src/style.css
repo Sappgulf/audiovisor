@@ -1820,6 +1820,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
      its dialog, so that one icon stays in the top bar as a 44px button */
   .pill-nav { display: contents; }
   .pill-nav > :not(#nav-about) { display: none; }
+  #nav-about .nav-label { display: none; }
   #nav-about { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 50%; border: 1px solid var(--border); background: var(--glass); color: var(--text-60); }
   .shell { width: calc(100vw - 16px); height: calc(100vh - 16px); margin-inline: auto; border-radius: 1.25rem; }
 }
@@ -2742,7 +2743,7 @@ html, body {
   #vu-meter { display: none; }
 
   /* the side drawer has to fit between a shorter topbar and transport */
-  .drawer { top: 58px; bottom: 74px; right: max(16px, var(--sar)); }
+  .drawer { top: 58px; bottom: var(--tp-h, 74px); right: max(16px, var(--sar)); }
 
   /* a landscape notch sits on the left or right edge, not the top */
   .topbar, .transport {
