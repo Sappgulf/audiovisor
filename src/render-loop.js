@@ -85,13 +85,15 @@ function serviceCopies(src) {
  * @param {() => boolean} deps.getAutoDj
  * @param {() => boolean} deps.isDjFiring
  * @param {(v: boolean) => void} deps.setDjFiring
+ * @param {() => void} [deps.paintTempo] writes the tempo readout from the transport
+ * @param {() => void} [deps.paintSeekLoop] paints the A-B span on the seek track
  * @param {(tier: string) => void} [deps.onQualityChange] called when the
  *   adaptive sampler moves the effective raytrace tier
  * @param {Document} [deps.doc]
  */
 export function createRenderLoop({
   engine, renderer, getRay, state, toast, getGpu, drawVu, drawWaveform,
-  seekTrack, getAutoDj, isDjFiring, setDjFiring, onQualityChange, doc = document,
+  seekTrack, getAutoDj, isDjFiring, setDjFiring, onQualityChange, paintTempo, paintSeekLoop, doc = document,
 }) {
   let rayDropped = false;
   let raySuspended = false;   // runtime-only kill switch, never persisted
@@ -328,6 +330,7 @@ export function createRenderLoop({
       const t = audioTime;
       const dur = engine.getDuration();
       seekFillEl.style.width = `${dur ? (t / dur) * 100 : 0}%`;
+      paintSeekLoop?.();
       _vuAcc += dtMs;
       // the clock only ticks once a second — skip 59 of 60 text writes
       const secs = Math.floor(t);
@@ -344,7 +347,7 @@ export function createRenderLoop({
       if (_uiAcc >= 100) {
         _uiAcc = 0;
         if (audioOnly) {
-          bpmValueEl.textContent = '--.--';
+          paintTempo?.();
           bpmValueEl.title = '';
           bassChipEl.classList.add('is-hidden');
           moodChipEl.classList.add('is-hidden');
@@ -355,8 +358,7 @@ export function createRenderLoop({
              decoded track, and for files until their analysis finishes. */
           const liveBpm = bi.bpm && bi.confidence > 0.25 ? bi.bpm : 0;
           const analyzedBpm = input === 'track' ? state.analyzedBpm : 0;
-          const bpm = analyzedBpm || liveBpm || 0;
-          bpmValueEl.textContent = bpm ? bpm.toFixed(2) : '--.--';
+          paintTempo?.();
           bpmValueEl.title = analyzedBpm ? 'Analysed from the track'
             : liveBpm ? 'Live tempo lock' : '';
           bassChipEl.classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));

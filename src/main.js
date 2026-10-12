@@ -862,6 +862,8 @@ const renderLoop = createRenderLoop({
   state,
   toast,
   getGpu: () => ({ webgpuState: gpu.getWebgpu(), webgl2State: gpu.getWebgl2(), webgpuCanvas: gpu.canvas, startGpu: gpu.start }),
+  paintTempo: transport.paintTempo,
+  paintSeekLoop: transport.paintSeekLoop,
   drawVu,
   drawWaveform,
   seekTrack,
