@@ -145,8 +145,13 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
   const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   // the region span is set from the engine's loop and length, both guarded:
   // either can be missing on an engine that predates the A-B loop
+  /* the render loop calls this every frame, so only a changed span touches the style */
+  let loopPainted = '';
   function paintSeekLoop() {
     const span = loopSpan(regionOf(), engine.getDuration?.() || 0);
+    const key = `${span.left}|${span.width}`;
+    if (key === loopPainted) return;
+    loopPainted = key;
     seekTrack.style.setProperty('--loop-l', span.left);
     seekTrack.style.setProperty('--loop-w', span.width);
   }

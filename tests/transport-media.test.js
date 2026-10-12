@@ -166,6 +166,21 @@ describe('tempo chip', () => {
     return { engine, transport };
   }
 
+  it('writes the loop span only when the region or duration changes', () => {
+    const { engine, transport } = mountTempo({ loop: { start: 10, end: 30 } });
+    const spy = vi.spyOn(document.getElementById('seek-track').style, 'setProperty');
+    const before = spy.mock.calls.length;
+    transport.paintSeekLoop();
+    transport.paintSeekLoop();
+    transport.paintSeekLoop();
+    expect(spy.mock.calls.length - before).toBeLessThanOrEqual(2);
+    engine.loop = { start: 40, end: 60 };
+    const mid = spy.mock.calls.length;
+    transport.paintSeekLoop();
+    transport.paintSeekLoop();
+    expect(spy.mock.calls.length - mid).toBe(2);
+  });
+
   it('shows "--" with no tempo and rounds a known one to one decimal', () => {
     const { engine, transport } = mountTempo();
     transport.paintTempo();
