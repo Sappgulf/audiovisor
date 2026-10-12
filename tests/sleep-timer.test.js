@@ -71,6 +71,23 @@ describe('sleep timer fade', () => {
     expect(seenVolume.every((v) => v === 0.8)).toBe(true);
   });
 
+  it('a chip press during the fade cancels it: playback keeps going at full output', async () => {
+    const e = fakeEngine(0.8);
+    let press = null;
+    const chip = { addEventListener: (_ev, fn) => { press = fn; } };
+    const timer = createSleepTimer({
+      engine: e, toast: vi.fn(), refreshStatus: vi.fn(), saveSettings: vi.fn(),
+      volumeFill: null, chip, label: null,
+    });
+    const done = timer.fire();
+    await vi.advanceTimersByTimeAsync(2000);
+    press();                                   // the user turns the timer off
+    await vi.advanceTimersByTimeAsync(9000);
+    await done;
+    expect(e.playing).toBe(true);
+    expect(e.scale).toBe(1);
+  });
+
   it('restores full output even when playback stopped before the fade', async () => {
     const e = fakeEngine(0.6);
     e.playing = false;

@@ -221,9 +221,36 @@ describe('downbeat', () => {
     const bt = new BeatTracker();
     const frames = accentTrain(bt, { to: 16, accent: () => false }).filter((f) => f.bpm > 0);
     expect(frames.length).toBeGreaterThan(200);
+    expect(frames.every((f) => Number.isInteger(f.bar) && f.bar >= 0 && f.bar <= 3)).toBe(true);
     // the bar offset against the beat count is fixed for the whole run
     const offset = (frames[0].bar - frames[0].beats) & 3;
     for (const f of frames) expect((f.bar - f.beats) & 3).toBe(offset);
+  });
+});
+
+describe('displayed tempo', () => {
+  it('moves at most 0.5 BPM between beats on a wobbling grid', () => {
+    const bt = new BeatTracker();
+    const hit = new Uint8Array(64).fill(40);
+    for (let i = 0; i < 16; i++) hit[i] = 220;
+    const rest = new Uint8Array(64).fill(40);
+    let shown = null;
+    let worst = 0;
+    let beats = 0;
+    for (let t = 0; t <= 40; t += 1 / 60) {
+      const n = Math.round(t / 0.5);
+      const wobble = n % 2 ? 0.006 : -0.006;   // onsets alternate 6ms late and early
+      bt.process(Math.abs(t - n * 0.5 - wobble) < (1 / 60) * 0.6 ? hit : rest, t);
+      if (bt.beats === beats) continue;
+      beats = bt.beats;
+      if (!(bt.bpm > 0)) continue;
+      const v = Math.round(bt.bpm * 10) / 10;
+      if (shown !== null) worst = Math.max(worst, Math.abs(v - shown));
+      shown = v;
+    }
+    expect(shown).toBeGreaterThan(115);
+    expect(shown).toBeLessThan(125);
+    expect(worst).toBeLessThanOrEqual(0.5);
   });
 });
 
@@ -240,6 +267,7 @@ describe('beat stability', () => {
   it('beatInBar moves one step for each counted beat, except at an explicit jump', () => {
     const bt = new BeatTracker();
     const frames = accentTrain(bt, { to: 30 });
+    expect(frames.every((f) => Number.isInteger(f.bar) && f.bar >= 0 && f.bar <= 3)).toBe(true);
     let mismatches = 0;
     let lastMismatchT = -1;
     for (let i = 1; i < frames.length; i++) {
@@ -253,6 +281,20 @@ describe('beat stability', () => {
     // must come during the warm-up, not once the bar is established
     expect(mismatches).toBeLessThanOrEqual(1);
     expect(lastMismatchT).toBeLessThan(10);
+  });
+
+  it('a tap on the beat being heard keeps the bar where it was', () => {
+    const bt = new BeatTracker();
+    const hit = new Uint8Array(64).fill(40);
+    for (let i = 0; i < 16; i++) hit[i] = 220;
+    const rest = new Uint8Array(64).fill(40);
+    const frames = accentTrain(bt, { to: 12 });
+    const now = frames.at(-1).t;
+    const before = bt.beatInBar;
+    bt.nudgeTo(now, bt.bpm, 0.9);                 // tap lands on the beat heard now
+    bt.process(rest, now + 1 / 60, 0, 0.05);      // next render frame
+    // still the same beat on the same bar position (no jump)
+    expect(bt.beatInBar).toBe(before);
   });
 
   it('a loop jump keeps beatInBar where the same song position was', () => {

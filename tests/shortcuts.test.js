@@ -70,3 +70,14 @@ describe('createShortcutsOverlay', () => {
     expect(controls.overlay.classList.contains('is-hidden')).toBe(true);
   });
 });
+
+describe('overlay rows for the loop and tempo keys', () => {
+  it('lists the B loop key and the Shift+T tap key under Transport', () => {
+    document.body.innerHTML = '<div id="shortcuts-overlay" class="is-hidden" aria-hidden="true"><div id="shortcuts-grid"></div><button id="shortcuts-close"></button></div>';
+    createShortcutsOverlay({ isTypingTarget: () => false, doc: document });
+    const keys = [...document.querySelectorAll('#shortcuts-grid kbd')].map((k) => k.textContent);
+    expect(keys).toContain('B');
+    expect(keys).toContain('Shift + T');
+    expect(keys).toContain('T');
+  });
+});

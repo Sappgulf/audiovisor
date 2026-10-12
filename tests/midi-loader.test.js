@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /* The MIDI module counts as fetched when its factory runs. Each test gets a
    fresh registry and a fresh mock, so the count starts at zero. */
-const loads = vi.hoisted(() => ({ count: 0, fail: false }));
+const loads = vi.hoisted(() => ({ count: 0, done: 0, fail: false }));
 
+/* the cold import of midi.js can outlast a fixed wait, so tests wait on the
+   outcome they check (vi.waitFor) and only settle the last microtasks here */
 const settle = () => new Promise((r) => setTimeout(r, 20));
 
 function fakeChip() {
@@ -39,11 +41,16 @@ describe('MIDI input is loaded on demand', () => {
   beforeEach(async () => {
     vi.resetModules();
     loads.count = 0;
+    loads.done = 0;
     loads.fail = false;
     vi.doMock('../src/midi.js', async (importOriginal) => {
       loads.count++;
-      if (loads.fail) throw new Error('offline');
-      return importOriginal();
+      try {
+        if (loads.fail) throw new Error('offline');
+        return await importOriginal();
+      } finally {
+        loads.done++;
+      }
     });
     midi = stubMidi();
     mod = await import('../src/midi-loader.js');
@@ -69,16 +76,16 @@ describe('MIDI input is loaded on demand', () => {
 
   it('the first chip click requests midi.js once and turns input on', async () => {
     chip.click();
-    await settle();
+    await vi.waitFor(() => expect(midi.input.onmidimessage).toBeTypeOf('function'));
     expect(loads.count).toBe(1);
     expect(midi.request).toHaveBeenCalledTimes(1);
-    expect(typeof midi.input.onmidimessage).toBe('function');
     expect(setToggle).toHaveBeenLastCalledWith(chip, true, 'is-active');
   });
 
   it('a disable that lands before the module does leaves nothing bound', async () => {
     chip.click();   // on: the module is still in flight
     chip.click();   // off: arrives before the module lands
+    await vi.waitFor(() => expect(loads.done).toBe(1));
     await settle();
     expect(loads.count).toBe(1);
     expect(midi.request).not.toHaveBeenCalled();
@@ -88,7 +95,7 @@ describe('MIDI input is loaded on demand', () => {
 
   it('after the module is loaded, the next click disables through the module', async () => {
     chip.click();
-    await settle();
+    await vi.waitFor(() => expect(midi.input.onmidimessage).toBeTypeOf('function'));
     chip.click();
     await settle();
     expect(loads.count).toBe(1);
@@ -102,15 +109,13 @@ describe('MIDI input is loaded on demand', () => {
     try {
       loads.fail = true;
       chip.click();
-      await settle();
-      expect(toast).toHaveBeenCalledWith(expect.stringContaining('MIDI unavailable'), expect.anything());
+      await vi.waitFor(() => expect(toast).toHaveBeenCalledWith(expect.stringContaining('MIDI unavailable'), expect.anything()));
       expect(setToggle).toHaveBeenLastCalledWith(chip, false, 'is-active');
 
       loads.fail = false;
       chip.click();
-      await settle();
+      await vi.waitFor(() => expect(midi.input.onmidimessage).toBeTypeOf('function'));
       expect(midi.request).toHaveBeenCalledTimes(1);
-      expect(typeof midi.input.onmidimessage).toBe('function');
     } finally { err.mockRestore(); }
   });
 });

@@ -1199,3 +1199,110 @@ describe('repeat and the A-B loop are separate', () => {
     expect(engine.loop).toBeNull();
   });
 });
+
+/*
+ * Downbeat, loop wrap and tempo chip through the real engine frame path. The
+ * beat analyser is fed a 120 BPM kick train (beat n at n * 0.5s) with the bass
+ * bins louder on every fourth beat, so beat 0 of each bar is the accent.
+ */
+describe('downbeat, loop wrap and tempo chip', () => {
+  let engine;
+
+  function kick(arr, song) {
+    const n = Math.round(song / 0.5);
+    const d = Math.abs(song - n * 0.5);
+    arr.fill(40);
+    if (d < 0.01) arr.fill(220, 0, 16);
+    if (d < 0.08) arr.fill(n % 4 === 0 ? 255 : 120, 2, 5);
+  }
+
+  /* one render frame per 1/60s, as the render loop would call it */
+  function frames(from, to, onFrame) {
+    for (let t = from; t <= to; t += 1 / 60) {
+      engine.ctx.currentTime = t;
+      engine.getLevels();
+      onFrame(t);
+    }
+  }
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+    await engine.addToQueue([makeFile('loop.wav')]);
+    engine.beatAnalyser.getByteFrequencyData = (arr) => kick(arr, engine.getTime());
+  });
+
+  afterEach(() => engine.clearLoop());
+
+  it('reads no bar position and no display tempo before any tempo is known', () => {
+    expect(engine.beatInBar).toBe(0);
+    expect(engine.displayBpm).toBeNull();
+  });
+
+  it('a wrap keeps the grid locked and the bar where the same song position was', () => {
+    engine.setLoop(10, 14);
+    engine.ctx.currentTime = 0;
+    engine.play();
+    const seen = [];
+    frames(0, 30, (t) => seen.push({ t, song: engine.getTime(), bar: engine.beatInBar, bpm: engine.beat.bpm, beats: engine.beatCount }));
+
+    const wrap = seen.findIndex((s, i) => i > 0 && s.song < seen[i - 1].song - 1);
+    expect(wrap).toBeGreaterThan(0);
+    // the grid never unlocks, keeps its tempo, and the count keeps climbing
+    expect(seen.filter((s) => s.t > 3).every((s) => s.bpm > 0)).toBe(true);
+    expect(seen[wrap].bpm).toBe(seen[wrap - 1].bpm);
+    for (let i = 1; i < seen.length; i++) expect(seen[i].beats).toBeGreaterThanOrEqual(seen[i - 1].beats);
+
+    // song position 10.25s is mid-beat on a downbeat: the first pass and every
+    // pass after the wrap must agree that it reads 0
+    const at = seen.filter((s) => Math.abs(s.song - 10.25) < 0.01);
+    expect(at.length).toBeGreaterThan(2);
+    for (const s of at) expect(s.bar).toBe(0);
+  });
+
+  it('a non-finite clock never wraps the loop', () => {
+    engine.setLoop(10, 20);
+    engine.ctx.currentTime = 0;
+    engine.play();
+    engine.ctx.currentTime = NaN;
+    expect(engine._checkLoop()).toBe(false);
+    expect(engine.source.startCalls.length).toBe(1);
+  });
+
+  it('clearing the queue stops the A-B interval and drops the region', () => {
+    engine.setLoop(10, 20);
+    expect(engine._loopTimer).not.toBeNull();
+    engine.clearQueue();
+    expect(engine._loopTimer).toBeNull();
+    expect(engine.loop).toBeNull();
+  });
+
+  it('removing the last track stops the A-B interval too', () => {
+    engine.setLoop(10, 20);
+    engine.removeFromQueue(0);
+    expect(engine._loopTimer).toBeNull();
+    expect(engine.loop).toBeNull();
+  });
+
+  it('displayBpm is the tapped tempo to one decimal, and null again with no tempo', () => {
+    expect(engine.displayBpm).toBeNull();
+    engine.tapTempo(0);
+    engine.tapTempo(470);
+    engine.tapTempo(940);
+    expect(engine.displayBpm).toBe(127.7);
+    engine.beat.reset();
+    expect(engine.displayBpm).toBeNull();
+  });
+
+  it('displayBpm holds steady on a locked grid', () => {
+    engine.play();
+    frames(0, 12, () => {});
+    const shown = engine.displayBpm;
+    expect(shown).toBeGreaterThan(0);
+    const seen = [];
+    frames(12, 16, () => seen.push(engine.displayBpm));
+    for (const v of seen) expect(Math.abs(v - shown)).toBeLessThanOrEqual(0.5);
+  });
+});

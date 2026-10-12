@@ -114,3 +114,79 @@ describe('global keyboard shortcuts', () => {
     expect(deps.engine.skip).toHaveBeenCalledWith(10);
   });
 });
+
+describe('loop and tempo keys', () => {
+  function mountWithStudio() {
+    document.body.innerHTML = `
+      <button id="loop-ab-btn">A-B</button>
+      <button id="tap-tempo-btn">Tap</button>
+      <input id="field" />`;
+    const deps = {
+      engine: { skip: vi.fn(), volume: 0.5, tapTempo: vi.fn(() => null) },
+      setVolumeUI: vi.fn(), transportToggle: vi.fn(), setMode: vi.fn(), setTheme: vi.fn(),
+      randomizeLook: vi.fn(), toast: vi.fn(), snapshot: vi.fn(),
+      panels: { isQueueOpen: () => false, isLibraryOpen: () => false, toggleQueue: vi.fn(), toggleLibrary: vi.fn() },
+      about: { isOpen: () => false, setOpen: vi.fn() },
+      getFxEl: () => undefined, setFx: vi.fn(), getModeId: () => 'bars', getThemeId: () => 'iris',
+      isTypingTarget,
+    };
+    createKeyboardShortcuts(deps);
+    return deps;
+  }
+
+  beforeEach(() => { document.body.innerHTML = ''; });
+
+  it('B clicks the A-B loop button', () => {
+    mountWithStudio();
+    const btn = document.getElementById('loop-ab-btn');
+    const click = vi.fn();
+    btn.addEventListener('click', click);
+    press(document.body, 'b', 'KeyB');
+    // earlier tests leave their window listeners behind, so count "at least once"
+    expect(click).toHaveBeenCalled();
+  });
+
+  it('Shift+T taps the tempo through the Studio button', () => {
+    const deps = mountWithStudio();
+    const click = vi.fn();
+    document.getElementById('tap-tempo-btn').addEventListener('click', click);
+    press(document.body, 'T', 'KeyT', { shiftKey: true });
+    expect(click).toHaveBeenCalled();
+    expect(deps.setTheme).not.toHaveBeenCalled();
+  });
+
+  it('Shift+T calls engine.tapTempo when the Studio button is not mounted', () => {
+    const deps = mountWithStudio();
+    document.getElementById('tap-tempo-btn').remove();
+    press(document.body, 'T', 'KeyT', { shiftKey: true });
+    expect(deps.engine.tapTempo).toHaveBeenCalled();
+  });
+
+  it('plain T still cycles the theme', () => {
+    const deps = mountWithStudio();
+    press(document.body, 't', 'KeyT');
+    expect(deps.setTheme).toHaveBeenCalled();
+  });
+
+  it('ignores B while a text field has focus', () => {
+    mountWithStudio();
+    const click = vi.fn();
+    document.getElementById('loop-ab-btn').addEventListener('click', click);
+    document.getElementById('field').focus();
+    press(document.getElementById('field'), 'b', 'KeyB');
+    expect(click).not.toHaveBeenCalled();
+  });
+
+  it('ignores B and T while the shortcuts sheet is open', () => {
+    const deps = mountWithStudio();
+    const sheet = document.createElement('div');
+    sheet.id = 'shortcuts-overlay';
+    document.body.appendChild(sheet);
+    const click = vi.fn();
+    document.getElementById('loop-ab-btn').addEventListener('click', click);
+    press(document.body, 'b', 'KeyB', { cancelable: false });
+    press(document.body, 'T', 'KeyT', { shiftKey: true, cancelable: false });
+    expect(click).not.toHaveBeenCalled();
+    expect(deps.engine.tapTempo).not.toHaveBeenCalled();
+  });
+});

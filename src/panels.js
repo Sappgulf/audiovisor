@@ -55,17 +55,14 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   function trapTab(panel, e) {
     const items = panel.querySelectorAll(TABBABLE);
     if (e.key !== 'Tab' || !items.length) return;
-    if (e.shiftKey && document.activeElement === items[0]) {
-      e.preventDefault();
-      items[items.length - 1].focus();
-    } else if (!e.shiftKey && document.activeElement === items[items.length - 1]) {
-      e.preventDefault();
-      items[0].focus();
-    }
+    const edge = e.shiftKey ? items[0] : items[items.length - 1];
+    if (document.activeElement !== edge) return;
+    e.preventDefault();
+    (e.shiftKey ? items[items.length - 1] : items[0]).focus();
   }
   document.addEventListener('focusin', (e) => {
     const open = [queuePanel, libraryPanel].find((p) => !p.classList.contains('is-hidden'));
-    if (open && e.target instanceof Node && !open.contains(e.target)) open.querySelector(TABBABLE)?.focus();
+    if (open && !open.contains(e.target)) open.querySelector(TABBABLE)?.focus();
   });
 
   function setQueueActive(index, doFocus = false) {
@@ -289,7 +286,8 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   libraryPanel.addEventListener('keydown', (e) => {
     trapTab(libraryPanel, e);
     const rows = getLibraryRows();
-    if (e.target.closest('#lib-search')) return;
+    // Escape still closes from the search box, with focus in it, so focus can return
+    if (e.target.closest('#lib-search') && e.key !== 'Escape') return;
     if (e.target.closest('.lib-play, .lib-export, .lib-del')) return;
     if (!rows.length) {
       if (e.key === 'Escape' && !libraryPanel.classList.contains('is-hidden')) {
@@ -388,7 +386,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   function toggleQueue(force) {
     const show = force ?? queuePanel.classList.contains('is-hidden');
     // focus inside a closing dialog would vanish with it, so it goes back to the trigger
-    const hadFocus = queuePanel.contains(document.activeElement) || document.activeElement === document.body;
+    const hadFocus = queuePanel.contains(document.activeElement);
     queuePanel.classList.toggle('is-hidden', !show);
     queuePanel.setAttribute('aria-hidden', String(!show));
     setToggle(triggerQueue, show);
@@ -451,8 +449,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
 
   function toggleLibrary(force) {
     const show = force ?? libraryPanel.classList.contains('is-hidden');
-    // (body counts: Escape blurs a focused search box before it closes the panel)
-    const hadFocus = libraryPanel.contains(document.activeElement) || document.activeElement === document.body;
+    const hadFocus = libraryPanel.contains(document.activeElement);
     libraryPanel.classList.toggle('is-hidden', !show);
     libraryPanel.setAttribute('aria-hidden', String(!show));
     setToggle(triggerLibrary, show);

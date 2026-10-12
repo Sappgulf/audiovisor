@@ -12,10 +12,8 @@ import { createChromeVisibility } from './chrome-visibility.js';
  */
 export function loopSpan(region, duration) {
   if (!region || !(duration > 0)) return { left: '0%', width: '0%' };
-  const pct = (s) => Math.max(0, Math.min(100, (s / duration) * 100));
-  const a = pct(region.start);
-  const b = pct(region.end);
-  return { left: `${a}%`, width: `${Math.max(0, b - a)}%` };
+  const at = (t) => Math.min(100, Math.max(0, (t / duration) * 100));
+  return { left: `${at(region.start)}%`, width: `${Math.max(0, at(region.end) - at(region.start))}%` };
 }
 
 /**
@@ -57,13 +55,26 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
           album: 'AUDIOVISOR',
         });
       } else if (engine.track) {
+        // local files carry no cover, so the lock screen gets the app icon
         navigator.mediaSession.metadata = new MediaMetadata({
           title: engine.track.name,
           artist: 'AUDIOVISOR',
           album: 'Local File',
+          artwork: engine.track.artwork || [{ src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' }],
         });
       }
     } catch {}
+    syncPositionState();
+  }
+
+  /* The lock-screen scrubber needs a length and a position. Browsers without
+     setPositionState, or that refuse it, simply show no scrubber. */
+  function syncPositionState() {
+    const ms = navigator.mediaSession;
+    const d = engine.getDuration?.();
+    const p = engine.getTime?.();
+    if (!ms || !('setPositionState' in ms) || !(d > 0 && d < Infinity) || !(p >= 0 && p <= d)) return;
+    try { ms.setPositionState({ duration: d, playbackRate: engine.speed || 1, position: p }); } catch {}
   }
 
   if ('mediaSession' in navigator) {
@@ -75,7 +86,7 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
       seekforward: (d) => engine.skip(d.seekOffset || 10),
       previoustrack: () => engine.prevTrack(),
       nexttrack: () => engine.nextTrack(),
-      seekto: (d) => { if (d.seekTime != null) engine.seek(d.seekTime); },
+      seekto: (d) => { if (d.seekTime != null) { engine.seek(d.seekTime); syncPositionState(); } },
     };
     for (const [name, fn] of Object.entries(actions)) {
       try { ms.setActionHandler(/** @type {MediaSessionAction} */ (name), fn); } catch {}
@@ -134,7 +145,7 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
   // the region span is set from the engine's loop and length, both guarded:
   // either can be missing on an engine that predates the A-B loop
   function paintSeekLoop() {
-    const span = loopSpan(regionOf(), typeof engine.getDuration === 'function' ? engine.getDuration() : 0);
+    const span = loopSpan(regionOf(), engine.getDuration?.() || 0);
     seekTrack.style.setProperty('--loop-l', span.left);
     seekTrack.style.setProperty('--loop-w', span.width);
   }
@@ -170,12 +181,12 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
   // a new source has no loop to keep, so the A-B state starts over with it
   engine.on?.('source', () => { abStep = 0; paintAb(); });
   // a loaded file brings its length; the span needs it, so repaint on state too
-  engine.on?.('state', paintSeekLoop);
+  engine.on?.('state', () => { paintSeekLoop(); syncPositionState(); });
   paintAb();
 
   bindDragTrack(seekTrack, (ratio) => {
     const d = engine.getDuration();
-    if (d > 0) engine.seek(ratio * d);
+    if (d > 0) { engine.seek(ratio * d); syncPositionState(); }
   });
   // arrow keys on a focused seek bar, for keyboard and switch-control users
   seekTrack.addEventListener('keydown', (e) => {
@@ -185,6 +196,7 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
     if (next === null) return;
     e.preventDefault();
     engine.seek(next * d);
+    syncPositionState();
   });
 
   function setVolumeUI(v) {

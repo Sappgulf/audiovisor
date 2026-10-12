@@ -20,6 +20,9 @@ export function createSleepTimer({ engine, toast, refreshStatus, saveSettings, v
   let step = 0;
   let end = 0;
   let tick = null;
+  /* bumped by every fade and every chip press, so a fade in progress can see
+     it was cancelled and must not pause playback */
+  let gen = 0;
 
   function stopTick() {
     if (tick) { clearInterval(tick); tick = null; }
@@ -34,14 +37,21 @@ export function createSleepTimer({ engine, toast, refreshStatus, saveSettings, v
   async function fire() {
     stopTick();
     end = 0;
+    const id = ++gen;
     const showFill = (k) => {
       if (volumeFill) volumeFill.style.width = `${engine.volume * k * 100}%`;
     };
     for (let i = 10; i > 0; i--) {
-      if (!engine.playing && !engine.micActive && !engine.captureActive) break;
+      if (id !== gen || (!engine.playing && !engine.micActive && !engine.captureActive)) break;
       engine.setOutputScale(i / 10);
       showFill(i / 10);
       await new Promise((r) => setTimeout(r, 700));
+    }
+    if (id !== gen) {
+      // cancelled from the chip: give back full output and keep playing
+      engine.setOutputScale(1);
+      showFill(1);
+      return;
     }
     engine.pause();
     engine.setOutputScale(1);
@@ -54,6 +64,7 @@ export function createSleepTimer({ engine, toast, refreshStatus, saveSettings, v
   }
 
   chip?.addEventListener('click', () => {
+    gen++;
     step = (step + 1) % SLEEP_STEPS.length;
     const mins = SLEEP_STEPS[step];
     if (!mins) {
