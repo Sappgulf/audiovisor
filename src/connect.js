@@ -1,12 +1,11 @@
 import { setIcon } from './icons.js';
 import { fmtTime, esc } from './utils.js';
-import { SpotifyClient, storedClientId, builtInClientId, redirectUri } from './spotify.js';
 import { AppleMusicClient } from './applemusic.js';
 
 
 /**
- * Drawer "Connect" panel: Spotify (PKCE OAuth + Web Playback SDK) and Apple
- * Music (MusicKit) account links, system/tab-audio capture, and direct URLs.
+ * Drawer "Connect" panel: the Apple Music (MusicKit) account link, system and
+ * tab-audio capture, and direct audio URLs.
  */
 export class ConnectPanel {
   /**
@@ -15,31 +14,15 @@ export class ConnectPanel {
    * @param {import('./audio.js').AudioEngine} deps.engine
    * @param {(msg:string, opts?:object)=>void} deps.toast
    * @param {(info:object|null)=>void} [deps.onExternalTrack]
-   * @param {(info:object|null)=>void} [deps.onSpotifyTrack] backwards-compatible alias
   */
-  constructor(root, { engine, toast, onExternalTrack, onSpotifyTrack }) {
+  constructor(root, { engine, toast, onExternalTrack }) {
     this.root = root;
     this.engine = engine;
     this.toast = toast;
-    this.onExternalTrack = onExternalTrack || onSpotifyTrack || (() => {});
+    this.onExternalTrack = onExternalTrack || (() => {});
 
-    this.client = new SpotifyClient();
     this.apple = new AppleMusicClient();
     this.currentTrack = null;
-    this.client.onError = (msg) => toast(`<b>Spotify</b> — ${esc(msg)}`, { duration: 3600 });
-    this.client.onAuthChange = () => this.render();
-    this.client.onTrackChange = async (track) => {
-      this.engine.setExternal(this.makeController());
-      const artwork = await this.client.artworkFor(track);
-      this.setCurrentTrack({
-        name: track.name,
-        artists: track.artists,
-        duration: track.durationMs / 1000,
-        artwork,
-        album: 'Spotify',
-        kind: 'SPOTIFY',
-      });
-    };
 
     this.apple.onAuthChange = () => this.render();
     this.apple.onTrackChange = (track) => {
@@ -59,39 +42,19 @@ export class ConnectPanel {
       });
     };
 
-    this.deviceReady = false;
-    this.searchTimer = null;
-    this.lastResults = [];
-
     this.render();
     this.wireEngineEvents();
   }
 
   setCurrentTrack(info) {
-    this.currentTrack = info ? { provider: info.provider || 'spotify', ...info } : null;
+    this.currentTrack = info ? { ...info } : null;
     this.onExternalTrack(this.currentTrack);
   }
 
   /* ---------- boot ---------- */
 
-  /** Call once at app start: completes OAuth redirect and restores session. */
+  /** Call once at app start: restores the Apple Music session. */
   async boot() {
-    await this.client.handleRedirect();
-    if (this.client.authed) {
-      try {
-        await this.client.loadProfile();
-        this.render();
-        if (this.client.premium) {
-          this.toast('Reconnecting <b>Spotify</b> player…', { duration: 1800 });
-          await this.client.connectPlayer();
-          this.deviceReady = true;
-          this.toast('Spotify player <b>ready</b>', { duration: 1600 });
-        }
-        this.render();
-      } catch (err) {
-        console.error(err);
-      }
-    }
     try {
       await this.apple.boot();
     } catch (err) {
@@ -100,24 +63,6 @@ export class ConnectPanel {
       if (this.apple.configured) console.warn('Apple Music unavailable:', err.message || err);
     }
     this.render();
-  }
-
-  makeController() {
-    const c = this.client;
-    return {
-      kind: 'spotify',
-      seed: c.track?.id || 'spotify',
-      title: c.track?.name || '',
-      isPlaying: () => !!c.track && !c.paused,
-      getTime: () => c.getPositionMs() / 1000,
-      getDuration: () => (c.track?.durationMs || 0) / 1000,
-      play: () => c.resume(),
-      pause: () => c.pause(),
-      seek: (sec) => c.seek(Math.max(0, sec * 1000)),
-      next: () => c.next(),
-      prev: () => c.prev(),
-      setVolume: (v) => c.setVolume(v),
-    };
   }
 
   makeAppleController() {
@@ -152,7 +97,6 @@ export class ConnectPanel {
   /* ---------- rendering ---------- */
 
   render() {
-    const authed = this.client.authed;
     const appleAuthed = this.apple.authed;
     this.root.innerHTML = '';
 
@@ -162,82 +106,14 @@ export class ConnectPanel {
     head.innerHTML = `
       <span class="connect-head-title">Music accounts</span>
       <span class="connect-status mono">
-        <span class="connect-dot ${authed ? 'is-on sp' : ''}" title="Spotify ${authed ? 'connected' : 'not connected'}"></span>
         <span class="connect-dot ${appleAuthed ? 'is-on am' : ''}" title="Apple Music ${appleAuthed ? 'connected' : 'not connected'}"></span>
-        ${[authed, appleAuthed].filter(Boolean).length}/2 LINKED
+        ${appleAuthed ? 1 : 0}/1 LINKED
       </span>`;
     this.root.appendChild(head);
 
-    /* --- spotify block --- */
-    const sp = document.createElement('div');
-    sp.className = `spotify-block provider-card provider-spotify${authed ? ' is-linked' : ''}`;
-    if (!authed) {
-      const builtIn = builtInClientId();
-      const cid = storedClientId();
-      const setup = `
-          <ol>
-            <li>Create an app at <i>developer.spotify.com/dashboard</i></li>
-            <li>Add this redirect URI:<br><code>${esc(redirectUri())}</code></li>
-            <li>Enable Web API + Web Playback SDK</li>
-          </ol>`;
-      const idRow = `
-          <div class="sp-login">
-            <input type="text" class="connect-input mono" id="sp-client-id"
-                   placeholder="Client ID" value="${esc(cid === builtIn ? '' : cid)}" spellcheck="false" aria-label="Spotify Client ID" />
-            ${builtIn ? '' : '<button class="lime-btn-sm sp-connect" id="sp-connect">Connect</button>'}
-          </div>`;
-      sp.innerHTML = `
-        <div class="sp-head">
-          <span class="provider-logo" data-icon="spotify"></span>
-          <span class="sp-title">Spotify</span>
-          <span class="sp-badge mono">NOT LINKED</span>
-        </div>
-        <p class="sp-note">Search, top tracks and playlists with in-app playback (Premium). Spotify audio plays without beat-driven visuals. Sign-in happens on Spotify.</p>
-        ${builtIn ? `
-        <button class="provider-btn" id="sp-connect">Connect Spotify</button>
-        <details class="sp-help">
-          <summary class="mono">USE YOUR OWN APP</summary>
-          ${setup}${idRow}
-        </details>` : `
-        <details class="sp-help">
-          <summary class="mono">SETUP</summary>
-          ${setup}
-        </details>
-        ${idRow}`}`;
-    } else {
-      const p = this.client.profile;
-      sp.innerHTML = `
-        <div class="sp-head">
-          <span class="provider-logo" data-icon="spotify"></span>
-          <span class="sp-title">Spotify</span>
-          <span class="sp-badge mono is-on">${this.client.premium ? 'PREMIUM' : 'FREE'}</span>
-          <button class="icon-x" id="sp-disconnect" title="Disconnect Spotify" aria-label="Disconnect Spotify"><span class="ic ic-sm" data-icon="close"></span></button>
-        </div>
-        <div class="sp-profile mono">
-          <span class="sp-avatar">${esc((p?.display_name || '?')[0].toUpperCase())}</span>
-          <span class="sp-name">${esc(p?.display_name || 'Connected')}</span>
-          <span class="sp-dev dot-ok" id="sp-dev">${this.deviceReady ? 'DEVICE LIVE' : 'DEVICE …'}</span>
-        </div>
-        <p class="sp-note">Spotify playback is audio-only in AUDIOVISOR. Visual modes do not analyze its stream.</p>
-        ${this.client.premium ? `
-        <div class="sp-search">
-          <span class="ic ic-dim" data-icon="search"></span>
-          <input type="search" class="connect-input bare mono" id="sp-search-input"
-                 placeholder="Search Spotify…" spellcheck="false" aria-label="Search Spotify" />
-        </div>
-        <div class="sp-actions">
-          <button class="mini-btn" id="sp-top">My Top Tracks</button>
-          <select class="mini-select mono" id="sp-playlists" aria-label="Spotify playlists"><option value="">Playlists…</option></select>
-        </div>
-        <div class="sp-results" id="sp-results"></div>`
-        : `<p class="sp-note"><b>Free plan:</b> playback control needs Premium.</p>`}`;
-    }
-    this.root.appendChild(sp);
-    sp.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
-
     /* --- apple music block --- */
     const am = document.createElement('div');
-    am.className = `spotify-block provider-card provider-apple${appleAuthed ? ' is-linked' : ''}`;
+    am.className = `provider-block provider-card provider-apple${appleAuthed ? ' is-linked' : ''}`;
     const appleConfigured = this.apple.configured;
     if (!appleAuthed) {
       am.innerHTML = `
@@ -310,12 +186,12 @@ export class ConnectPanel {
     this.root.appendChild(urlRow);
     setIcon(urlRow.querySelector('#url-play .ic'), 'play');
 
-    this.bind(sources, urlRow, sp);
+    this.bind(sources, urlRow);
     this.bindApple(am);
     this.syncChips();
   }
 
-  bind(sources, urlRow, sp) {
+  bind(sources, urlRow) {
     /* capture */
     sources.querySelector('#chip-capture').addEventListener('click', async () => {
       try {
@@ -358,140 +234,6 @@ export class ConnectPanel {
       if (e.key === 'Enter') streamUrl();
       e.stopPropagation();
     });
-
-    if (!this.client.authed) {
-      sp.querySelector('#sp-connect').addEventListener('click', () => {
-        const cid = sp.querySelector('#sp-client-id').value.trim() || builtInClientId();
-        if (!cid) {
-          this.toast('<b>Client ID required</b> — see SETUP above', { duration: 2600 });
-          return;
-        }
-        this.client.login(cid).catch((e) =>
-          this.toast(`<b>Login failed</b> — ${esc(e.message)}`, { duration: 3200 }));
-      });
-      sp.querySelector('#sp-client-id')?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') sp.querySelector('#sp-connect').click();
-        e.stopPropagation();
-      });
-      return;
-    }
-
-    sp.querySelector('#sp-disconnect').addEventListener('click', () => {
-      this.client.logout();
-      this.deviceReady = false;
-      this.engine.setExternal(null);
-      if (this.currentTrack?.provider === 'spotify') this.setCurrentTrack(null);
-      this.render();
-      this.toast('Spotify <b>disconnected</b>', { duration: 1600 });
-    });
-
-    if (!this.client.premium) return;
-
-    /* search */
-    const input = sp.querySelector('#sp-search-input');
-    input.addEventListener('input', () => {
-      clearTimeout(this.searchTimer);
-      const q = input.value.trim();
-      this.searchTimer = setTimeout(() => {
-        if (q.length < 2) return;
-        this.runSearch(q);
-      }, 380);
-    });
-    input.addEventListener('keydown', (e) => e.stopPropagation());
-
-    sp.querySelector('#sp-top').addEventListener('click', async () => {
-      try {
-        const items = await this.client.topTracks(10);
-        this.showResults(items.map((t) => this.client.mapTrack(t)), 'MY TOP TRACKS');
-      } catch (err) {
-        this.toast(`<b>Spotify</b> — ${esc(err.message)}`, { duration: 3000 });
-      }
-    });
-
-    const plSel = sp.querySelector('#sp-playlists');
-    this.client.playlists().then((pls) => {
-      for (const p of pls) {
-        const opt = document.createElement('option');
-        opt.value = p.uri;
-        opt.textContent = p.name;
-        plSel.appendChild(opt);
-      }
-    }).catch(() => {});
-    plSel.addEventListener('change', async () => {
-      const uri = plSel.value;
-      if (!uri) return;
-      await this.playContext(uri, plSel.selectedOptions[0].textContent);
-    });
-  }
-
-  async runSearch(q) {
-    const box = this.root.querySelector('#sp-results');
-    if (!box) return;
-    try {
-      const items = await this.client.searchTracks(q, 8);
-      this.showResults(items.map((t) => this.client.mapTrack(t)), `RESULTS — “${q}”`);
-    } catch (err) {
-      this.toast(`<b>Spotify</b> — ${esc(err.message)}`, { duration: 3000 });
-    }
-  }
-
-  showResults(tracks, label, provider = 'spotify') {
-    this.lastResults = tracks;
-    const box = this.root.querySelector(provider === 'apple' ? '#am-results' : '#sp-results');
-    if (!box) return;
-    box.innerHTML =
-      `<div class="sp-results-label mono">${esc(label)}</div>` +
-      (tracks.length
-        ? tracks.map((t, i) => `
-          <button class="track-row" data-i="${i}">
-            ${t.artwork
-              ? `<img class="track-art-thumb" src="${esc(t.artwork)}" alt="" loading="lazy"/>`
-              : '<span class="track-art-thumb ph"></span>'}
-            <span class="track-row-meta">
-              <span class="track-row-name">${esc(t.name)}</span>
-              <span class="track-row-artist mono">${esc(t.artists)}</span>
-            </span>
-            <span class="track-row-time mono">${fmtTime(t.durationMs / 1000)}</span>
-          </button>`).join('')
-        : '<div class="sp-empty mono">NO RESULTS</div>');
-    box.querySelectorAll('.track-row').forEach((btn) =>
-      btn.addEventListener('click', () => (provider === 'apple'
-        ? this.playAppleTracks(tracks, Number(btn.dataset.i))
-        : this.playTracks(tracks, Number(btn.dataset.i)))));
-  }
-
-  async playTracks(tracks, startIdx) {
-    if (!this.deviceReady) {
-      this.toast('<b>Player starting…</b> try again in a moment', { duration: 2200 });
-      return;
-    }
-    const uris = tracks.slice(0, 50).map((t) => t.uri);
-    const t = tracks[startIdx];
-    try {
-      await this.client.play(uris, { offset: { position: startIdx } });
-    } catch (err) {
-      try {
-        await this.client.transferHere(false);
-        await this.client.play(uris, { offset: { position: startIdx } });
-      } catch (err2) {
-        this.toast(`<b>Playback failed</b> — ${esc(err2.message || err.message)}`, { duration: 3400 });
-        return;
-      }
-    }
-    this.toast(`▶ <b>${esc(t.name)}</b>`, { duration: 1800 });
-  }
-
-  async playContext(uri, label) {
-    if (!this.deviceReady) {
-      this.toast('<b>Player starting…</b> try again in a moment', { duration: 2200 });
-      return;
-    }
-    try {
-      await this.client.play(uri);
-      this.toast(`▶ Playlist <b>${esc(label)}</b>`, { duration: 2000 });
-    } catch (err) {
-      this.toast(`<b>Playback failed</b> — ${esc(err.message)}`, { duration: 3400 });
-    }
   }
 
   bindApple(am) {
@@ -531,7 +273,7 @@ export class ConnectPanel {
         if (q.length < 2) return;
         try {
           const tracks = await this.apple.searchSongs(q, 8);
-          this.showResults(tracks, `RESULTS — “${q}”`, 'apple');
+          this.showResults(tracks, `RESULTS — “${q}”`);
         } catch (err) {
           this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3000 });
         }
@@ -553,6 +295,28 @@ export class ConnectPanel {
         this.toast(`<b>Apple Music</b> — ${esc(err.message || err)}`, { duration: 3400 });
       }
     });
+  }
+
+  showResults(tracks, label) {
+    const box = this.root.querySelector('#am-results');
+    if (!box) return;
+    box.innerHTML =
+      `<div class="sp-results-label mono">${esc(label)}</div>` +
+      (tracks.length
+        ? tracks.map((t, i) => `
+          <button class="track-row" data-i="${i}">
+            ${t.artwork
+              ? `<img class="track-art-thumb" src="${esc(t.artwork)}" alt="" loading="lazy"/>`
+              : '<span class="track-art-thumb ph"></span>'}
+            <span class="track-row-meta">
+              <span class="track-row-name">${esc(t.name)}</span>
+              <span class="track-row-artist mono">${esc(t.artists)}</span>
+            </span>
+            <span class="track-row-time mono">${fmtTime(t.durationMs / 1000)}</span>
+          </button>`).join('')
+        : '<div class="sp-empty mono">NO RESULTS</div>');
+    box.querySelectorAll('.track-row').forEach((btn) =>
+      btn.addEventListener('click', () => this.playAppleTracks(tracks, Number(btn.dataset.i))));
   }
 
   async playAppleTracks(tracks, startIdx) {
@@ -594,11 +358,5 @@ export class ConnectPanel {
   syncChips() {
     const cap = this.root.querySelector('#chip-capture');
     if (cap) cap.classList.toggle('is-active', this.engine.captureActive);
-
-    const dev = this.root.querySelector('#sp-dev');
-    if (dev) {
-      dev.textContent = this.deviceReady ? 'DEVICE LIVE' : 'DEVICE …';
-      dev.classList.toggle('dot-ok', this.deviceReady);
-    }
   }
 }

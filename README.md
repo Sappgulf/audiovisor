@@ -1,18 +1,17 @@
 # AUDIOVISOR — v8.17.0
 
-A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-three stage modes and thirty-two themes. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
+A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-three stage modes and thirty-two themes. Direct URLs can drive the stage when the browser can analyze their audio. An Apple Music account connection provides in-app playback without beat-driven visuals.
 
 ## Features
 
 ### Sources
 - **Local files** — drag & drop, the **Add** control in the transport, or **Browse files** on the stage (MP3, WAV, FLAC, OGG, M4A…); multi-select builds a playlist queue
-- **Spotify Connect (approval-gated)** — PKCE OAuth and Web Playback SDK code is available for an approved deployment; this public deployment has no Spotify Client ID *(Premium required for playback)*
 - **Apple Music** — authorize with MusicKit on the Web, browse personal playlists, and start playback in Apple Music's protected player *(Apple Music subscription required for playback)*
 - **Tab / system capture** — visualize audio you have permission to use (Chrome/Edge; share a tab with "share tab audio" enabled)
 - **Direct URLs** — play `http(s)` audio links (radio, podcasts, direct MP3s); streams that block browser audio analysis use a still player view
 - **Live mic input** — party mode; analysis-only (never routed to speakers, no feedback)
 
-> **Streaming accounts:** MusicKit and Spotify do not expose decoded song audio to this app. Their published terms also restrict synchronizing their recordings with other visual content. The account player therefore shows a still playback view. Local files, analyzable direct URLs, and permitted live inputs provide real audio analysis for the visualizer.
+> **Streaming accounts:** MusicKit does not expose decoded song audio to this app. Their published terms also restrict synchronizing their recordings with other visual content. The account player therefore shows a still playback view. Local files, analyzable direct URLs, and permitted live inputs provide real audio analysis for the visualizer.
 
 ### Raytraced stage (v8.8)
 Every one of the 23 stage modes is now a **live raytraced scene** rendered on a WebGL2 ray-marcher — the Canvas2D engine remains as a fallback and can be toggled back on at any time (Look tab → **Raytrace**).
@@ -105,24 +104,9 @@ Every one of the 23 stage modes is now a **live raytraced scene** rendered on a 
 - Beat tracking — tempo-locked spectral-flux detector with octave folding, beat-phase prediction & confidence gating; live BPM chip + bass-active indicator; stage punch + bloom react on every predicted beat
 - **Drop choreography** — a breakdown→slam detector (`src/drop.js`) running on the audio clock: sustained quiet arms it, the energy's return fires it. The envelope drives up to 45% slow-mo, a camera punch-in and a bloom/exposure surge on both renderers (scaled by `prefers-reduced-motion`)
 - **True-stereo scope** — a channel splitter taps L/R into their own analysers: the Canvas2D vectorscope plots a real goniometer (mono collapses to a vertical line, width reads as spread) and the raytraced scope's glass tube shears with the L−R difference
-- **Auto theme** — the Auto swatch leads the theme row: `src/artpalette.js` extracts a palette from the track's cover art (Spotify/Apple Music artwork; artless local files hash the track name onto a stable built-in palette). The transport card also echoes the cover's two lead colours
+- **Auto theme** — the Auto swatch leads the theme row: `src/artpalette.js` extracts a palette from the track's cover art (Apple Music artwork; artless local files hash the track name onto a stable built-in palette). The transport card also echoes the cover's two lead colours
 - Autopilot — cycles modes and themes every 12s
 - MediaSession — OS media keys, lock-screen metadata & album art, seek-to
-
-## Spotify setup (approved use only)
-
-Spotify's [Developer Policy](https://developer.spotify.com/policy) restricts synchronizing recordings with visual media and integrating streams or content from another service. AUDIOVISOR's production deployment leaves the Spotify Client ID unset while permission for this multi-service product is unresolved. The steps below are for a deployment with the required provider rights.
-
-1. Create an app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
-2. Add this app's exact URL as a **Redirect URI** (shown in Settings → Connect → SETUP), e.g. `http://localhost:5173/` for dev or your deployed URL
-3. Enable the **Web API** + **Web Playback SDK**
-4. Paste your Client ID into Settings → Connect → Spotify and hit **Connect**
-
-Optionally bake in a default Client ID at build time:
-
-```bash
-VITE_SPOTIFY_CLIENT_ID=your_client_id npm run build
-```
 
 ## Apple Music setup
 
@@ -146,7 +130,7 @@ VITE_APPLE_MUSIC_DEVELOPER_TOKEN=your_signed_developer_token
 
 3. Redeploy, then open Settings → Source → Apple Music → **Connect Apple Music**
 
-Guest mode supports local files, URLs, microphone, and permitted capture without an account. Spotify and Apple Music playlist access requires the user's own provider account. Playlist playback stays inside the provider player and does not drive the visual modes. Disconnect before handing a shared device to another person.
+Guest mode supports local files, URLs, microphone, and permitted capture without an account. Apple Music playlist access requires the user's own provider account. Playlist playback stays inside the provider player and does not drive the visual modes. Disconnect before handing a shared device to another person.
 
 ## Mobile
 
@@ -284,7 +268,7 @@ npm run build   # output in dist/
 npm run size    # fail if the bundle grew past budget
 ```
 
-The music providers (`connect.js` → Spotify + Apple Music) and the raytraced
+The music providers (`connect.js` → Apple Music) and the raytraced
 stage (`raystage.js` + `rayshader.js`) are split into their own chunks and
 loaded on demand — the provider panel when the Source tab is opened or an
 OAuth redirect comes back, the stage right after first paint. A guest

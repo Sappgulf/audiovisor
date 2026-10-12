@@ -17,6 +17,11 @@
  */
 export function registerServiceWorker(doc = document, { isBusy = () => false } = {}) {
   if (!('serviceWorker' in navigator)) return;
+  /* A page no worker ever controlled was already loaded from the network, so
+     the first install's controllerchange has nothing stale to replace. The
+     worker claims clients on install, which used to reload every first visit
+     a second time. Only a worker that replaces one serving this page reloads. */
+  const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
     .then((reg) => reg.update())
     .catch(() => {});
@@ -26,7 +31,7 @@ export function registerServiceWorker(doc = document, { isBusy = () => false } =
     (doc.defaultView || window).location.reload();
   };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) return;
+    if (!hadController || reloading) return;
     reloading = true;
     reloadWhenIdle();
   });

@@ -2,7 +2,7 @@
 /**
  * Lazy loader for the music-account connect panel.
  *
- * ConnectPanel pulls in the Spotify and Apple Music SDK clients, which a
+ * ConnectPanel pulls in the Apple Music SDK client, which a
  * guest playing local files never touches. Load it on demand: when the user
  * opens the Source tab, or immediately if we are returning from a provider
  * OAuth redirect and there is a code to exchange.

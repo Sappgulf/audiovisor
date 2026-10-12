@@ -1,46 +1,14 @@
 /**
  * @vitest-environment jsdom
  *
- * The Connect drawer. 542 lines that had no tests at all, and the file most
- * exposed to things outside the app's control: two OAuth providers, the tab
- * capture permission prompt, and arbitrary user-typed stream URLs. The
- * provider clients are stubbed here — this suite is about the panel's own
- * behaviour, not Spotify's.
+ * The Connect drawer. The file most exposed to things outside the app's
+ * control: the Apple Music account, the tab capture permission prompt, and
+ * arbitrary user-typed stream URLs. The Apple Music client is stubbed here —
+ * this suite is about the panel's own behaviour, not MusicKit's.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const spotifyInstances = [];
 const appleInstances = [];
-
-vi.mock('../src/spotify.js', () => ({
-  storedClientId: () => 'test-client-id',
-  builtInClientId: () => '',
-  redirectUri: () => 'http://localhost/callback',
-  SpotifyClient: class {
-    constructor() {
-      this.authed = false;
-      this.premium = false;
-      this.track = null;
-      this.paused = true;
-      this.handleRedirect = vi.fn(async () => {});
-      this.loadProfile = vi.fn(async () => {});
-      this.connectPlayer = vi.fn(async () => {});
-      this.artworkFor = vi.fn(async () => 'art.png');
-      this.profile = { display_name: 'Tester' };
-      this.playlists = vi.fn(async () => [{ uri: 'spotify:playlist:1', name: 'Mix' }]);
-      this.topTracks = vi.fn(async () => []);
-      this.searchTracks = vi.fn(async () => []);
-      this.mapTrack = vi.fn((t) => t);
-      this.play = vi.fn(async () => {});
-      this.transferHere = vi.fn(async () => {});
-      this.login = vi.fn(); this.logout = vi.fn();
-      this.getPositionMs = vi.fn(() => 12000);
-      this.resume = vi.fn(); this.pause = vi.fn(); this.seek = vi.fn();
-      this.next = vi.fn(); this.prev = vi.fn(); this.setVolume = vi.fn();
-      spotifyInstances.push(this);
-    }
-  },
-}));
 
 vi.mock('../src/applemusic.js', () => ({
   AppleMusicClient: class {
@@ -91,7 +59,6 @@ function mount() {
 
 beforeEach(() => {
   document.body.innerHTML = '';
-  spotifyInstances.length = 0;
   appleInstances.length = 0;
   vi.clearAllMocks();
   mount();
@@ -110,25 +77,21 @@ describe('construction', () => {
     expect(Object.keys(engine._listeners).sort()).toEqual(['error', 'source', 'state']);
   });
 
-  it('accepts the legacy onSpotifyTrack alias', () => {
-    const legacy = vi.fn();
-    const p = new ConnectPanel(document.createElement('div'), {
-      engine: makeEngine(), toast: vi.fn(), onSpotifyTrack: legacy,
-    });
-    p.setCurrentTrack({ name: 'x' });
-    expect(legacy).toHaveBeenCalled();
+  it('offers no Spotify account, copy or controls', () => {
+    expect(root.textContent).not.toMatch(/spotify/i);
+    expect(root.innerHTML).not.toMatch(/spotify/i);
   });
 
-  it('survives having neither track callback', () => {
+  it('survives having no track callback', () => {
     const p = new ConnectPanel(document.createElement('div'), { engine: makeEngine(), toast: vi.fn() });
     expect(() => p.setCurrentTrack({ name: 'x' })).not.toThrow();
   });
 });
 
 describe('setCurrentTrack', () => {
-  it('defaults the provider to spotify', () => {
+  it('does not invent a provider for a track that has none', () => {
     panel.setCurrentTrack({ name: 'Song', artists: 'Band' });
-    expect(panel.currentTrack.provider).toBe('spotify');
+    expect(panel.currentTrack.provider).toBeUndefined();
     expect(onExternalTrack).toHaveBeenCalledWith(panel.currentTrack);
   });
 
@@ -143,36 +106,17 @@ describe('setCurrentTrack', () => {
     expect(panel.currentTrack).toBeNull();
     expect(onExternalTrack).toHaveBeenLastCalledWith(null);
   });
+
+  it('stores a copy, so later edits to the caller object do not leak in', () => {
+    const info = { name: 'Song' };
+    panel.setCurrentTrack(info);
+    info.name = 'Changed';
+    expect(panel.currentTrack.name).toBe('Song');
+  });
 });
 
-describe('provider controllers', () => {
-  it('exposes a spotify controller in seconds, not milliseconds', () => {
-    const sp = spotifyInstances[0];
-    sp.track = { id: 't1', name: 'Song', durationMs: 210000 };
-    sp.paused = false;
-    const c = panel.makeController();
-    expect(c.kind).toBe('spotify');
-    expect(c.seed).toBe('t1');
-    expect(c.getTime()).toBeCloseTo(12);
-    expect(c.getDuration()).toBeCloseTo(210);
-    expect(c.isPlaying()).toBe(true);
-  });
-
-  it('reports not-playing when spotify has no track', () => {
-    expect(panel.makeController().isPlaying()).toBe(false);
-  });
-
-  it('clamps a negative spotify seek to zero', () => {
-    panel.makeController().seek(-5);
-    expect(spotifyInstances[0].seek).toHaveBeenCalledWith(0);
-  });
-
-  it('converts a spotify seek to milliseconds', () => {
-    panel.makeController().seek(30);
-    expect(spotifyInstances[0].seek).toHaveBeenCalledWith(30000);
-  });
-
-  it('exposes an apple controller with the same shape', () => {
+describe('apple controller', () => {
+  it('exposes an apple controller in seconds, not milliseconds', () => {
     const c = panel.makeAppleController();
     expect(c.kind).toBe('apple');
     expect(c.getTime()).toBeCloseTo(3);
@@ -184,32 +128,28 @@ describe('provider controllers', () => {
     expect(appleInstances[0].seek).toHaveBeenCalledWith(0);
   });
 
+  it('converts an apple seek to milliseconds', () => {
+    panel.makeAppleController().seek(30);
+    expect(appleInstances[0].seek).toHaveBeenCalledWith(30000);
+  });
+
   it('falls back to a stable seed when no track is loaded', () => {
-    expect(panel.makeController().seed).toBe('spotify');
     expect(panel.makeAppleController().seed).toBe('apple-music');
   });
 });
 
 describe('provider track callbacks', () => {
-  it('publishes a spotify track as seconds with artwork', async () => {
-    const sp = spotifyInstances[0];
-    await sp.onTrackChange({ name: 'Song', artists: 'Band', durationMs: 180000 });
-    expect(engine.setExternal).toHaveBeenCalled();
-    expect(panel.currentTrack).toMatchObject({
-      provider: 'spotify', name: 'Song', duration: 180, artwork: 'art.png', kind: 'SPOTIFY',
-    });
-  });
-
   it('publishes an apple track tagged as apple', () => {
     appleInstances[0].onTrackChange({ name: 'Tune', artists: 'A', durationMs: 90000, artwork: 'a.png' });
+    expect(engine.setExternal).toHaveBeenCalled();
     expect(panel.currentTrack).toMatchObject({ provider: 'apple', duration: 90, kind: 'APPLE MUSIC' });
   });
 
   it('a null apple track only clears an apple track', () => {
-    panel.setCurrentTrack({ provider: 'spotify', name: 'Song' });
+    panel.setCurrentTrack({ name: 'Local file' });
     appleInstances[0].onTrackChange(null);
     expect(panel.currentTrack).not.toBeNull();
-    expect(panel.currentTrack.provider).toBe('spotify');
+    expect(panel.currentTrack.name).toBe('Local file');
   });
 
   it('a null apple track clears an apple track', () => {
@@ -218,44 +158,19 @@ describe('provider track callbacks', () => {
     expect(panel.currentTrack).toBeNull();
   });
 
-  it('re-renders when spotify auth changes', () => {
+  it('re-renders when apple auth changes', () => {
     const spy = vi.spyOn(panel, 'render');
-    spotifyInstances[0].onAuthChange();
+    appleInstances[0].onAuthChange();
     expect(spy).toHaveBeenCalled();
   });
 });
 
 describe('boot', () => {
-  it('completes the OAuth redirect even when signed out', async () => {
+  it('restores the apple session and re-renders', async () => {
+    const spy = vi.spyOn(panel, 'render');
     await panel.boot();
-    expect(spotifyInstances[0].handleRedirect).toHaveBeenCalled();
-    expect(spotifyInstances[0].loadProfile).not.toHaveBeenCalled();
-  });
-
-  it('restores a premium session and marks the device ready', async () => {
-    const sp = spotifyInstances[0];
-    sp.authed = true; sp.premium = true;
-    await panel.boot();
-    expect(sp.connectPlayer).toHaveBeenCalled();
-    expect(panel.deviceReady).toBe(true);
-  });
-
-  it('does not try to connect a player on a free account', async () => {
-    const sp = spotifyInstances[0];
-    sp.authed = true; sp.premium = false;
-    await panel.boot();
-    expect(sp.loadProfile).toHaveBeenCalled();
-    expect(sp.connectPlayer).not.toHaveBeenCalled();
-    expect(panel.deviceReady).toBe(false);
-  });
-
-  it('a failing Spotify profile does not stop Apple boot', async () => {
-    const sp = spotifyInstances[0];
-    sp.authed = true;
-    sp.loadProfile.mockRejectedValueOnce(new Error('429'));
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    await expect(panel.boot()).resolves.toBeUndefined();
     expect(appleInstances[0].boot).toHaveBeenCalled();
+    expect(spy).toHaveBeenCalled();
   });
 
   it('a failing Apple boot does not reject the whole panel', async () => {
@@ -323,7 +238,7 @@ describe('url streaming', () => {
   });
 
   it('clears any external provider track when a URL takes over', async () => {
-    panel.setCurrentTrack({ name: 'Song' });
+    panel.setCurrentTrack({ provider: 'apple', name: 'Song' });
     setUrl('https://cdn.example.com/a.mp3');
     play();
     await vi.waitFor(() => expect(panel.currentTrack).toBeNull());
@@ -334,6 +249,17 @@ describe('url streaming', () => {
     const before = row.classList.contains('is-hidden');
     root.querySelector('#chip-url').click();
     expect(row.classList.contains('is-hidden')).toBe(!before);
+  });
+
+  it('reports a failed stream instead of an unhandled rejection', async () => {
+    engine.playUrl.mockRejectedValueOnce(new Error('<i>decode failed</i>'));
+    setUrl('https://cdn.example.com/broken.mp3');
+    play();
+    await vi.waitFor(() => {
+      const msg = toast.mock.calls.at(-1)[0];
+      expect(msg).toContain('Stream failed');
+      expect(msg).toContain('&lt;i&gt;decode failed');
+    });
   });
 });
 

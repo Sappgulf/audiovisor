@@ -161,7 +161,7 @@ const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&
  *
  * Toasts, track titles and provider error text all reach the DOM as HTML,
  * and every one of those strings comes from somewhere outside this app —
- * a Spotify track name, a browser permission error, a user-typed URL. This
+ * an Apple Music track name, a browser permission error, a user-typed URL. This
  * used to be defined identically in both main.js and connect.js, which is
  * one definition too many for something that only has to be wrong once.
  */

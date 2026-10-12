@@ -24,7 +24,7 @@ import {
  * @param {() => any} deps.getRay
  * @param {any} deps.state
  * @param {(msg: string, opts?: object) => void} deps.toast
- * @param {() => { webgpuState: object|null, webgl2State: object|null, webgpuCanvas: HTMLCanvasElement|null, startGpu?: () => void }} deps.getGpu
+ * @param {() => { webgpuState: { lost?: boolean }|null, webgl2State: { lost?: boolean }|null, webgpuCanvas: HTMLCanvasElement|null, startGpu?: () => void }} deps.getGpu
  * @param {() => void} deps.drawVu
  * @param {(buffer: object) => void} deps.drawWaveform
  * @param {HTMLElement} deps.seekTrack
@@ -132,7 +132,7 @@ export function createRenderLoop({
 
     const input = engine.activeInput;
     const idle = input === 'none';
-    const audioOnly = input === 'spotify' || input === 'apple' || (input === 'stream' && engine.streamNoTap);
+    const audioOnly = input === 'apple' || (input === 'stream' && engine.streamNoTap);
     const visualIdle = idle || audioOnly;
     if (audioOnly !== _audioOnly) {
       _audioOnly = audioOnly;
