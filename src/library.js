@@ -1,8 +1,13 @@
 import { esc, fmtTime } from './utils.js';
 
 const DB_NAME = 'audiovisor.library';
-const DB_VER = 1;
+/* v2 adds the small positions store. Its upgrade only creates that store, so
+   existing track rows, arrayBuffers included, are not rewritten. */
+const DB_VER = 2;
 const STORE = 'tracks';
+/* resume points, one small row per track id. Kept out of the track rows so a
+   playback position never rewrites a record's arrayBuffer. */
+const POS = 'positions';
 
 let dbPromise = null;
 
@@ -17,6 +22,7 @@ function openDB() {
           const s = db.createObjectStore(STORE, { keyPath: 'id' });
           s.createIndex('created', 'created');
         }
+        if (!db.objectStoreNames.contains(POS)) db.createObjectStore(POS, { keyPath: 'id' });
       };
       req.onsuccess = () => {
         const db = req.result;
@@ -51,15 +57,29 @@ function readRecord(r) {
     sampleRate: num(r.sampleRate),
     channels: num(r.channels),
     duration,
-    // a resume point is seconds inside the track; anything else reads as none
-    lastPosition: Number.isFinite(r.lastPosition) && r.lastPosition >= 0 && r.lastPosition <= duration ? r.lastPosition : null,
-    updatedAt: Number.isFinite(r.updatedAt) && r.updatedAt >= 0 ? r.updatedAt : null,
+    // resume points live in the positions store; withPosition() fills these in
+    lastPosition: null,
+    updatedAt: null,
     // a non-object edits value would reach Object.entries in the panel
     edits: r.edits && typeof r.edits === 'object' ? r.edits : null,
     // a string here would be wrapped into a Blob and decode as garbage
     arrayBuffer: isArrayBuffer(r.arrayBuffer) ? r.arrayBuffer : null,
     created: num(r.created),
   };
+}
+
+/** A position row as stored: null unless it holds a finite, non-negative time. */
+function readPosition(r) {
+  if (!r || typeof r !== 'object' || typeof r.id !== 'string') return null;
+  const ok = (v) => Number.isFinite(v) && v >= 0;
+  if (!ok(r.lastPosition)) return null;
+  return { lastPosition: r.lastPosition, updatedAt: ok(r.updatedAt) ? r.updatedAt : null };
+}
+
+/** Merge a stored position into a record. A point past the track's end is not kept. */
+function withPosition(rec, pos) {
+  const keep = !!pos && pos.lastPosition <= rec.duration;
+  return { ...rec, lastPosition: keep ? pos.lastPosition : null, updatedAt: keep ? pos.updatedAt : null };
 }
 
 function tx(store, mode, fn) {
@@ -96,8 +116,6 @@ export async function addToLibrary({ name, ext, kind = 'audio', fileName = null,
     arrayBuffer,
     edits: edits || null,
     sourceName: sourceName || null,
-    lastPosition: null,
-    updatedAt: null,
     created: Date.now(),
   };
   await tx(STORE, 'readwrite', o => o.put(rec));
@@ -107,35 +125,61 @@ export async function addToLibrary({ name, ext, kind = 'audio', fileName = null,
 export async function listLibrary() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const t = db.transaction(STORE, 'readonly');
+    const t = db.transaction([STORE, POS], 'readonly');
     // read the store, not the 'created' index: an index leaves out any row
     // whose created value is missing or not a valid key, which made such a
     // row invisible (and so impossible to delete) in the list
-    const req = t.objectStore(STORE).getAll();
-    req.onsuccess = () => resolve(req.result.map(readRecord).filter(Boolean).sort((a,b)=>b.created-a.created));
-    req.onerror = () => reject(req.error);
+    const rows = t.objectStore(STORE).getAll();
+    const pos = t.objectStore(POS).getAll();
+    t.oncomplete = () => {
+      const byId = new Map(pos.result.map((p) => [p?.id, readPosition(p)]));
+      resolve(rows.result
+        .map(readRecord).filter(Boolean)
+        .map((r) => withPosition(r, byId.get(r.id)))
+        .sort((a, b) => b.created - a.created));
+    };
+    t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error || new Error('Library read aborted'));
   });
 }
 
 export async function removeFromLibrary(id) {
-  await tx(STORE, 'readwrite', o => o.delete(id));
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const t = db.transaction([STORE, POS], 'readwrite');
+    t.objectStore(STORE).delete(id);
+    t.objectStore(POS).delete(id);
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error || new Error('Library write aborted'));
+  });
 }
 
 export async function getLibraryEntry(id) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const t = db.transaction(STORE, 'readonly');
-    const req = t.objectStore(STORE).get(id);
-    req.onsuccess = () => {
-      const rec = readRecord(req.result);
-      resolve(rec?.arrayBuffer ? rec : null);
+    const t = db.transaction([STORE, POS], 'readonly');
+    const rq = t.objectStore(STORE).get(id);
+    const pq = t.objectStore(POS).get(id);
+    t.oncomplete = () => {
+      const rec = readRecord(rq.result);
+      resolve(rec?.arrayBuffer ? withPosition(rec, readPosition(pq.result)) : null);
     };
-    req.onerror = () => reject(req.error);
+    t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error || new Error('Library read aborted'));
   });
 }
 
 export async function clearLibrary() {
-  await tx(STORE, 'readwrite', o => o.clear());
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const t = db.transaction([STORE, POS], 'readwrite');
+    t.objectStore(STORE).clear();
+    t.objectStore(POS).clear();
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error || new Error('Library write aborted'));
+  });
 }
 
 export async function renderRemixToWav(buffer, edits = {}) {
@@ -246,20 +290,17 @@ export function resumePoint(rec) {
   return pos;
 }
 
-/** Store a resume point (seconds) on a saved track, or clear it with null. */
+/**
+ * Store a resume point (seconds) for a saved track, or clear it with null.
+ * Writes only the positions store: the track row and its arrayBuffer are not
+ * touched. A point for a track that was since deleted is removed with it.
+ */
 export function setResumePoint(id, seconds, now = Date.now()) {
   return openDB().then((db) => new Promise((resolve, reject) => {
-    const t = db.transaction(STORE, 'readwrite');
-    const o = t.objectStore(STORE);
-    const get = o.get(id);
-    get.onsuccess = () => {
-      const rec = get.result;
-      // the track may have been deleted since it was last playing
-      if (!rec || typeof rec !== 'object') return;
-      rec.lastPosition = seconds;
-      rec.updatedAt = seconds === null ? null : now;
-      o.put(rec);
-    };
+    const t = db.transaction(POS, 'readwrite');
+    const o = t.objectStore(POS);
+    if (seconds === null) o.delete(id);
+    else o.put({ id, lastPosition: seconds, updatedAt: now });
     t.oncomplete = () => resolve();
     t.onerror = () => reject(t.error);
     t.onabort = () => reject(t.error || new Error('Library write aborted'));

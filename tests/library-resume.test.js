@@ -13,11 +13,12 @@ const lib = () => import('../src/library.js');
 /** Write rows straight into the store, bypassing the shape addToLibrary writes. */
 async function putRaw(rows) {
   const db = await new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE)) {
         req.result.createObjectStore(STORE, { keyPath: 'id' }).createIndex('created', 'created');
       }
+      if (!req.result.objectStoreNames.contains('positions')) req.result.createObjectStore('positions', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -25,6 +26,22 @@ async function putRaw(rows) {
   await new Promise((resolve, reject) => {
     const t = db.transaction(STORE, 'readwrite');
     for (const r of rows) t.objectStore(STORE).put(r);
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+  });
+  db.close();
+}
+
+/** Write position rows straight into the positions store. */
+async function putPositions(rows) {
+  const db = await new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  await new Promise((resolve, reject) => {
+    const t = db.transaction('positions', 'readwrite');
+    for (const r of rows) t.objectStore('positions').put(r);
     t.oncomplete = () => resolve();
     t.onerror = () => reject(t.error);
   });
@@ -78,32 +95,43 @@ describe('resumePoint', () => {
 });
 
 describe('resume fields on read', () => {
-  it('keeps a valid position and update time', async () => {
-    await putRaw([{ id: 'ok', name: 'A', duration: 100, created: 1, lastPosition: 42, updatedAt: 1700 }]);
+  // a track row for each id, so the merge has something to attach to
+  const track = (id, duration = 100) => ({ id, name: id, duration, created: 1, ext: 'WAV', arrayBuffer: new ArrayBuffer(4) });
+
+  it('merges a valid stored position and its update time into the track', async () => {
+    await putRaw([track('ok')]);
+    await putPositions([{ id: 'ok', lastPosition: 42, updatedAt: 1700 }]);
     const [rec] = await (await lib()).listLibrary();
     expect(rec.lastPosition).toBe(42);
     expect(rec.updatedAt).toBe(1700);
   });
 
-  it('reads damaged position values as no position', async () => {
-    await putRaw([
-      { id: 'str', name: 'A', duration: 100, created: 1, lastPosition: '42', updatedAt: 'now' },
-      { id: 'neg', name: 'B', duration: 100, created: 2, lastPosition: -4, updatedAt: -1 },
-      { id: 'inf', name: 'C', duration: 100, created: 3, lastPosition: Infinity, updatedAt: Infinity },
-      { id: 'past', name: 'D', duration: 100, created: 4, lastPosition: 120, updatedAt: 5 },
-      { id: 'nan', name: 'E', duration: 100, created: 5, lastPosition: NaN },
+  it('reads damaged stored positions as no position', async () => {
+    await putRaw([track('str'), track('neg'), track('inf'), track('past'), track('nan')]);
+    await putPositions([
+      { id: 'str', lastPosition: '42', updatedAt: 'now' },
+      { id: 'neg', lastPosition: -4, updatedAt: -1 },
+      { id: 'inf', lastPosition: Infinity, updatedAt: Infinity },
+      { id: 'past', lastPosition: 120, updatedAt: 5 },
+      { id: 'nan', lastPosition: NaN },
     ]);
     const byId = Object.fromEntries((await (await lib()).listLibrary()).map((r) => [r.id, r]));
     for (const id of ['str', 'neg', 'inf', 'past', 'nan']) {
       expect(byId[id].lastPosition).toBeNull();
+      expect(byId[id].updatedAt).toBeNull();
     }
-    expect(byId.str.updatedAt).toBeNull();
-    expect(byId.neg.updatedAt).toBeNull();
-    expect(byId.inf.updatedAt).toBeNull();
   });
 
-  it('a row with no resume fields reads as none', async () => {
-    await putRaw([{ id: 'bare', name: 'A', duration: 100, created: 1 }]);
+  it('keeps a position but drops a damaged update time', async () => {
+    await putRaw([track('half')]);
+    await putPositions([{ id: 'half', lastPosition: 30, updatedAt: -1 }]);
+    const [rec] = await (await lib()).listLibrary();
+    expect(rec.lastPosition).toBe(30);
+    expect(rec.updatedAt).toBeNull();
+  });
+
+  it('a track with no position row reads as none', async () => {
+    await putRaw([track('bare')]);
     const [rec] = await (await lib()).listLibrary();
     expect(rec.lastPosition).toBeNull();
     expect(rec.updatedAt).toBeNull();
@@ -125,7 +153,7 @@ describe('setResumePoint', () => {
     expect(saved.updatedAt).toBeNull();
   });
 
-  it('does nothing for a track that was deleted', async () => {
+  it('resolves when the track is already gone', async () => {
     const { setResumePoint } = await lib();
     await expect(setResumePoint('gone', 10)).resolves.toBeUndefined();
   });

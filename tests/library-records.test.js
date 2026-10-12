@@ -12,11 +12,12 @@ const STORE = 'tracks';
 /** Write rows straight into the store, bypassing addToLibrary's shape. */
 async function putRaw(rows) {
   const db = await new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE)) {
         req.result.createObjectStore(STORE, { keyPath: 'id' }).createIndex('created', 'created');
       }
+      if (!req.result.objectStoreNames.contains('positions')) req.result.createObjectStore('positions', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);

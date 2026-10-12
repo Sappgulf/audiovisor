@@ -52,7 +52,7 @@ describe('Library read validation', () => {
     const { addToLibrary, listLibraryMeta } = await import('../src/library.js');
     await addToLibrary({ name: 'Good', ext: 'WAV', sampleRate: 1, channels: 1, duration: 1, arrayBuffer: new ArrayBuffer(4) });
     await new Promise((resolve, reject) => {
-      const req = indexedDB.open('audiovisor.library', 1);
+      const req = indexedDB.open('audiovisor.library', 2);
       req.onsuccess = () => {
         const db = req.result;
         const t = db.transaction('tracks', 'readwrite');
@@ -73,7 +73,7 @@ describe('Library read validation', () => {
 /* writes a raw row, bypassing addToLibrary, to simulate a damaged or older record */
 function putRaw(row) {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('audiovisor.library', 1);
+    const req = indexedDB.open('audiovisor.library', 2);
     req.onsuccess = () => {
       const db = req.result;
       const t = db.transaction('tracks', 'readwrite');
