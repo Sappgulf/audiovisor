@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePlaylist } from '../src/playlist.js';
+import { parsePlaylist, parsePlaylistInfo } from '../src/playlist.js';
 
 describe('parsePlaylist (M3U)', () => {
   it('takes names from #EXTINF and urls from the lines that follow', () => {
@@ -84,6 +84,27 @@ describe('parsePlaylist safety', () => {
     const out = parsePlaylist(lines.join('\n'));
     expect(out).toHaveLength(500);
     expect(out[499].url).toBe('https://x.test/499.mp3');
+  });
+
+  it('reports how many playable links were past the limit', () => {
+    // a 600-line playlist keeps its first 500 and says that 100 were left out
+    const lines = ['#EXTM3U'];
+    for (let i = 0; i < 600; i++) lines.push(`#EXTINF:-1,Track ${i}`, `https://x.test/${i}.mp3`);
+    const { entries, total } = parsePlaylistInfo(lines.join('\n'));
+    expect(entries).toHaveLength(500);
+    expect(total).toBe(600);
+    expect(entries[0].name).toBe('Track 0');
+  });
+
+  it('counts only playable links in the total', () => {
+    const text = '#EXTM3U\nfile:///etc/passwd\nhttps://ok.test/a.mp3\njavascript:x\nhttps://ok.test/b.mp3\n';
+    expect(parsePlaylistInfo(text)).toEqual({
+      entries: [
+        { name: 'a.mp3', url: 'https://ok.test/a.mp3' },
+        { name: 'b.mp3', url: 'https://ok.test/b.mp3' },
+      ],
+      total: 2,
+    });
   });
 
   it('limits the length of a title', () => {

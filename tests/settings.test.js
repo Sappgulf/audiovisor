@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   SETTINGS_KEY, LEGACY_SETTINGS_KEY, SETTINGS_VERSION,
   serializeSettings, validateSettings, readSettings,
-  prefersReducedMotion, isSettingsObject, MAX_SETTINGS_BYTES,
+  prefersReducedMotion, isSettingsObject, isNewerSettingsFile, MAX_SETTINGS_BYTES,
 } from '../src/settings.js';
 
 const VOCAB = {
@@ -172,6 +172,38 @@ describe('isSettingsObject', () => {
     for (const bad of [null, undefined, [], [1], 'x', 3, true]) {
       expect(isSettingsObject(bad)).toBe(false);
     }
+  });
+});
+
+describe('settings file version', () => {
+  it('exports as version 2', () => {
+    expect(SETTINGS_VERSION).toBe(2);
+    expect(serializeSettings({}).version).toBe(2);
+  });
+
+  it('reads a file with no version field, as files from before the field', () => {
+    expect(isNewerSettingsFile({ mode: 'bars' })).toBe(false);
+  });
+
+  it('reads versions 1 and 2', () => {
+    expect(isNewerSettingsFile({ version: 1 })).toBe(false);
+    expect(isNewerSettingsFile({ version: 2 })).toBe(false);
+  });
+
+  it('still reads exports the builds stamped 6 before the file format had a number', () => {
+    expect(isNewerSettingsFile({ version: 6 })).toBe(false);
+  });
+
+  it('refuses a version above the ones this build knows', () => {
+    expect(isNewerSettingsFile({ version: 3 })).toBe(true);
+    expect(isNewerSettingsFile({ version: 7 })).toBe(true);
+    expect(isNewerSettingsFile({ version: 99 })).toBe(true);
+  });
+
+  it('ignores a version that is not a number rather than refusing on it', () => {
+    expect(isNewerSettingsFile({ version: '9' })).toBe(false);
+    expect(isNewerSettingsFile({ version: null })).toBe(false);
+    expect(isNewerSettingsFile(null)).toBe(false);
   });
 });
 

@@ -128,6 +128,34 @@ describe('settings import', () => {
     expect(applySettings.mock.calls[0][0].reduceFlashing).toBe(true);
   });
 
+  it('imports a version 1 or version 2 file', async () => {
+    await pick(new File([JSON.stringify({ version: 1, mode: 'bars' })], 'v1.json'));
+    expect(applySettings.mock.calls.at(-1)[0]).toEqual({ mode: 'bars' });
+    applySettings.mockClear();
+    toast.mockClear();
+    await pick(new File([JSON.stringify({ version: 2, mode: 'tunnel' })], 'v2.json'));
+    expect(applySettings.mock.calls.at(-1)[0]).toEqual({ mode: 'tunnel' });
+    expect(toast.mock.calls.at(-1)[0]).toContain('imported');
+  });
+
+  it('refuses a file from a newer AUDIOVISOR, and says so', async () => {
+    await pick(new File([JSON.stringify({ version: 3, mode: 'tunnel' })], 'v3.json'));
+    expect(applySettings).not.toHaveBeenCalled();
+    expect(toast.mock.calls.at(-1)[0]).toContain('came from a newer AUDIOVISOR');
+  });
+
+  it('reads an export stamped 6 by an earlier build', async () => {
+    await pick(new File([JSON.stringify({ version: 6, mode: 'bars' })], 'old.json'));
+    expect(applySettings.mock.calls.at(-1)[0]).toEqual({ mode: 'bars' });
+  });
+
+  it('exports with version 2 and keeps the size limit on import', async () => {
+    expect(ui.currentSettings().version).toBe(2);
+    const big = new File([new Uint8Array(64 * 1024 + 1)], 'big.json');
+    await pick(big);
+    expect(toast.mock.calls.at(-1)[0]).toContain('larger than 64 KB');
+  });
+
   it('reports a file with nothing usable in it', async () => {
     await pick(new File([JSON.stringify({ unknown: 1 })], 's.json'));
     expect(toast.mock.calls.at(-1)[0]).toContain('nothing usable');

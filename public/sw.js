@@ -6,7 +6,41 @@
    cache already held. */
 const CACHE = 'audiovisor-v8.17.0';
 
+/* The app shell a visitor needs to open with no network. The build's hashed
+   JS and CSS are not listed here, because their names change with every build;
+   install reads them out of the page instead (see precache). */
+const SHELL = [
+  '/',
+  '/manifest.json',
+  '/icons/apple-touch-icon.png',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-maskable-512.png',
+];
+
+/* Hashed build files referenced by a page: the entry script, its stylesheet
+   and any preloads. Matches the same attributes the HTML uses for them. */
+const ASSET_REF = /(?:src|href)="(\/assets\/[^"]+)"/g;
+
+/* Cache the current page, the build files it names and the static shell.
+   A first visit installs the worker before it controls the page, so without
+   this its JS and CSS were never stored, and an offline return showed HTML with
+   nothing to run. A failed entry is skipped so one missing file cannot stop
+   the rest. */
+async function precache() {
+  const c = await caches.open(CACHE);
+  const page = await fetch('/', { cache: 'no-cache' });
+  if (page.ok) {
+    await c.put('/', page.clone());
+    const html = await page.text();
+    const assets = [...html.matchAll(ASSET_REF)].map((m) => m[1]);
+    await Promise.all([...new Set(assets)].map((u) => c.add(u).catch(() => {})));
+  }
+  await Promise.all(SHELL.filter((u) => u !== '/').map((u) => c.add(u).catch(() => {})));
+}
+
 self.addEventListener('install', (e) => {
+  e.waitUntil(precache().catch(() => {}));
   self.skipWaiting();
 });
 
@@ -37,6 +71,7 @@ self.addEventListener('fetch', (e) => {
           }
           return res;
         })
+        // offline, a shortcut such as /?demo=1 has no copy of its own: serve the shell
         .catch(() => caches.match(request).then((r) => r || caches.match('/')))
     );
     return;

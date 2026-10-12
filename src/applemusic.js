@@ -42,15 +42,22 @@ export function _resetTokenCache() {
   tokenUnavailable = null;
 }
 
-function loadMusicKit() {
+/* Every attempt adds a musickitloaded listener. A timed-out or failed attempt
+   used to leave its listener on the window, and each retry added another, so
+   all of them were held until MusicKit eventually loaded. Each exit path now
+   removes its own. */
+export function loadMusicKit() {
   if (typeof window === 'undefined') return Promise.reject(new Error('Apple Music requires a browser'));
   if (window.MusicKit) return Promise.resolve(window.MusicKit);
 
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Apple MusicKit timed out')), MUSIC_KIT_TIMEOUT);
-    const ready = () => {
+    const finish = () => {
       clearTimeout(timer);
       window.removeEventListener('musickitloaded', ready);
+    };
+    const timer = setTimeout(() => { finish(); reject(new Error('Apple MusicKit timed out')); }, MUSIC_KIT_TIMEOUT);
+    const ready = () => {
+      finish();
       if (window.MusicKit) resolve(window.MusicKit);
       else reject(new Error('Apple MusicKit did not load'));
     };
@@ -64,7 +71,7 @@ function loadMusicKit() {
       script.src = MUSIC_KIT_SCRIPT;
       script.async = true;
       script.onerror = () => {
-        clearTimeout(timer);
+        finish();
         reject(new Error('Failed to load Apple MusicKit'));
       };
       document.head.appendChild(script);

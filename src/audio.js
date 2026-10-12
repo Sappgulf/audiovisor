@@ -726,7 +726,8 @@ export class AudioEngine {
   _checkLoop() {
     const r = this._range;
     if (!r || !this.playing || this.mode !== 'file' || !this.buffer) return false;
-    if (this.getTime() < r.end) return false;
+    /* written as "not reached" so a NaN clock never reads as past the end */
+    if (!(this.getTime() >= r.end)) return false;
     this._wrapLoop();
     return true;
   }
@@ -772,6 +773,8 @@ export class AudioEngine {
 
   /** Empty the file queue and return transport/UI state to idle file mode. */
   clearQueue() {
+    /* the A-B interval must not outlive the queue it was set on */
+    this.clearLoop();
     if (!this.queue.length) {
       if (this.mode === 'file' && this.track) this._setMode('none');
       if (this.mode === 'file') this._retireSource();
@@ -801,6 +804,7 @@ export class AudioEngine {
 
     if (!this.queue.length) {
       this._retireSource();
+      this.clearLoop();
       this.buffer = null;
       this.track = null;
       this.offset = 0;
@@ -1398,7 +1402,8 @@ export class AudioEngine {
     const beatTime = (this.micActive || this.captureActive)
       ? (this.ctx?.currentTime || 0)
       : (timeSec ?? this.getTime());
-    this.beat.process(this._beatSpectrum(freq), beatTime, this.outputLatency());
+    const beatSpec = this._beatSpectrum(freq);
+    this.beat.process(beatSpec, beatTime, this.outputLatency(), bandAvg(beatSpec, 2, iBass));
     const bi = this.beat;
     this._levels.bass = bass;
     this._levels.mid = mid;
@@ -1450,6 +1455,16 @@ export class AudioEngine {
   /** Stability of the tempo lock, 0..1. 0 with no tempo. */
   get beatConfidence() {
     return this.beat.bpm > 0 ? this.beat.confidence : 0;
+  }
+
+  /** Position of the current beat in a 4/4 bar, 0..3; 0 on the downbeat and with no tempo. */
+  get beatInBar() {
+    return this.beat.beatInBar;
+  }
+
+  /** Tapped or detected BPM rounded to one decimal, for the tempo chip. null with no tempo. */
+  get displayBpm() {
+    return this.beat.bpm > 0 ? Math.round(this.beat.bpm * 10) / 10 : null;
   }
 
   /** outputLatency() in milliseconds. */

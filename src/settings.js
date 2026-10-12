@@ -10,7 +10,11 @@
 
 export const SETTINGS_KEY = 'audiovisor.settings.v2';
 export const LEGACY_SETTINGS_KEY = 'audiovisor.settings.v1';
-export const SETTINGS_VERSION = 6;
+/** Version stamped on exported settings files. */
+export const SETTINGS_VERSION = 2;
+/* Exports from the builds before the file format had its own number were
+   stamped 6 (their internal schema counter). Those files still import. */
+const READABLE_VERSIONS = [1, 2, 6];
 /** Largest settings file the importer will read. Real exports are a few KB. */
 export const MAX_SETTINGS_BYTES = 64 * 1024;
 
@@ -55,6 +59,17 @@ export function prefersReducedMotion(win = globalThis) {
 /** Parsed JSON that can hold settings: a plain object, not an array or null. */
 export function isSettingsObject(raw) {
   return !!raw && typeof raw === 'object' && !Array.isArray(raw);
+}
+
+/**
+ * True when a file was written by a build with a later settings format than
+ * this one reads. A file with no version field predates the field and is read
+ * as before, and so is a version this build knows. Anything else is newer,
+ * so its keys could mean something different here.
+ */
+export function isNewerSettingsFile(raw) {
+  const v = raw?.version;
+  return typeof v === 'number' && v > SETTINGS_VERSION && !READABLE_VERSIONS.includes(v);
 }
 
 /**

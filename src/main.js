@@ -4,7 +4,7 @@ import { MODES, THEMES } from './themes.js';
 import { modeArt } from './mode-art.js';
 import { AudioEngine } from './audio.js';
 import { Renderer, loadExtraModes } from './visualizers.js';
-import { fmtTime, pickRandom, hashStr } from './utils.js';
+import { fmtTime, pickRandom, hashStr, esc } from './utils.js';
 import { createToasts } from './toast.js';
 import { createFavicon } from './favicon.js';
 import { createShareCardLoader } from './share-card-loader.js';
@@ -690,7 +690,7 @@ $('capture-btn').addEventListener('click', async () => {
       : 'Capture <b>OFF</b>', { duration: 2000 });
   } catch (err) {
     console.error(err);
-    toast(`<b>Capture blocked</b> — ${err.message || 'permission denied'}`, { duration: 3600 });
+    toast(`<b>Capture blocked</b> — ${esc(err.message || 'permission denied')}`, { duration: 3600 });
   }
 });
 
@@ -711,7 +711,7 @@ const { openFilePicker, dropzone } = createFileLoader({
   ensureAudible,
   closeMore,
   // a playlist dropped on the stage queues its links, same as the queue's Import
-  onPlaylist: (items, name) => { void import('./queue-import.js').then((m) => m.queueEntries(items, { engine, toast, onQueued: panels.renderQueue }, name)); },
+  onPlaylist: (items, name, left) => { void import('./queue-import.js').then((m) => m.queueEntries(items, { engine, toast, onQueued: panels.renderQueue }, name, left)).catch((err) => console.error('playlist import failed', err)); },
 });
 
 $('play-demo')?.addEventListener('click', async () => {
@@ -732,6 +732,9 @@ $('play-demo')?.addEventListener('click', async () => {
 
 
 /* ---------- media session & transport ---------- */
+
+/* the lock screen's play/pause state; nothing else sets playbackState */
+engine.on('state', () => { if (navigator.mediaSession) navigator.mediaSession.playbackState = engine.playing ? 'playing' : 'paused'; });
 
 const transport = createTransport({
   engine,
@@ -911,6 +914,16 @@ for (const el of document.querySelectorAll(TOGGLE_SELECTOR)) {
 refreshStatus();
 updateFavicon();
 renderLoop.start();
+
+/* ?demo=1 is the home-screen "Play demo" shortcut. The one read happens here,
+   and the param is dropped so a reload does not replay the demo over a track. */
+try {
+  const q = new URLSearchParams(location.search);
+  if (q.get('demo') === '1') {
+    history.replaceState(null, '', location.pathname);
+    $('play-demo')?.click();
+  }
+} catch {}
 
 // Onboarding tour
 boot('onboarding', () => createOnboarding({ toast, modeCount: MODES.length, themeCount: THEMES.length }));

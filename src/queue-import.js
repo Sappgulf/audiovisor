@@ -4,7 +4,7 @@
  * adds, and playing one of those rows. Loaded on first use by the queue panel
  * so the parser and this code stay out of the entry chunk.
  */
-import { parsePlaylist } from './playlist.js';
+import { parsePlaylistInfo } from './playlist.js';
 import { esc } from './utils.js';
 
 /** M3U and PLS. Not an ACCEPT_ATTR, so this file does not pull in formats.js. */
@@ -60,13 +60,13 @@ export async function importPlaylistFile(file, deps) {
     deps.toast('<b>Could not read</b> that playlist', { duration: 2600 });
     return;
   }
-  let entries;
+  let parsed;
   try {
-    entries = parsePlaylist(text) || [];
+    parsed = parsePlaylistInfo(text);
   } catch {
-    entries = [];
+    parsed = { entries: [], total: 0 };
   }
-  queueEntries(entries, deps, file.name);
+  queueEntries(parsed.entries, deps, file.name, parsed.total - parsed.entries.length);
 }
 
 /**
@@ -76,8 +76,9 @@ export async function importPlaylistFile(file, deps) {
  * @param {{ name?: string, url: string }[]} entries
  * @param {{ engine: any, toast: Function, onQueued: () => void }} deps
  * @param {string} [sourceName]
+ * @param {number} [left] links the parser held back past the limit
  */
-export function queueEntries(entries, { engine, toast, onQueued }, sourceName = '') {
+export function queueEntries(entries, { engine, toast, onQueued }, sourceName = '', left = 0) {
   if (typeof engine.addUrlItems !== 'function') {
     toast('<b>Playlist import</b> is not available in this build', { duration: 2600 });
     return;
@@ -96,14 +97,16 @@ export function queueEntries(entries, { engine, toast, onQueued }, sourceName = 
   engine.addUrlItems(items);
   onQueued();
   const n = items.length;
-  toast(`Imported <b>${n}</b> ${n === 1 ? 'track' : 'tracks'} from playlist`, { duration: 2200 });
+  const more = left > 0 ? ` — <b>${left}</b> more past the ${PLAYLIST_MAX_ITEMS} limit were left out` : '';
+  toast(`Imported <b>${n}</b> ${n === 1 ? 'track' : 'tracks'} from playlist${more}`, { duration: left > 0 ? 4200 : 2200 });
 }
 
 /** A playlist entry is a URL stream: it takes over from whatever is playing. */
 export async function playStreamItem(engine, item, toast) {
-  if (engine.captureActive) await engine.toggleCapture();
-  if (engine.micActive) await engine.toggleMic();
   try {
+    // the capture and mic toggles can reject too (permission), so they sit inside the guard
+    if (engine.captureActive) await engine.toggleCapture();
+    if (engine.micActive) await engine.toggleMic();
     await engine.playUrl(item.url, item.meta);
     toast(`Streaming <b>${esc(item.meta?.name || 'stream')}</b>`);
   } catch (err) {

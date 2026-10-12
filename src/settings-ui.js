@@ -1,6 +1,6 @@
 // @ts-check
 import {
-  SETTINGS_KEY, MAX_SETTINGS_BYTES, serializeSettings, validateSettings, isSettingsObject,
+  SETTINGS_KEY, MAX_SETTINGS_BYTES, serializeSettings, validateSettings, isSettingsObject, isNewerSettingsFile,
 } from './settings.js';
 import { remove as removeStored } from './storage.js';
 
@@ -88,6 +88,7 @@ export function createSettingsUI({
       let raw;
       try { raw = JSON.parse(txt); } catch { toast('<b>Import failed</b> — not a valid JSON file'); return; }
       if (!isSettingsObject(raw)) { toast('<b>Import failed</b> — not a settings file'); return; }
+      if (isNewerSettingsFile(raw)) { toast('<b>Import failed</b> — this file came from a newer AUDIOVISOR'); return; }
       // validateSettings keeps only the keys this build knows, so unknown keys are never stored
       const s = validateSettings(raw, vocab);
       if (!Object.keys(s).length) { toast('<b>Import failed</b> — nothing usable in that file'); return; }

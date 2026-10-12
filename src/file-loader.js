@@ -17,7 +17,7 @@
  * @param {() => void} deps.updateTrackUI
  * @param {() => void} deps.ensureAudible
  * @param {() => void} deps.closeMore
- * @param {(items: { name: string, url: string }[], sourceName: string) => void} [deps.onPlaylist]
+ * @param {(items: { name: string, url: string }[], sourceName: string, left: number) => void} [deps.onPlaylist]
  * @param {number} [deps.maxFileBytes]  decode size limit, MAX_FILE_BYTES unless a test lowers it
  * @param {Document} [deps.doc]
  */
@@ -140,15 +140,15 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
 
   /** Playlist files are read as text. A local file has no base URL, so its relative links are dropped. */
   async function loadPlaylists(files) {
-    const { parsePlaylist } = await import('./playlist.js');
+    const { parsePlaylistInfo } = await import('./playlist.js');
     for (const f of files) {
       let text = '';
       try { text = await f.text(); } catch { /* unreadable reads as empty below */ }
-      const items = parsePlaylist(text);
+      const { entries: items, total } = parsePlaylistInfo(text);
       if (!items.length) {
         toast(`<b>${esc(f.name)}</b> has no web links to play`, { duration: 3200 });
       } else if (onPlaylist) {
-        onPlaylist(items, f.name);
+        onPlaylist(items, f.name, total - items.length);
       } else {
         toast(`Found <b>${items.length}</b> links in <b>${esc(f.name)}</b>`, { duration: 3200 });
       }

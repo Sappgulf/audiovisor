@@ -15,6 +15,7 @@ import { clamp } from './utils.js';
  *  pulse      1→0 envelope fired on each detected onset
  *  confidence 0..1 stability of the tempo lock
  *  beats      integer, +1 each time the locked grid reaches a new beat
+ *  beatInBar  0..3 position in a 4/4 bar, 0 on the downbeat (the bass accent)
  */
 
 const round2 = (v) => Math.round(v * 100) / 100;
@@ -65,6 +66,12 @@ export class BeatTracker {
        start for the octave voter), then relaxes toward the measured room
        level. Attacks instantly, releases slowly. */
     this._floor = 0.008;
+    /* downbeat: grid index mod 4 of the accented beat (-1 = no lock); see _judgeBar */
+    this._bar = -1;
+    this._slot = new Float32Array(4);
+    this._slotN = 0;
+    this._slotK = -1e9;
+    this._slotPk = 0;
     /* reused by the `info` getter so reading it per frame allocates nothing */
     this._info = { bpm: 0, phase: 0, pulse: 0, confidence: 0 };
   }
@@ -88,6 +95,15 @@ export class BeatTracker {
     this._settleSec = 0;
     this._fluxPeak = 0;
     this._floor = 0.008;
+    this._bar = -1;
+    this._forgetSlots();
+  }
+
+  /* the bass tally belongs to one grid; drop it whenever the grid moves */
+  _forgetSlots() {
+    this._slot.fill(0);
+    this._slotN = 0;
+    this._slotK = -1e9;
   }
 
   /**
@@ -108,6 +124,10 @@ export class BeatTracker {
    */
   nudgeTo(heardSec, bpm = 0, confidence = 0) {
     if (!Number.isFinite(heardSec)) return;
+    /* the grid restarts at the tapped beat (index 0): carry the bar over so the
+       tapped beat keeps the bar position of the beat it lands on */
+    if (this._bar >= 0) this._bar = (this._bar - this._gridMax) & 3;
+    this._forgetSlots();
     this._anchor = heardSec;
     this._gridMax = -1;
     this.phase = 0;
@@ -155,8 +175,9 @@ export class BeatTracker {
    *   but phase and pulse are reported against what the listener is hearing
    *   right now — otherwise every flash lands `latency` early, which on
    *   Bluetooth output is 150-300ms and plainly visible.
+   * @param {number} [bass] low-band energy 0..1 for this frame; drives the downbeat
    */
-  process(spectrum, tSec, latency = 0) {
+  process(spectrum, tSec, latency = 0, bass = 0) {
     if (!spectrum?.length || !Number.isFinite(tSec)) return;
     /* A backwards jump is a seek or a new external track. Do not let the
        old phase grid leak into the new song; duplicate timestamps are common
@@ -245,6 +266,8 @@ export class BeatTracker {
       this._intervalCount = 0;
       this._gridMax = -1;
       this._pendingHits = 0;
+      this._bar = -1;
+      this._forgetSlots();
     }
 
     /* advance predicted phase along the locked grid, read at the position
@@ -256,7 +279,39 @@ export class BeatTracker {
         this.beats += k - this._gridMax;
         this._gridMax = k;
       }
+      if (this._bar < 0) this._bar = this._gridMax & 3;
+      this._judgeBar(bass, this.phase < 0.5 ? k : k + 1);
     }
+  }
+
+  /** Position of the current grid beat in a 4/4 bar, 0..3. 0 with no tempo. */
+  get beatInBar() {
+    return this.bpm > 0 && this._bar >= 0 ? (this._gridMax - this._bar) & 3 : 0;
+  }
+
+  /*
+   * Downbeat. Each frame adds its bass to the beat it sits nearest, keeping
+   * the peak; when that beat ends, its peak is averaged into its bar slot
+   * (grid index mod 4). The bar moves to the strongest slot only once the
+   * tally has 8 beats behind it, and only when that slot beats the current one
+   * by 25% plus a small absolute margin, so noise cannot flip it.
+   */
+  _judgeBar(bass, n) {
+    if (n !== this._slotK) {
+      if (this._slotK > -1e9) {
+        const s = this._slot;
+        const q = this._slotK & 3;
+        s[q] += (this._slotPk - s[q]) * 0.5;
+        if (++this._slotN >= 8) {
+          let best = 0;
+          for (let i = 1; i < 4; i++) if (s[i] > s[best]) best = i;
+          if (s[best] > s[this._bar] * 1.25 + 0.02) this._bar = best;
+        }
+      }
+      this._slotK = n;
+      this._slotPk = 0;
+    }
+    if (bass > this._slotPk) this._slotPk = bass;
   }
 
   _adaptiveThreshold(floorAbs = 0.008) {

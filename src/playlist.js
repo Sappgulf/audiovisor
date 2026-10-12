@@ -19,6 +19,15 @@ const MAX_NAME = 200;
  * @returns {{ name: string, url: string }[]}
  */
 export function parsePlaylist(text, baseUrl) {
+  return parsePlaylistInfo(text, baseUrl).entries;
+}
+
+/**
+ * As parsePlaylist, and also the count of playable links before the limit,
+ * so the caller can say how many were left out.
+ * @returns {{ entries: { name: string, url: string }[], total: number }}
+ */
+export function parsePlaylistInfo(text, baseUrl) {
   try {
     let base;
     try { base = baseUrl ? new URL(baseUrl).href : undefined; } catch { base = undefined; }
@@ -26,16 +35,17 @@ export function parsePlaylist(text, baseUrl) {
     const first = lines.find((l) => l) || '';
     const raw = /^\[playlist\]$/i.test(first) ? parsePls(lines) : parseM3u(lines);
     /** @type {{ name: string, url: string }[]} */
-    const out = [];
+    const entries = [];
+    let total = 0;
     for (const item of raw) {
       const url = resolveHttp(item.url, base);
       if (!url) continue;
-      out.push({ name: (item.name || nameFromUrl(url)).slice(0, MAX_NAME), url });
-      if (out.length >= MAX_ENTRIES) break;
+      total++;
+      if (entries.length < MAX_ENTRIES) entries.push({ name: (item.name || nameFromUrl(url)).slice(0, MAX_NAME), url });
     }
-    return out;
+    return { entries, total };
   } catch {
-    return [];
+    return { entries: [], total: 0 };
   }
 }
 
