@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { RayStage } from '../src/raystage.js';
 import { SCENE_FRAG, ACCUM_FRAG, BLUR_FRAG, POST_FRAG, VERT } from '../src/rayshader.js';
 import { MODES } from '../src/themes.js';
@@ -30,6 +30,50 @@ describe('RayStage', () => {
       s.resize(800, 400);
       s.render(true, null, null, null, 16.7);
     }).not.toThrow();
+  });
+});
+
+/* A WebGL2 stand-in that accepts every call and records which programs get
+   bound. It exposes no KHR_parallel_shader_compile, as on browsers without it. */
+function fakeGl() {
+  const used = [];
+  const base = {
+    used,
+    getExtension: () => null,
+    createProgram: () => ({}),
+    createShader: () => ({}),
+    getShaderParameter: () => true,
+    getProgramParameter: () => true,
+    getUniformLocation: () => ({}),
+    createTexture: () => ({}),
+    createFramebuffer: () => ({}),
+    createVertexArray: () => ({}),
+    isContextLost: () => false,
+    useProgram(p) { used.push(p); },
+  };
+  // every other GL call is a no-op
+  return new Proxy(base, { get: (t, k) => (k in t ? t[k] : () => {}) });
+}
+
+describe('RayStage without KHR_parallel_shader_compile', () => {
+  it('switches to the requested mode instead of holding the first one drawn', () => {
+    vi.stubGlobal('window', { devicePixelRatio: 1 });
+    const gl = fakeGl();
+    const canvas = { ...fakeCanvas(gl), addEventListener() {} };
+    const s = new RayStage(canvas);
+    try {
+      expect(s.ok).toBe(true);
+      s.resize(800, 400);
+      s.render(false, null, null, null, 16.7);   // first mode drawn
+      const waves = MODES.findIndex((m) => m.id === 'waves');
+      s.setMode('waves');
+      s.render(false, null, null, null, 16.7);
+      s.render(false, null, null, null, 16.7);
+      expect(gl.used).toContain(s._scenes.get(waves).prog);
+    } finally {
+      clearInterval(s._watchdog);
+      vi.unstubAllGlobals();
+    }
   });
 });
 

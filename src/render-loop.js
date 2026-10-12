@@ -217,7 +217,12 @@ export function createRenderLoop({
     } else {
       doc.getElementById('ray-canvas').classList.remove('is-live');
       if (state.modeId === 'gpu') startGpu?.();
-      const gpuReady = !!(webgpuState || webgl2State);
+      /* A lost device or context cannot draw, and a black canvas with the
+         Canvas2D layer hidden is worse than the fallback, so a lost one is
+         treated as absent until its owner marks it live again. */
+      const gpuWebgpu = webgpuState && !webgpuState.lost ? webgpuState : null;
+      const gpuWebgl2 = webgl2State && !webgl2State.lost ? webgl2State : null;
+      const gpuReady = !!(gpuWebgpu || gpuWebgl2);
       const gpuMode = state.modeId === 'gpu' && gpuReady;
       if (webgpuCanvas && gpuReady && (webgpuCanvas.width !== Math.round(renderer.w * renderer.dpr) || webgpuCanvas.height !== Math.round(renderer.h * renderer.dpr))) {
         webgpuCanvas.width = Math.round(renderer.w * renderer.dpr);
@@ -226,8 +231,10 @@ export function createRenderLoop({
       if (webgpuCanvas) webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
       doc.getElementById('viz-canvas').classList.toggle('is-off', gpuMode);
       if (gpuMode && !idle && levels) {
-        if (webgpuState) renderWebGPU(webgpuState, renderer.t, levels.level);
-        else renderWebGL2(webgl2State, renderer.t, levels.level, webgpuCanvas.width, webgpuCanvas.height);
+        // a NaN level would reach the shader as a NaN uniform; hold it at silence
+        const gpuLevel = Number.isFinite(levels.level) ? levels.level : 0;
+        if (gpuWebgpu) renderWebGPU(gpuWebgpu, renderer.t, gpuLevel);
+        else renderWebGL2(gpuWebgl2, renderer.t, gpuLevel, webgpuCanvas.width, webgpuCanvas.height);
       } else {
         const effMode = state.modeId === 'gpu' ? 'void' : null;
         if (effMode) renderer.setMode(effMode);

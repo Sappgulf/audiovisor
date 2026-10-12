@@ -671,8 +671,12 @@ export class RayStage {
     /* a mode whose program is still compiling in the background keeps
        showing the last scene for those few frames rather than freezing the
        page until the driver finishes */
+    /* Only with parallel compile: without it _sceneReady() is never true for a
+       mode that has not been linked yet, so this branch used to keep the first
+       mode drawn for the whole session. Without the extension the link blocks
+       on first use, which is the intended path. */
     let drawMode = this.mode;
-    if (!this._sceneReady(drawMode) && this._drawnMode != null && this._sceneReady(this._drawnMode)) {
+    if (this._parallel && !this._sceneReady(drawMode) && this._drawnMode != null && this._sceneReady(this._drawnMode)) {
       this._startScene(drawMode);
       drawMode = this._drawnMode;
     }

@@ -4,6 +4,26 @@ export function initWebGL2(canvas) {
   try {
     const gl = canvas.getContext('webgl2');
     if (!gl) return null;
+    const built = buildProgram(gl);
+    if (!built) return null;
+    const state = { ...built, lost: false };
+    /* a lost context drops to the Canvas2D stage (the render loop skips
+       lost states); on restore the program and its uniforms are rebuilt,
+       since the old GL objects died with the context */
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      state.lost = true;
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      const again = buildProgram(gl);
+      if (again) Object.assign(state, again, { lost: false });
+    });
+    return state;
+  } catch { return null; }
+}
+
+function buildProgram(gl) {
+  try {
     const vs = `#version 300 es
       void main() {
         vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
@@ -49,7 +69,7 @@ export function initWebGL2(canvas) {
 }
 
 export function renderWebGL2(state, t, level, w, h) {
-  if (!state) return;
+  if (!state || state.lost) return;
   const { gl, prog, uTime, uLevel, uRes } = state;
   gl.useProgram(prog);
   gl.uniform1f(uTime, t);

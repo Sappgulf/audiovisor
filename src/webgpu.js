@@ -66,15 +66,28 @@ export async function initWebGPU(canvas) {
     const context = canvas.getContext('webgpu');
     if (!context) return null;
     context.configure({ device, format, alphaMode: 'opaque' });
-    return { device, context, pipeline, bindGroup, timeBuf, levelBuf, format };
+    const state = { device, context, pipeline, bindGroup, timeBuf, levelBuf, format, lost: false };
+    // a lost device (driver reset, tab backgrounded on some platforms) never
+    // draws again; flag it so the render loop falls back to Canvas2D
+    device.lost?.then((info) => {
+      state.lost = true;
+      console.warn('webgpu device lost:', info?.message || info?.reason || 'unknown');
+    });
+    return state;
   } catch { return null; }
 }
 
+// writeBuffer copies its source synchronously, so one scratch pair is reused
+const timeScratch = new Float32Array(1);
+const levelScratch = new Float32Array(1);
+
 export function renderWebGPU(state, t, level) {
-  if (!state) return;
+  if (!state || state.lost) return;
   const { device, context, pipeline, bindGroup, timeBuf, levelBuf } = state;
-  device.queue.writeBuffer(timeBuf, 0, new Float32Array([t]));
-  device.queue.writeBuffer(levelBuf, 0, new Float32Array([level]));
+  timeScratch[0] = t;
+  levelScratch[0] = level;
+  device.queue.writeBuffer(timeBuf, 0, timeScratch);
+  device.queue.writeBuffer(levelBuf, 0, levelScratch);
   const enc = device.createCommandEncoder();
   const pass = enc.beginRenderPass({
     colorAttachments: [{ view: context.getCurrentTexture().createView(), clearValue: [0.06,0.05,0.045,1], loadOp: 'clear', storeOp: 'store' }]

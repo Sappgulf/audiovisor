@@ -183,7 +183,9 @@ float sdCyl(vec3 p, float h, float r) {
 }
 float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
   vec3 pa = p - a, ba = b - a;
-  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  // a zero-length capsule (a == b, as the vinyl pivot is) is a sphere; the
+  // unguarded 0/0 is undefined in GLSL and varied by GPU
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0.0, 1.0);
   return length(pa - ba * h) - r;
 }
 float smin(float a, float b, float k) {
