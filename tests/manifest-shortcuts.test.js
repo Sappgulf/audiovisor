@@ -9,9 +9,9 @@ import { readFileSync, existsSync } from 'node:fs';
 const manifest = JSON.parse(readFileSync('public/manifest.json', 'utf8'));
 
 describe('manifest shortcuts', () => {
-  it('ships exactly the two entries: Play demo and Stage', () => {
+  it('ships the one working entry: Play demo', () => {
     expect(Array.isArray(manifest.shortcuts)).toBe(true);
-    expect(manifest.shortcuts.map((s) => s.name)).toEqual(['Play demo', 'Stage']);
+    expect(manifest.shortcuts.map((s) => s.name)).toEqual(['Play demo']);
   });
 
   it('points each entry at a URL inside the app scope', () => {
@@ -21,10 +21,9 @@ describe('manifest shortcuts', () => {
     }
   });
 
-  it('launches the demo with ?demo=1 and the stage with ?stage=1', () => {
+  it('launches the demo with ?demo=1', () => {
     const byName = Object.fromEntries(manifest.shortcuts.map((s) => [s.name, s.url]));
     expect(byName['Play demo']).toBe('/?demo=1');
-    expect(byName.Stage).toBe('/?stage=1');
   });
 
   it('gives each entry an icon that is actually published', () => {

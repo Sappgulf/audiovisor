@@ -67,7 +67,9 @@ export function createKeyboardShortcuts({
       return;
     }
     if (isTypingTarget(e.target)) return;
-    if (isModePickerTarget(e.target) || isModePickerTarget(doc.activeElement)) return;
+    // the mode list steps through its cards with the arrows; every other key is
+    // a shortcut even when a card has focus, which is where a click leaves it
+    if ((isModePickerTarget(e.target) || isModePickerTarget(doc.activeElement)) && e.key.startsWith('Arrow')) return;
     /* a focused range input or slider takes its own arrows (EQ, sliders, the
        seek and volume tracks). The global arrows used to fire on top of it,
        so one press of the EQ slider also skipped the track by ten seconds */

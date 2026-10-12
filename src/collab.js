@@ -39,6 +39,8 @@ export function createCollab({ state, toast, setMode, setTheme, setFx, doc = doc
     const urlEl = doc.getElementById('qr-url');
     if (urlEl) urlEl.textContent = location.href;
     qr?.classList.toggle('is-hidden');
+    // the button is a toggle: its pressed state follows the code it shows
+    doc.getElementById('party-btn')?.setAttribute('aria-pressed', String(!!qr && !qr.classList.contains('is-hidden')));
     toast('Party <b>QR</b> — others scan to join');
     // broadcast via BroadcastChannel for live sync
     try {
@@ -96,17 +98,22 @@ export function createCollab({ state, toast, setMode, setTheme, setFx, doc = doc
     };
   } catch {}
 
-  // handle share hash on load
-  try {
-    const h = location.hash;
-    if (h.startsWith('#share=')) {
+  /* Replays a shared look from the URL. main.js calls this once the stage and
+     the stored settings are up: called here, at creation, setMode reached a
+     render loop that did not exist yet, and the look never applied. */
+  function applyShareHash() {
+    try {
+      const h = location.hash;
+      if (!h.startsWith('#share=')) return;
       const data = JSON.parse(atob(h.slice(7)));
       if (data.mode) setMode(data.mode);
       if (data.theme) setTheme(data.theme);
-      if (data.fx) for (const [k, v] of Object.entries(data.fx)) setFx(k, v);
+      if (data.fx && typeof data.fx === 'object') {
+        for (const [k, v] of Object.entries(data.fx)) if (typeof v === 'boolean') setFx(k, v);
+      }
       toast('Shared <b>remix</b> loaded');
-    }
-  } catch {}
+    } catch {}
+  }
 
-  return { renderComments };
+  return { renderComments, applyShareHash };
 }

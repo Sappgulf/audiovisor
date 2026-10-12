@@ -257,9 +257,11 @@ function audioBufferToWavBlob(buffer) {
   writeStr('RIFF'); write32(36 + len); writeStr('WAVE');
   writeStr('fmt '); write32(16); write16(1); write16(numCh); write32(buffer.sampleRate); write32(buffer.sampleRate * numCh * 2); write16(numCh * 2); write16(16);
   writeStr('data'); write32(len);
+  // fetched once: getChannelData per sample made a long track's export slow
+  const channels = Array.from({ length: numCh }, (_, ch) => buffer.getChannelData(ch));
   for (let i = 0; i < buffer.length; i++) {
     for (let ch = 0; ch < numCh; ch++) {
-      let s = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+      let s = Math.max(-1, Math.min(1, channels[ch][i]));
       view.setInt16(pos, s < 0 ? s * 0x8000 : s * 0x7FFF, true); pos += 2;
     }
   }
@@ -459,6 +461,8 @@ export async function exportLibraryRecord(engine, id, toast) {
   if (!rec || !rec.arrayBuffer) return;
   toast('Rendering <b>remix</b>…', { duration: 1600 });
   try {
+    // a fresh page has no audio context until something plays, and decoding needs one
+    engine._ensureCtx?.();
     const buf = await engine.ctx.decodeAudioData(rec.arrayBuffer.slice(0));
     const blob = await renderRemixToWav(buf, rec.edits || engine.fx);
     const url = URL.createObjectURL(blob);

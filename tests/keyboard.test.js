@@ -190,3 +190,24 @@ describe('loop and tempo keys', () => {
     expect(deps.engine.tapTempo).not.toHaveBeenCalled();
   });
 });
+
+describe('focus left on a mode card', () => {
+  it('keeps the single-key shortcuts working after a click', () => {
+    const deps = setup();
+    document.body.insertAdjacentHTML('beforeend', '<div id="mode-list"><button id="card">Neon</button></div>');
+    const card = document.getElementById('card');
+    card.focus();
+    press(card, 'r', 'KeyR');
+    expect(deps.randomizeLook).toHaveBeenCalled();
+  });
+
+  it('leaves the arrow keys to the mode list', () => {
+    const deps = setup();
+    document.body.insertAdjacentHTML('beforeend', '<div id="mode-list"><button id="card">Neon</button></div>');
+    const card = document.getElementById('card');
+    card.focus();
+    press(card, 'ArrowRight', 'ArrowRight');
+    expect(deps.engine.skip).not.toHaveBeenCalled();
+  });
+});
+

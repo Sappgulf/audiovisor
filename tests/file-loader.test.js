@@ -212,3 +212,16 @@ describe('drag and drop', () => {
     expect(s.engine.addToQueue).toHaveBeenCalledWith([mp3]);
   });
 });
+
+describe('playlist size limit', () => {
+  it('refuses an oversize playlist before reading it', async () => {
+    const { PLAYLIST_MAX_BYTES } = await import('../src/playlist.js');
+    const s = setup();
+    const big = file('huge.m3u', { size: PLAYLIST_MAX_BYTES + 1, text: '#EXTM3U\n' });
+    big.text = vi.fn(big.text);
+    await s.loader.loadFiles([big]);
+    expect(big.text).not.toHaveBeenCalled();
+    expect(toastText(s.toast)).toContain('too large');
+  });
+});
+

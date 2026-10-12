@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createSettingsUI } from '../src/settings-ui.js';
+import { SETTINGS_KEY, LEGACY_SETTINGS_KEY } from '../src/settings.js';
 
 const VOCAB = {
   modeIds: ['bars', 'tunnel'],
@@ -159,5 +160,24 @@ describe('settings import', () => {
   it('reports a file with nothing usable in it', async () => {
     await pick(new File([JSON.stringify({ unknown: 1 })], 's.json'));
     expect(toast.mock.calls.at(-1)[0]).toContain('nothing usable');
+  });
+});
+
+describe('reset', () => {
+  it('pauses the unload save before it clears the look, then reloads', () => {
+    const order = [];
+    document.body.innerHTML = '<button id="settings-reset"></button>';
+    localStorage.setItem(SETTINGS_KEY, '{}');
+    localStorage.setItem(LEGACY_SETTINGS_KEY, '{}');
+    createSettingsUI({
+      state, engine: { volume: 0.5, loop: false, eqFilters: [] }, sliderEls: {}, eqFreqs: [], getAutoDj: () => false,
+      vocab: VOCAB, applySettings, saveSettings, download: vi.fn(), toast, setReduceFlashing,
+      pauseSaves: () => order.push('pause'),
+      location: { reload: () => order.push('reload') },
+    });
+    document.getElementById('settings-reset').click();
+    expect(order).toEqual(['pause', 'reload']);
+    expect(localStorage.getItem(SETTINGS_KEY)).toBeNull();
+    expect(localStorage.getItem(LEGACY_SETTINGS_KEY)).toBeNull();
   });
 });

@@ -4,14 +4,13 @@
  * adds, and playing one of those rows. Loaded on first use by the queue panel
  * so the parser and this code stay out of the entry chunk.
  */
-import { parsePlaylistInfo } from './playlist.js';
+import { parsePlaylistInfo, PLAYLIST_MAX_BYTES } from './playlist.js';
 import { esc } from './utils.js';
 
 /** M3U and PLS. Not an ACCEPT_ATTR, so this file does not pull in formats.js. */
 const PLAYLIST_ACCEPT = '.m3u,.m3u8,.pls';
 /* Real playlists are a few KB; anything past these limits is not one, so it is
    refused before it is read or queued. */
-const PLAYLIST_MAX_BYTES = 256 * 1024;
 const PLAYLIST_MAX_ITEMS = 500;
 
 /** @type {{ engine: any, toast: Function, onQueued: () => void } | null} */

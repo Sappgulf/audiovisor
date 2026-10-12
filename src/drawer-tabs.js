@@ -53,9 +53,14 @@ export function createDrawerTabs({ onSourceTab, onStudioTab, doc = document } = 
   tabs.forEach((btn, i) => {
     btn.addEventListener('click', () => setDrawerTab(btn.dataset.tab));
     btn.addEventListener('keydown', (e) => {
-      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      // the WAI-ARIA tab pattern: arrows step, Home and End jump to the ends
+      let next;
+      if (e.key === 'ArrowRight') next = tabs[(i + 1) % tabs.length];
+      else if (e.key === 'ArrowLeft') next = tabs[(i + tabs.length - 1) % tabs.length];
+      else if (e.key === 'Home') next = tabs[0];
+      else if (e.key === 'End') next = tabs[tabs.length - 1];
+      else return;
       e.preventDefault();
-      const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
       next.focus();
       setDrawerTab(next.dataset.tab);
     });

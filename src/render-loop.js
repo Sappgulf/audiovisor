@@ -152,6 +152,9 @@ export function createRenderLoop({
   let healthyStreak = 0;
   /* healthy windows held at the cap, toward CAP_RETRY_WINDOWS */
   let capStreak = 0;
+  // a 2D quality change waits for two windows that agree (see the 2D branch)
+  let want2dWant = null;
+  let want2dRun = 0;
   /* the highest tier this mode may climb back to: set just under a tier the
      sampler had to step down from, so a mode does not oscillate between a
      tier it cannot hold and the one below. Cleared on a mode change. */
@@ -321,7 +324,9 @@ export function createRenderLoop({
       const drop = levels?.drop || 0;
       const dtMotion = dtMs * (1 - 0.45 * drop);
       ray.render(idle, freq, wave, levels, dtMotion, null, stereoL, stereoR);
-      frameDrawn = ray.canvas;
+      // an idle frame that the stage skipped leaves the canvas blank once it is
+      // composited, so a snapshot must not copy it
+      frameDrawn = ray.drewLast === false ? null : ray.canvas;
     } else {
       rayCanvasEl.classList.remove('is-live');
       if (state.modeId === 'gpu') startGpu?.();
@@ -441,6 +446,12 @@ export function createRenderLoop({
       severeRun = Number.isFinite(frameGap) && frameGap > rayBaseline * SEVERE ? severeRun + 1 : 0;
       if (state.raytraceWanted && ray.ok && severeRun >= 2 && TIERS.indexOf(ray.quality) > 0) {
         const { tier } = nextTier(ray.quality, frameGap, state.rayQuality, rayBaseline);
+        // the same penalty as the normal fall: without a cap, the climb went
+        // straight back to the tier that had just failed
+        if (TIERS.indexOf(tier) < TIERS.indexOf(ray.quality)) {
+          climbCap = tier;
+          climbCaps.set(state.modeId, tier);
+        }
         applyTier(ray, tier);
       }
     } else if (!resumed && Number.isFinite(frameGap) && frameGap > 0) frameTimes.push(frameGap);
@@ -473,7 +484,18 @@ export function createRenderLoop({
         }
         applyTier(ray, tier);
       } else {
-        renderer.setQuality(next2dQuality(renderer.quality, avg, relaxed));
+        /* A 2D change reallocates the canvas, trail and glow buffers, and at 2x
+           the 'low' step has fewer pixels, so one window could flip the stage
+           back and forth. It takes two windows that agree. */
+        const want = next2dQuality(renderer.quality, avg, relaxed);
+        if (want === renderer.quality) { want2dWant = null; want2dRun = 0; }
+        else if (want === want2dWant) want2dRun++;
+        else { want2dWant = want; want2dRun = 1; }
+        if (want !== renderer.quality && want2dRun >= 2) {
+          renderer.setQuality(want);
+          want2dWant = null;
+          want2dRun = 0;
+        }
       }
     }
   }
@@ -501,9 +523,13 @@ export function createRenderLoop({
     scheduleResize,
     /** A mode change invalidates the tier the last mode adapted to. */
     /** @param {string} [modeId] the mode being switched to */
+    /* the cap this mode last settled at, or null: the stage may not start above it */
+    capFor: (modeId) => climbCaps.get(modeId) ?? null,
     resetAdaptation: (modeId = state.modeId) => {
       healthyStreak = 0;
       capStreak = 0;
+      want2dWant = null;
+      want2dRun = 0;
       climbCap = climbCaps.get(modeId) ?? null;
       severeRun = 0;
       settleFrames = SETTLE_AFTER_MODE_CHANGE;

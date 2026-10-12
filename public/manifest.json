@@ -20,12 +20,6 @@
       "short_name": "Demo",
       "url": "/?demo=1",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
-    },
-    {
-      "name": "Stage",
-      "short_name": "Stage",
-      "url": "/?stage=1",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]
 }

@@ -402,20 +402,22 @@ export class AudioEngine extends EventTarget {
   async addToQueue(files) {
     const errors = [];
     this.evicted = 0;
+    const firstNew = this.queue.length;
     for (const file of files) {
       try {
         const decoded = await this.decodeFile(file);
         this.queue.push(decoded);
-        this.evicted += this._trimQueue();
+        this.evicted += this._trimQueue([this.queue.length - 1]);
       } catch (err) {
         // name and cause, so the caller can say why (unsupported, no audio track, corrupt)
         errors.push({ name: file.name || 'file', error: err ?? null });
       }
     }
-    if (this.queueIndex === -1 && this.queue.length) {
-      this.queueIndex = 0;
-      this._applyQueueItem(0);
-    }
+    // load the first new file when nothing is loaded. A queued stream that is
+    // selected but not loaded (addUrlItems) used to block this, so the file
+    // sat in the queue and never played
+    // only from an idle state: a mic, a capture, a stream or Apple Music is left alone
+    if (!this.hasTrack && (this.mode === 'none' || this.mode === 'file') && firstNew < this.queue.length) this._applyQueueItem(firstNew);
     if (this.onQueueChange) this.onQueueChange();
     return errors;
   }
@@ -470,7 +472,7 @@ export class AudioEngine extends EventTarget {
    * stays put — name, duration and position are all intact — and the buffer
    * is decoded again the moment that track is selected.
    */
-  _trimQueue() {
+  _trimQueue(keep = []) {
     // ~1500s of 44.1kHz stereo float32 is roughly 500MB resident
     const MAX_SECONDS = 1500;
     let released = 0;
@@ -481,7 +483,7 @@ export class AudioEngine extends EventTarget {
       let victim = -1;
       let best = -1;
       this.queue.forEach((q, i) => {
-        if (!q.buffer || !q.file || i === this.queueIndex) return;
+        if (!q.buffer || !q.file || i === this.queueIndex || keep.includes(i)) return;
         const d = Math.abs(i - this.queueIndex);
         if (d > best) { best = d; victim = i; }
       });
@@ -498,7 +500,7 @@ export class AudioEngine extends EventTarget {
     if (!item || item.buffer || !item.file) return item?.buffer || null;
     const decoded = await this.decodeFile(item.file);
     item.buffer = decoded.buffer;
-    this._trimQueue();
+    this._trimQueue([i]);
     return item.buffer;
   }
 
@@ -515,6 +517,8 @@ export class AudioEngine extends EventTarget {
       this.playUrl(item.url, item.meta).catch(() => {});
       return;
     }
+    // a live stream keeps its element running otherwise, and the file plays underneath it
+    if (this.mode === 'stream') this.stopStream();
     this.buffer = item.buffer;
     this.track = item.meta;
     this.offset = 0;
@@ -979,7 +983,7 @@ export class AudioEngine extends EventTarget {
         /* restore the rate through setSpeed, which re-anchors the clock. The
            old code wrote 1 or 1.5 straight to the source, so with the speed
            FX on the source ran at 1.5 while the clock still said 0.66 */
-        this.setSpeed(this.fx.speed ? 1.5 : 1);
+        this.setSpeed(this.fx.speed ? 1.5 : (this._chopPrevSpeed ?? 1));
       }
     }
   }
@@ -1139,8 +1143,9 @@ export class AudioEngine extends EventTarget {
     this.disableMic();
     this.disableCapture();
     if (this.playing && this.source) {
-      try { this.source.stop(); } catch {}
-      this.source = null;
+      // retire rather than stop: an onended left attached would advance the
+      // queue into a file while the stream plays
+      this._retireSource();
       this.playing = false;
     }
     this.external = null;
@@ -1162,6 +1167,9 @@ export class AudioEngine extends EventTarget {
     }
 
     this.streamTrack = { name: meta.name || 'Stream', url, ext: meta.ext || 'STREAM' };
+    // a stream started from a queue row is the selected entry, so Next counts from it
+    const at = this.queue.findIndex((q) => q.url === url);
+    if (at >= 0) this.queueIndex = at;
     this.mediaEl.src = url;
     this._setMode('stream');
     this.playing = true;
@@ -1479,6 +1487,18 @@ export class AudioEngine extends EventTarget {
     this._syncOffsetMs = clamp(ms, -300, 300);
     this.beat.leadSec = this._syncOffsetMs / 1000;
     this.dispatchEvent(new Event('syncchange'));
+  }
+
+  /* whole-track repeat. A source that is already playing takes the flag too,
+     so LOOP can change mid-track; it used to be read only when a source was
+     connected, which left a track looping after LOOP was turned off. */
+  get repeat() {
+    return this._repeat;
+  }
+
+  set repeat(on) {
+    this._repeat = !!on;
+    if (this.source) this.source.loop = this._repeat || !!this.track?.demo;
   }
 
   /** Grid beats reached since the session started. Increments once per beat. */

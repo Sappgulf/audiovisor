@@ -171,6 +171,7 @@ export class RayStage {
     this.rw = 0; this.rh = 0;
     this.targets = {};
     this.quality = 'high';
+    this._windowDpr = window.devicePixelRatio;
     this.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     this.mode = 0;
     this.pal = ['#ffb45c', '#ff8a3d', '#fff1d6'].map(hexToRgb);
@@ -482,6 +483,11 @@ export class RayStage {
 
   resize(w, h) {
     if (!this.ok) return;
+    // the window can move to a screen with another pixel ratio, or be zoomed
+    if (window.devicePixelRatio !== this._windowDpr) {
+      this._windowDpr = window.devicePixelRatio;
+      this.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    }
     // a non-finite size builds a zero-size framebuffer; see src/levels.js
     this.w = safeDimension(w);
     this.h = safeDimension(h);
@@ -659,9 +665,10 @@ export class RayStage {
     // budget on an idle stage
     if (idle && tOverride == null) {
       this._idleSkip = !this._idleSkip;
-      if (this._idleSkip) { this.t += Math.min(Math.max((dtMs || 16.7) / 1000, 0.001), 0.06); return; }
+      if (this._idleSkip) { this.t += Math.min(Math.max((dtMs || 16.7) / 1000, 0.001), 0.06); this.drewLast = false; return; }
       dtMs = (dtMs || 16.7) * 2;
     }
+    this.drewLast = true;
     const gl = this.gl;
     const dt = Math.min(Math.max((dtMs || 16.7) / 1000, 0.001), 0.06);
     this.t = tOverride != null ? tOverride : this.t + dt;

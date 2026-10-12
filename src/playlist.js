@@ -18,6 +18,9 @@ const MAX_NAME = 200;
  * @param {string} [baseUrl]  where the playlist was served from, if known
  * @returns {{ name: string, url: string }[]}
  */
+/** Largest playlist file read, in bytes. Anything bigger is refused before it is read. */
+export const PLAYLIST_MAX_BYTES = 256 * 1024;
+
 export function parsePlaylist(text, baseUrl) {
   return parsePlaylistInfo(text, baseUrl).entries;
 }

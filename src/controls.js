@@ -29,8 +29,9 @@ export function createControls({ engine, renderer, getRay, state, toast, setTogg
   const FX = ['reverb', 'limiter', 'lowpass', 'speed', 'autotune', 'chorus', 'echo', 'crush', 'chop', 'widener'];
   const EQ_FREQS = [60, 250, 1000, 4000, 12000];
 
-  const sliderEls = {};
-  const fxEls = {};
+  // no prototype: a name from a shared link ('constructor') must not resolve to a built-in
+  const sliderEls = Object.create(null);
+  const fxEls = Object.create(null);
 
   function applySlider(id, v) {
     const ray = getRay();

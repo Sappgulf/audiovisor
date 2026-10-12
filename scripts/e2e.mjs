@@ -47,7 +47,8 @@ writeTrack(join(SP, 'track-a.wav'), 55);
 writeTrack(join(SP, 'track-b.wav'), 65);
 const server = await createServer({ root: process.cwd(), server: { port: 0 }, logLevel: 'error' });
 await server.listen();
-const browser = await chromium.launch({ headless: false, args: ['--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--auto-select-desktop-capture-source=Entire screen', '--enable-usermedia-screen-capturing'] });
+// HEADLESS=1 and CHROMIUM_PATH let the script run where no display or default browser exists
+const browser = await chromium.launch({ headless: process.env.HEADLESS === '1', executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--auto-select-desktop-capture-source=Entire screen', '--enable-usermedia-screen-capturing'] });
 const ctx = await browser.newContext(MOBILE
   ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, serviceWorkers: 'block', permissions: ['microphone', 'clipboard-read', 'clipboard-write'], acceptDownloads: true }
   : { viewport: { width: 1440, height: 900 }, serviceWorkers: 'block', permissions: ['microphone', 'clipboard-read', 'clipboard-write'], acceptDownloads: true });

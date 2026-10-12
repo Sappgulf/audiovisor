@@ -1,6 +1,6 @@
 // @ts-check
 import {
-  SETTINGS_KEY, MAX_SETTINGS_BYTES, serializeSettings, validateSettings, isSettingsObject, isNewerSettingsFile,
+  SETTINGS_KEY, LEGACY_SETTINGS_KEY, MAX_SETTINGS_BYTES, serializeSettings, validateSettings, isSettingsObject, isNewerSettingsFile,
 } from './settings.js';
 import { remove as removeStored } from './storage.js';
 
@@ -23,12 +23,13 @@ import { remove as removeStored } from './storage.js';
  * @param {(blob: Blob, name: string) => void} deps.download
  * @param {(msg: string, opts?: object) => void} deps.toast
  * @param {(on: boolean) => void} deps.setReduceFlashing applies and remembers the choice
+ * @param {() => void} [deps.pauseSaves] stops the unload save; Reset calls it before it reloads
  * @param {Document} [deps.doc]
  * @param {Location} [deps.location]
  */
 export function createSettingsUI({
   state, engine, sliderEls, eqFreqs, getAutoDj, vocab, applySettings, saveSettings, download, toast,
-  setReduceFlashing, doc = document, location = window.location,
+  setReduceFlashing, pauseSaves, doc = document, location = window.location,
 }) {
   function currentSettings() {
     return serializeSettings({
@@ -68,7 +69,10 @@ export function createSettingsUI({
   doc.getElementById('settings-export')?.parentElement?.prepend(flashChip);
 
   doc.getElementById('settings-reset')?.addEventListener('click', () => {
+    // the unload save would write the current look straight back, so it stops first
+    pauseSaves?.();
     removeStored(SETTINGS_KEY);
+    removeStored(LEGACY_SETTINGS_KEY);
     removeStored('audiovisor.tour');
     location.reload();
   });

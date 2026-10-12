@@ -140,8 +140,13 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
 
   /** Playlist files are read as text. A local file has no base URL, so its relative links are dropped. */
   async function loadPlaylists(files) {
-    const { parsePlaylistInfo } = await import('./playlist.js');
+    const { parsePlaylistInfo, PLAYLIST_MAX_BYTES } = await import('./playlist.js');
     for (const f of files) {
+      // refused before it is read: a dropped file of any size used to be read whole into memory
+      if (f.size > PLAYLIST_MAX_BYTES) {
+        toast(`<b>${esc(f.name)}</b> is too large for a playlist — the limit is 256 KB`, { duration: 3200 });
+        continue;
+      }
       let text = '';
       try { text = await f.text(); } catch { /* unreadable reads as empty below */ }
       const { entries: items, total } = parsePlaylistInfo(text);

@@ -32,7 +32,7 @@ import { SETTINGS_KEY, readSettings, prefersReducedMotion } from './settings.js'
 /* localStorage writes throw in Safari private browsing and once the origin
    quota is full. Nothing here is worth failing over. See src/storage.js. */
 import { writeJSON } from './storage.js';
-import { initialTier } from './adaptive.js';
+import { initialTier, TIERS } from './adaptive.js';
 import { createArtLoader } from './art-loader.js';
 
 import { createRenderLoop } from './render-loop.js';
@@ -241,7 +241,7 @@ const { savePreset, loadPreset } = boot('look presets', () => createLookPresets(
   row: document.getElementById('preset-row'),
 })) ?? { savePreset() {}, loadPreset() {} };
 
-boot('collab', () => createCollab({ state, toast, setMode, setTheme, setFx }));
+const collab = boot('collab', () => createCollab({ state, toast, setMode, setTheme, setFx }));
 
 
 /* ---------- mode / theme switching ---------- */
@@ -286,7 +286,11 @@ function setMode(id, { restore = false } = {}) {
   /* Restart from the tier this device should begin at rather than the
      ceiling. On a phone the ceiling is a guaranteed stutter that adaptive
      stepping then has to undo; the climb takes it back up if there is room. */
-  const start = state.rayQualityExplicit ? state.rayQuality : initialTier(state.rayQuality);
+  let start = state.rayQualityExplicit ? state.rayQuality : initialTier(state.rayQuality);
+  // ...but never above the cap this mode last settled at, or each switch
+  // back to a heavy mode started a tier too high and stuttered before falling
+  const cap = renderLoop.capFor(id);
+  if (cap && TIERS.indexOf(cap) < TIERS.indexOf(start)) start = cap;
   if (ray.ok && ray.quality !== start) ray.setQuality(start);
   const changed = state.modeId !== id;
   state.modeId = id;
@@ -460,7 +464,11 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') { clearTimeout(_saveTimer); saveSettingsNow(); }
 });
 
+/* Set by Reset: the page is about to reload, and the unload save must not
+   write the look back into the storage Reset has just cleared. */
+let savesPaused = false;
 function saveSettingsNow() {
+  if (savesPaused) return;
   try {
     writeJSON(SETTINGS_KEY, currentSettings());
   } catch {}
@@ -510,12 +518,13 @@ function applySettings(s, { eq = false } = {}) {
     engine.setVolume(s.volume);
     $('volume-fill').style.width = `${s.volume * 100}%`;
   }
-  if (s.loop) {
-    engine.repeat = true;
-    setToggle($('loop-btn'), true);
+  /* a file that says false turns the feature off, rather than leaving it as it was */
+  if (typeof s.loop === 'boolean') {
+    engine.repeat = s.loop;
+    setToggle($('loop-btn'), s.loop);
   }
-  if (s.autopilot) setAutopilot(true, { silent: true });
-  if (s.autoDj) { autoDj = true; setToggle(document.getElementById('autodj-chip'), true, 'is-active'); }
+  if (typeof s.autopilot === 'boolean') setAutopilot(s.autopilot, { silent: true });
+  if (typeof s.autoDj === 'boolean') { autoDj = s.autoDj; setToggle(document.getElementById('autodj-chip'), s.autoDj, 'is-active'); }
   if (typeof s.reduceFlashing === 'boolean') applyReduceFlashing(s.reduceFlashing);
   if (s.speed && typeof engine.setSpeed === 'function') engine.setSpeed(s.speed);
   if (typeof s.syncOffsetMs === 'number' && typeof engine.syncOffsetMs === 'number') engine.syncOffsetMs = s.syncOffsetMs;
@@ -911,6 +920,8 @@ function applyReduceFlashing(on) {
 applyReduceFlashing(prefersReducedMotion());
 
 loadSettings();
+// a shared link wins over the stored look, so it replays after the settings load
+collab?.applyShareHash();
 setModeStory(state.modeId);
 /* The CSS ships the brass tokens and state defaults to the brass theme, so
    first run happens to line up — but that is a coincidence between two files,
@@ -957,7 +968,7 @@ function buildCommands() {
     cmds.push({ label: `Save Preset ${slot}`, action: () => savePreset(slot), keys: `save preset ${slot}` });
     cmds.push({ label: `Load Preset ${slot}`, action: () => loadPreset(slot), keys: `load preset ${slot}` });
   }
-  cmds.push({ label: 'Sleep Timer 30m', action: () => document.getElementById('sleep-chip')?.click(), keys: 'sleep timer' });
+  cmds.push({ label: 'Cycle sleep timer', action: () => document.getElementById('sleep-chip')?.click(), keys: 'sleep timer' });
   cmds.push({ label: 'Toggle Library', action: () => panels.toggleLibrary(), keys: 'library' });
   cmds.push({ label: 'Toggle Queue', action: () => panels.toggleQueue(), keys: 'queue' });
   cmds.push({ label: 'Clear Queue', action: () => panels.clearQueue(), keys: 'clear queue' });
@@ -990,6 +1001,7 @@ function isTypingTarget(el) {
 }
 
 const { currentSettings, paintFlash } = boot('settings UI', () => createSettingsUI({
+  pauseSaves: () => { savesPaused = true; },
   state,
   engine,
   sliderEls,
@@ -1049,15 +1061,23 @@ if (tabAudio?.getAttribute('aria-selected') === 'true') openAudioTab();
    on first use and stays out of the entry chunk. Until then this stub answers
    ? and the help button; once the module is up, its own listeners take over. */
 let shortcutsSheet = null;
-const openShortcuts = () => (shortcutsSheet ??= import('./shortcuts.js')
-  .then((m) => m.createShortcutsOverlay({ isTypingTarget })));
-$('help-btn')?.addEventListener('click', () => { if (!shortcutsSheet) openShortcuts().then((s) => s.toggle()); });
-$('shortcuts-more-btn')?.addEventListener('click', () => { if (!shortcutsSheet) openShortcuts().then((s) => s.toggle()); });
+/* A failed chunk load (a tab left open across a deploy) is not cached: the
+   rejected promise used to keep ?, Help and the menu item dead all session. */
+const openShortcuts = () => {
+  shortcutsSheet ??= import('./shortcuts.js')
+    .then((m) => m.createShortcutsOverlay({ isTypingTarget }))
+    .catch((err) => { shortcutsSheet = null; throw err; });
+  return shortcutsSheet;
+};
+const showShortcuts = () => openShortcuts().then((s) => s.toggle())
+  .catch(() => toast('Shortcuts <b>unavailable</b> — reload to try again', { duration: 2600 }));
+$('help-btn')?.addEventListener('click', () => { if (!shortcutsSheet) showShortcuts(); });
+$('shortcuts-more-btn')?.addEventListener('click', () => { if (!shortcutsSheet) showShortcuts(); });
 window.addEventListener('keydown', (e) => {
   if (shortcutsSheet || isTypingTarget(e.target)) return;
   if (e.key === '?' || (e.key === '/' && !e.shiftKey)) {
     e.preventDefault();
-    openShortcuts().then((s) => s.toggle());
+    showShortcuts();
   }
 });
 

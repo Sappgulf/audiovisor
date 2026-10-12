@@ -292,18 +292,9 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
       if (id) void playLibraryRecord(id);
       return;
     }
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      e.preventDefault();
-      e.stopPropagation();
-      const id = rows[libraryActiveIndex]?.dataset.id;
-      if (id) {
-        void (async () => {
-          await (await lib()).removeFromLibrary(id);
-          renderLibrary();
-          setLibraryActive(libraryActiveIndex, true);
-        })();
-      }
-    }
+    /* no key removes a saved track: Backspace is the usual "back" key, and this
+       used to delete a track on it with no confirmation. The row's delete
+       button is the way to remove one. */
   });
 
   function renderQueue() {
@@ -352,6 +343,12 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
     queuePanel.setAttribute('aria-hidden', String(!show));
     setToggle(triggerQueue, show);
     if (!show && hadFocus) triggerQueue.focus();
+    // the queue and the library share the same spot on screen, so one closes the other
+    if (show && !libraryPanel.classList.contains('is-hidden')) {
+      libraryPanel.classList.add('is-hidden');
+      libraryPanel.setAttribute('aria-hidden', 'true');
+      setToggle(triggerLibrary, false);
+    }
     if (show) {
       void dialogs();
       // warm the import module now: opening a file picker must happen inside the click, not after a network fetch
@@ -381,10 +378,10 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
       html += `<div class="library-empty mono">${baseMeta.length ? 'NO MATCHING TRACKS — WIDEN YOUR SEARCH' : 'NO SAVED TRACKS — PLAY A TRACK THEN HIT SAVE'}</div>`;
     } else {
       html += `<div class="library-list" role="listbox" aria-label="Saved library tracks">` + filteredMeta.map((m, i) => `
-      <div class="library-row ${m.edits ? 'is-remix' : ''}" data-id="${m.id}" data-index="${i}" role="option" id="lib-row-${i}" tabindex="-1" aria-selected="false">
+      <div class="library-row ${m.edits ? 'is-remix' : ''}" data-id="${esc(m.id)}" data-index="${i}" role="option" id="lib-row-${i}" tabindex="-1" aria-selected="false">
         <div style="flex:1; min-width:0">
           <div class="library-name">${esc(m.name)} ${m.edits ? '<span style="font-size:9px; color:var(--accent); margin-left:6px">REMIX</span>' : ''}</div>
-          <div class="mono library-meta">${esc(m.ext)} · ${(m.duration||0).toFixed(1)}s${m.edits ? ' · ' + Object.keys(m.edits).filter(k=>m.edits[k]).join(', ') : ''}</div>
+          <div class="mono library-meta">${esc(m.ext)} · ${(m.duration||0).toFixed(1)}s${m.edits ? ' · ' + Object.keys(m.edits).filter(k=>m.edits[k]).map(esc).join(', ') : ''}</div>
         </div>
         <div class="library-actions">
           <button class="ghost-btn lib-play" data-id="${m.id}" title="Play"><span class="ic ic-sm" data-icon="play"></span></button>

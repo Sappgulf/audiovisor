@@ -106,6 +106,8 @@ export class Renderer {
        isLowPowerDevice() looks at more than one signal for that reason. */
     const mem = navigator.deviceMemory || 8;
     const dprCap = (mem < 4 || isLowPowerDevice()) ? 1.5 : 2;
+    this._dprCap = dprCap;
+    this._windowDpr = window.devicePixelRatio;
     this.dpr = Math.min(window.devicePixelRatio || 1, dprCap);
     this.w = 0;
     this.h = 0;
@@ -204,6 +206,12 @@ export class Renderer {
 
   resize() {
     if (this._dead) return;
+    // the ratio changes when the window moves screens or is zoomed; re-read it
+    // only when it has moved, so a ratio set by hand still holds
+    if (window.devicePixelRatio !== this._windowDpr) {
+      this._windowDpr = window.devicePixelRatio;
+      this.dpr = Math.min(window.devicePixelRatio || 1, this._dprCap || 2);
+    }
     const rect = this.canvas.getBoundingClientRect();
     // Math.max propagates NaN, so a non-finite rect used to produce a
     // NaN width that coerces to a zero-size canvas; see src/levels.js
@@ -1229,8 +1237,9 @@ export class Renderer {
     ctx.globalCompositeOperation = 'source-over';
 
     /* phosphor buffer */
-    if (!this.scopeCv || this._scopeW !== w || this._scopeQ !== this.quality) {
+    if (!this.scopeCv || this._scopeW !== w || this._scopeH !== h || this._scopeQ !== this.quality) {
       this._scopeW = w;
+      this._scopeH = h;
       this._scopeQ = this.quality;
       this.scopeCv = document.createElement('canvas');
       this.scopeCv.width = Math.max(2, Math.round(w));
