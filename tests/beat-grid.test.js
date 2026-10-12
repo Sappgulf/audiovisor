@@ -171,3 +171,100 @@ describe('settle and jump', () => {
     expect(bt.bpm).toBeGreaterThan(0);
   });
 });
+
+/*
+ * 120 BPM pulse train fed at 60Hz with a bass level per frame. Beat n sits at
+ * n * 0.5s; bass is loud near every beat, louder when accent(n) is true.
+ * Returns one record per frame.
+ */
+function accentTrain(bt, { to, accent = (n) => n % 4 === 0, from = 0 }) {
+  const hit = new Uint8Array(64).fill(40);
+  for (let i = 0; i < 16; i++) hit[i] = 220;
+  const rest = new Uint8Array(64).fill(40);
+  const out = [];
+  for (let t = from; t <= to; t += 1 / 60) {
+    const n = Math.round(t / 0.5);
+    const d = Math.abs(t - n * 0.5);
+    const near = d < 0.08;
+    bt.process(d < (1 / 60) * 0.6 ? hit : rest, t, 0, near ? (accent(n) ? 1 : 0.47) : 0.05);
+    out.push({ t, n, bar: bt.beatInBar, beats: bt.beats, bpm: bt.bpm });
+  }
+  return out;
+}
+
+/* The frame at 0.12s after each beat, where the grid reads that beat. */
+const onBeat = (frames) => frames.filter((f) => Math.abs(f.t - (f.n * 0.5 + 0.12)) < 1 / 120);
+
+describe('downbeat', () => {
+  it('reads no bar position with no tempo', () => {
+    expect(new BeatTracker().beatInBar).toBe(0);
+  });
+
+  it('puts the accented beat on 0 after a few bars of an every-fourth accent', () => {
+    const bt = new BeatTracker();
+    const beats = onBeat(accentTrain(bt, { to: 24 })).filter((f) => f.n >= 16);
+    expect(beats.length).toBeGreaterThan(20);
+    const offset = (beats[0].bar - beats[0].n) & 3;
+    for (const f of beats) {
+      expect((f.bar - f.n) & 3).toBe(offset);          // one consistent bar grid
+      if (f.n % 4 === 0) expect(f.bar).toBe(0);         // the accent lands on 0
+    }
+  });
+
+  it('keeps the bar on the accent when the accent falls on another slot', () => {
+    const bt = new BeatTracker();
+    const beats = onBeat(accentTrain(bt, { to: 24, accent: (n) => n % 4 === 2 })).filter((f) => f.n >= 16);
+    for (const f of beats) if (f.n % 4 === 2) expect(f.bar).toBe(0);
+  });
+
+  it('a steady, unaccented train never moves the bar', () => {
+    const bt = new BeatTracker();
+    const frames = accentTrain(bt, { to: 16, accent: () => false }).filter((f) => f.bpm > 0);
+    expect(frames.length).toBeGreaterThan(200);
+    // the bar offset against the beat count is fixed for the whole run
+    const offset = (frames[0].bar - frames[0].beats) & 3;
+    for (const f of frames) expect((f.bar - f.beats) & 3).toBe(offset);
+  });
+});
+
+describe('beat stability', () => {
+  it('beatCount never goes backwards, including a backward jump', () => {
+    const bt = new BeatTracker();
+    const first = accentTrain(bt, { to: 10 });
+    bt.jumpTo(2.0);
+    const second = accentTrain(bt, { from: 2.02, to: 6 });
+    const all = [...first, ...second];
+    for (let i = 1; i < all.length; i++) expect(all[i].beats).toBeGreaterThanOrEqual(all[i - 1].beats);
+  });
+
+  it('beatInBar moves one step for each counted beat, except at an explicit jump', () => {
+    const bt = new BeatTracker();
+    const frames = accentTrain(bt, { to: 30 });
+    let mismatches = 0;
+    let lastMismatchT = -1;
+    for (let i = 1; i < frames.length; i++) {
+      const a = frames[i - 1];
+      const b = frames[i];
+      if (a.bpm <= 0 || b.bpm <= 0) continue;
+      const beatStep = b.beats - a.beats;
+      if (((b.bar - a.bar) - beatStep) & 3) { mismatches++; lastMismatchT = b.t; }
+    }
+    // the only allowed bar move is the one that lands the downbeat, and it
+    // must come during the warm-up, not once the bar is established
+    expect(mismatches).toBeLessThanOrEqual(1);
+    expect(lastMismatchT).toBeLessThan(10);
+  });
+
+  it('a loop jump keeps beatInBar where the same song position was', () => {
+    const bt = new BeatTracker();
+    const first = onBeat(accentTrain(bt, { to: 12 }));
+    const at8 = first.find((f) => f.n === 16);   // beat 16 (8.0s) is an accent
+    expect(at8.bar).toBe(0);
+    const bpm = bt.bpm;
+    // loop back to 8.0s: the grid stays locked and the same beat reads the same
+    bt.jumpTo(8.0);
+    const again = onBeat(accentTrain(bt, { from: 8.02, to: 8.14 }));
+    expect(bt.bpm).toBe(bpm);
+    expect(again.find((f) => f.n === 16)?.bar).toBe(at8.bar);
+  });
+});

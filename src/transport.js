@@ -3,6 +3,22 @@ import { bindDragTrack, keyStep, makeDoubleTap } from './drag.js';
 import { createChromeVisibility } from './chrome-visibility.js';
 
 /**
+ * Where the A-B region sits on the seek track, as CSS percentages. No region,
+ * or no known length, is an empty span at the start.
+ *
+ * @param {{start: number, end: number} | null} region
+ * @param {number} duration
+ * @returns {{left: string, width: string}}
+ */
+export function loopSpan(region, duration) {
+  if (!region || !(duration > 0)) return { left: '0%', width: '0%' };
+  const pct = (s) => Math.max(0, Math.min(100, (s / duration) * 100));
+  const a = pct(region.start);
+  const b = pct(region.end);
+  return { left: `${a}%`, width: `${Math.max(0, b - a)}%` };
+}
+
+/**
  * Transport controls: play/pause, prev/next, loop, seek and volume, plus
  * the Media Session metadata and the cinema (fullscreen) chrome.
  *
@@ -115,7 +131,15 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
   let abStart = 0;
   let abEnd = 0;
   const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  // the region span is set from the engine's loop and length, both guarded:
+  // either can be missing on an engine that predates the A-B loop
+  function paintSeekLoop() {
+    const span = loopSpan(regionOf(), typeof engine.getDuration === 'function' ? engine.getDuration() : 0);
+    seekTrack.style.setProperty('--loop-l', span.left);
+    seekTrack.style.setProperty('--loop-w', span.width);
+  }
   function paintAb() {
+    paintSeekLoop();
     if (!abBtn) return;
     const r = regionOf();
     if (r) abStep = 2;
@@ -145,6 +169,8 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
   });
   // a new source has no loop to keep, so the A-B state starts over with it
   engine.on?.('source', () => { abStep = 0; paintAb(); });
+  // a loaded file brings its length; the span needs it, so repaint on state too
+  engine.on?.('state', paintSeekLoop);
   paintAb();
 
   bindDragTrack(seekTrack, (ratio) => {
@@ -252,5 +278,5 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
     }
   });
 
-  return { transportToggle, setVolumeUI, updateMediaSession, seekTrack };
+  return { transportToggle, setVolumeUI, updateMediaSession, seekTrack, paintSeekLoop };
 }

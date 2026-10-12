@@ -49,6 +49,25 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   const getQueueRows = () => queuePanel.querySelectorAll('.queue-row');
   const getLibraryRows = () => libraryPanel.querySelectorAll('.library-row');
 
+  // Both panels are modal dialogs: Tab wraps inside the open one, and focus
+  // that wanders out (a click on the page, a re-render) is brought back in.
+  const TABBABLE = 'button:not([disabled]), input, [tabindex="0"]';
+  function trapTab(panel, e) {
+    const items = panel.querySelectorAll(TABBABLE);
+    if (e.key !== 'Tab' || !items.length) return;
+    if (e.shiftKey && document.activeElement === items[0]) {
+      e.preventDefault();
+      items[items.length - 1].focus();
+    } else if (!e.shiftKey && document.activeElement === items[items.length - 1]) {
+      e.preventDefault();
+      items[0].focus();
+    }
+  }
+  document.addEventListener('focusin', (e) => {
+    const open = [queuePanel, libraryPanel].find((p) => !p.classList.contains('is-hidden'));
+    if (open && e.target instanceof Node && !open.contains(e.target)) open.querySelector(TABBABLE)?.focus();
+  });
+
   function setQueueActive(index, doFocus = false) {
     const rows = getQueueRows();
     const list = queuePanel.querySelector('.queue-list');
@@ -165,6 +184,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   });
 
   queuePanel.addEventListener('keydown', (e) => {
+    trapTab(queuePanel, e);
     const rows = getQueueRows();
     if (e.target.closest('.queue-remove')) return;
     if (!rows.length) {
@@ -267,6 +287,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   });
 
   libraryPanel.addEventListener('keydown', (e) => {
+    trapTab(libraryPanel, e);
     const rows = getLibraryRows();
     if (e.target.closest('#lib-search')) return;
     if (e.target.closest('.lib-play, .lib-export, .lib-del')) return;
@@ -366,9 +387,12 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
 
   function toggleQueue(force) {
     const show = force ?? queuePanel.classList.contains('is-hidden');
+    // focus inside a closing dialog would vanish with it, so it goes back to the trigger
+    const hadFocus = queuePanel.contains(document.activeElement) || document.activeElement === document.body;
     queuePanel.classList.toggle('is-hidden', !show);
     queuePanel.setAttribute('aria-hidden', String(!show));
     setToggle(triggerQueue, show);
+    if (!show && hadFocus) triggerQueue.focus();
     if (show) {
       // warm the import module now: opening a file picker must happen inside the click, not after a network fetch
       void queueImport();
@@ -376,7 +400,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
       renderQueue();
       requestAnimationFrame(() => {
         const rows = getQueueRows();
-        if (!rows.length) return;
+        if (!rows.length) { queuePanel.querySelector(TABBABLE)?.focus(); return; }
         rows[queueActiveIndex]?.focus();
       });
     }
@@ -427,9 +451,12 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
 
   function toggleLibrary(force) {
     const show = force ?? libraryPanel.classList.contains('is-hidden');
+    // (body counts: Escape blurs a focused search box before it closes the panel)
+    const hadFocus = libraryPanel.contains(document.activeElement) || document.activeElement === document.body;
     libraryPanel.classList.toggle('is-hidden', !show);
     libraryPanel.setAttribute('aria-hidden', String(!show));
     setToggle(triggerLibrary, show);
+    if (!show && hadFocus) triggerLibrary.focus();
     if (show) {
       renderLibrary().then(() => {
         const sInput = libSearchInput();

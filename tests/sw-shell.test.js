@@ -81,7 +81,6 @@ function bootWorker({ failPaths = [] } = {}) {
     clients: { claim: async () => {} },
   };
   const location = { origin: ORIGIN };
-  // eslint-disable-next-line no-new-func
   new Function('self', 'caches', 'fetch', 'location', 'Response', 'URL', src)(
     self, caches, network, location, globalThis.Response, URL,
   );

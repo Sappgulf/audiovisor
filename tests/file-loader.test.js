@@ -163,7 +163,7 @@ describe('file loading', () => {
     const s = setup(undefined, { onPlaylist });
     const m3u = file('list.m3u', { text: '#EXTM3U\n#EXTINF:-1,Night\nhttps://example.test/night.mp3\n' });
     await s.loader.loadFiles([m3u]);
-    expect(onPlaylist).toHaveBeenCalledWith([{ name: 'Night', url: 'https://example.test/night.mp3' }], 'list.m3u');
+    expect(onPlaylist).toHaveBeenCalledWith([{ name: 'Night', url: 'https://example.test/night.mp3' }], 'list.m3u', 0);
     expect(s.engine.addToQueue).not.toHaveBeenCalled();
   });
 

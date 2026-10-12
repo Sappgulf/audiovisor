@@ -15,6 +15,8 @@ const SHORTCUTS = [
     ['Fine seek ±3s', 'Shift + ← / →'],
     ['Volume', '↑ / ↓'],
     ['Volume (stage)', 'Scroll wheel'],
+    ['A-B loop: set A, B, then clear', 'B'],
+    ['Tap tempo', 'Shift + T'],
   ]],
   ['Look', [
     ['Next stage mode', 'M'],

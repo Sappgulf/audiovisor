@@ -99,7 +99,14 @@ export function createKeyboardShortcuts({
         setMode(MODES[i].id);
         break;
       }
+      // T is the theme cycle; Shift+T taps the tempo (the Studio button, when mounted)
       case 'KeyT': {
+        if (e.shiftKey) {
+          const tap = $('tap-tempo-btn');
+          if (tap) tap.click();
+          else engine.tapTempo?.();
+          break;
+        }
         const i = (THEMES.findIndex((t) => t.id === getThemeId()) + 1) % THEMES.length;
         setTheme(THEMES[i].id);
         break;
@@ -125,6 +132,9 @@ export function createKeyboardShortcuts({
         break;
       case 'KeyL':
         panels.toggleLibrary();
+        break;
+      case 'KeyB':
+        $('loop-ab-btn')?.click();
         break;
       case 'KeyC': {
         const btn = getFxEl('chop');
