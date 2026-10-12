@@ -20,11 +20,11 @@ function bins(n, seed) {
   return out;
 }
 
-describe('band levels from one walk of the bins', () => {
-  it('match four separate bandAvg passes bit for bit, across sizes and frames', () => {
+describe('band levels are pinned', () => {
+  it('match the four bandAvg means bit for bit, across sizes and frames', () => {
     for (const n of [1024, 512, 64, 16, 4]) {
       const engine = new AudioEngine();
-      // beat input is a separate buffer, so only the band walk reads `freq`
+      // beat input gets its own buffer, so the band means are all that read `freq`
       engine.beatAnalyser = { getByteFrequencyData: () => {} };
       engine.beatFreq = new Uint8Array(n);
       for (let f = 0; f < 20; f++) {
@@ -40,24 +40,6 @@ describe('band levels from one walk of the bins', () => {
         expect(lv.level).toBe(bandAvg(freq, 2, iTOP));
       }
     }
-  });
-
-  it('reads each analyser bin at most once per frame', () => {
-    const n = 1024;
-    const engine = new AudioEngine();
-    engine.beatAnalyser = { getByteFrequencyData: () => {} };
-    engine.beatFreq = new Uint8Array(n);
-    const base = bins(n, 7);
-    let reads = 0;
-    const freq = new Proxy(base, {
-      get(target, prop) {
-        if (typeof prop === 'string' && /^\d+$/.test(prop)) reads++;
-        return Reflect.get(target, prop);
-      },
-    });
-    engine.getLevels({ freq, wave: null, stereoL: null, stereoR: null }, 0);
-    const binHz = 44100 / 2 / n;
-    expect(reads).toBeLessThanOrEqual(Math.ceil(16000 / binHz));
   });
 });
 

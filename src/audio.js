@@ -1402,25 +1402,10 @@ export class AudioEngine {
        The high band picks up the same edge so cymbal air is no longer
        thrown away at 8kHz. */
     const iTOP = Math.min(n, Math.ceil(16000 / binHz));
-    /* all four bands come from one walk of the bins, not four. Each band
-       still adds its bins in ascending order, so every mean is bit-identical
-       to bandAvg over its own range, at about half the analyser reads */
-    let sBass = 0;
-    let sMid = 0;
-    let sHigh = 0;
-    let sLevel = 0;
-    const end = Math.max(iTOP, iMid);
-    for (let i = 0; i < end; i++) {
-      const v = freq[i];
-      if (i >= 2 && i < iBass) sBass += v;
-      if (i >= iBass && i < iMid) sMid += v;
-      if (i >= iMid && i < iTOP) sHigh += v;
-      if (i >= 2 && i < iTOP) sLevel += v;
-    }
-    const bass = sBass / Math.max(1, iBass - 2) / 255;
-    const mid = sMid / Math.max(1, iMid - iBass) / 255;
-    const high = sHigh / Math.max(1, iTOP - iMid) / 255;
-    const level = sLevel / Math.max(1, iTOP - 2) / 255;
+    const bass = bandAvg(freq, 2, iBass);
+    const mid = bandAvg(freq, iBass, iMid);
+    const high = bandAvg(freq, iMid, iTOP);
+    const level = bandAvg(freq, 2, iTOP);
     /* a loop wrap moves the playhead, so the caller's timeSec is stale */
     if (this._checkLoop()) timeSec = null;
 
