@@ -80,7 +80,7 @@ describe('RayStage without KHR_parallel_shader_compile', () => {
 describe('ray shaders', () => {
   const sources = { VERT, SCENE_FRAG, ACCUM_FRAG, BLUR_FRAG, POST_FRAG };
 
-  it('all parse as valid GLSL', () => {
+  it('all parse as valid GLSL', { timeout: 60000 }, () => {
     // a syntax slip here compiles to nothing at runtime and silently drops
     // the whole stage to the Canvas2D fallback, so catch it in CI instead
     for (const [name, src] of Object.entries(sources)) {

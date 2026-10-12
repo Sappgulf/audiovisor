@@ -224,8 +224,13 @@ export class Renderer {
     /* the effective backing scale — render() and the trail composite must
        use this, not this.dpr, or a capped stage draws zoomed and clips */
     this._scale = scale;
-    this.canvas.width = safeDimension(this.w * scale);
-    this.canvas.height = safeDimension(this.h * scale);
+    /* assigning width or height reallocates the backing store even when the
+       value is unchanged, so only assign on a real change. Each frame clears
+       the canvas itself, so nothing depends on the implicit clear. */
+    const bw = safeDimension(this.w * scale);
+    const bh = safeDimension(this.h * scale);
+    if (this.canvas.width !== bw) this.canvas.width = bw;
+    if (this.canvas.height !== bh) this.canvas.height = bh;
     this._floorGrads = null;
     this._gradCache.clear();
   }
@@ -1410,7 +1415,11 @@ export class Renderer {
         const pts = this.particles;
         const cell = 85;
         const cols = Math.ceil(w / cell);
-        const grid = new Map();
+        /* buckets are reused frame to frame: a fresh Map and array per cell
+           was most of this pass's garbage. Emptied buckets iterate as no-ops,
+           and insertion order is unchanged, so the pairs visited are identical. */
+        const grid = this._lineGrid || (this._lineGrid = new Map());
+        for (const bucket of grid.values()) bucket.length = 0;
         for (let i = 0; i < pts.length; i++) {
           const k = ((pts[i].x / cell) | 0) + ((pts[i].y / cell) | 0) * cols;
           let bucket = grid.get(k);

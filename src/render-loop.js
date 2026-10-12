@@ -85,7 +85,7 @@ function serviceCopies(src) {
  * @param {() => boolean} deps.getAutoDj
  * @param {() => boolean} deps.isDjFiring
  * @param {(v: boolean) => void} deps.setDjFiring
- * @param {() => void} [deps.paintTempo] writes the tempo readout from the transport
+ * @param {(bpm?: number) => void} [deps.paintTempo] writes the tempo readout from the transport
  * @param {() => void} [deps.paintSeekLoop] paints the A-B span on the seek track
  * @param {(tier: string) => void} [deps.onQualityChange] called when the
  *   adaptive sampler moves the effective raytrace tier
@@ -110,6 +110,9 @@ export function createRenderLoop({
   const moodChipEl = doc.getElementById('mood-chip');
   const moodValueEl = doc.getElementById('mood-value');
   const shellEl = doc.getElementById('shell');
+  /* the two stage canvases are looked up once here, not on every frame */
+  const rayCanvasEl = doc.getElementById('ray-canvas');
+  const vizCanvasEl = doc.getElementById('viz-canvas');
   const frameTimes = [];
   /* the display's natural frame interval, learned from the fastest frames we
      see rather than assumed to be 60Hz; null until one has been seen */
@@ -269,15 +272,15 @@ export function createRenderLoop({
 
     if (audioOnly) {
       renderer._lastFrameDrawn = false;
-      doc.getElementById('ray-canvas').classList.remove('is-live');
-      doc.getElementById('viz-canvas').classList.add('is-off');
+      rayCanvasEl.classList.remove('is-live');
+      vizCanvasEl.classList.add('is-off');
       if (webgpuCanvas) webgpuCanvas.style.display = 'none';
     } else if (rtOn) {
       // raytraced stage owns every mode; the 2D renderer still advances its
       // beat envelope so chrome (VU, chips, favicon) keeps working
       if (ray.w !== renderer.w || ray.h !== renderer.h) ray.resize(renderer.w, renderer.h);
-      doc.getElementById('ray-canvas').classList.add('is-live');
-      doc.getElementById('viz-canvas').classList.add('is-off');
+      rayCanvasEl.classList.add('is-live');
+      vizCanvasEl.classList.add('is-off');
       if (webgpuCanvas) webgpuCanvas.style.display = 'none';
       renderer.updateAnalysis(levels, dtMs);
       /* drop slow-mo: scene time stretches (up to ~45%) while the drop
@@ -288,7 +291,7 @@ export function createRenderLoop({
       ray.render(idle, freq, wave, levels, dtMotion, null, stereoL, stereoR);
       frameDrawn = ray.canvas;
     } else {
-      doc.getElementById('ray-canvas').classList.remove('is-live');
+      rayCanvasEl.classList.remove('is-live');
       if (state.modeId === 'gpu') startGpu?.();
       /* A lost device or context cannot draw, and a black canvas with the
          Canvas2D layer hidden is worse than the fallback, so a lost one is
@@ -305,7 +308,7 @@ export function createRenderLoop({
         webgpuCanvas.height = Math.round(renderer.h * backing);
       }
       if (webgpuCanvas) webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
-      doc.getElementById('viz-canvas').classList.toggle('is-off', gpuMode);
+      vizCanvasEl.classList.toggle('is-off', gpuMode);
       if (gpuMode && !idle && levels) {
         // the 2D canvas is not drawn this frame, so it cannot be the next dissolve's source
         renderer._lastFrameDrawn = false;
@@ -347,7 +350,7 @@ export function createRenderLoop({
       if (_uiAcc >= 100) {
         _uiAcc = 0;
         if (audioOnly) {
-          paintTempo?.();
+          paintTempo?.(0);
           bpmValueEl.title = '';
           bassChipEl.classList.add('is-hidden');
           moodChipEl.classList.add('is-hidden');
@@ -358,7 +361,7 @@ export function createRenderLoop({
              decoded track, and for files until their analysis finishes. */
           const liveBpm = bi.bpm && bi.confidence > 0.25 ? bi.bpm : 0;
           const analyzedBpm = input === 'track' ? state.analyzedBpm : 0;
-          paintTempo?.();
+          paintTempo?.(analyzedBpm || liveBpm || 0);
           bpmValueEl.title = analyzedBpm ? 'Analysed from the track'
             : liveBpm ? 'Live tempo lock' : '';
           bassChipEl.classList.toggle('is-hidden', !(renderer.sm.bass > 0.35));

@@ -182,7 +182,7 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
   // a new source has no loop to keep, so the A-B state starts over with it
   engine.on?.('source', () => { abStep = 0; paintAb(); });
   // a loaded file brings its length; the span needs it, so repaint on state too
-  engine.on?.('state', () => { paintSeekLoop(); syncPositionState(); paintTempo(); });
+  engine.on?.('state', () => { paintSeekLoop(); syncPositionState(); });
   paintAb();
 
   /* Tempo chip: the value to one decimal ("--" with no tempo), and the chip
@@ -190,8 +190,9 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
   const bpmChip = $('bpm-chip');
   const bpmValue = $('bpm-value');
   let shownDown = false;
-  function paintTempo() {
-    const bpm = engine.displayBpm;
+  /* The render loop passes the tempo it chose (analysed first, then a
+     confident live lock). Called without one, it shows the engine's value. */
+  function paintTempo(bpm = engine.displayBpm) {
     const text = bpm > 0 ? bpm.toFixed(1) : '--';
     if (bpmValue && bpmValue.textContent !== text) bpmValue.textContent = text;
     const down = bpm > 0 && engine.beatInBar === 0;
