@@ -1212,7 +1212,8 @@ input[type="range"].ctrl-slider {
   background: rgba(255,235,205,0.08);
   border-radius: 99px;
   cursor: pointer;
-  outline: none;
+  /* no outline: none here. This selector outranks the global focus-visible
+     ring, so the drawer sliders and EQ bands showed no focus at all */
   box-shadow: 0 1px 0 rgba(0,0,0,0.22) inset;
 }
 input[type="range"].ctrl-slider::-webkit-slider-thumb {
@@ -1514,6 +1515,10 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   cursor: pointer;
   position: relative;
 }
+/* the bar is 4px tall, which is not a finger target on tablets. An invisible
+   band over it takes the touch; the pointer maths only reads x, so it still
+   maps onto the same track */
+.volume-track::before { content: ''; position: absolute; inset: -12px 0; }
 .volume-fill {
   position: absolute;
   left: 0;
@@ -1849,7 +1854,6 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
     left: 0;
     bottom: 0;
     width: 100%;
-    max-height: 72vh;
     border-radius: 20px 20px 0 0;
     border-left: none;
     border-bottom: none;
@@ -1947,7 +1951,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 }
 .mini-btn:hover { color: var(--text); border-color: var(--border-strong); background: var(--glass-hover); transform: translateY(-1px); }
 
-.spotify-block { display: flex; flex-direction: column; gap: 12px; background: var(--glass); border: 1px solid var(--border-soft); border-radius: 12px; padding: 14px; }
+.provider-block { display: flex; flex-direction: column; gap: 12px; background: var(--glass); border: 1px solid var(--border-soft); border-radius: 12px; padding: 14px; }
 .apple-block { border-color: rgba(var(--accent-rgb), 0.16); }
 
 .sp-head {
@@ -2028,42 +2032,6 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   border: 1px solid var(--accent-line);
 }
 
-.sp-login { display: flex; gap: 8px; }
-
-.sp-profile {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-}
-.sp-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #d9b089, #b8936a);
-  color: #1a1816;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.16);
-}
-.apple-avatar { background: linear-gradient(135deg, #f5e6d3, #d9b089); font-size: 17px; }
-.sp-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text);
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: 600;
-}
-.sp-dev { font-size: 9px; color: var(--text-40); letter-spacing: 0.1em; font-weight: 500; transition: color 0.3s var(--ease); }
-.sp-dev.dot-ok { color: #8ec07c; }
 
 .sp-search {
   display: flex;
@@ -2800,7 +2768,7 @@ html, body {
   #vu-meter { display: none; }
 
   /* the side drawer has to fit between a shorter topbar and transport */
-  .drawer { top: 58px; bottom: 74px; }
+  .drawer { top: 58px; bottom: 74px; right: max(16px, var(--sar)); }
 
   /* a landscape notch sits on the left or right edge, not the top */
   .topbar, .transport {
@@ -3284,10 +3252,9 @@ html, body {
 .connect-status, .connect-sub { display: flex; align-items: center; gap: 5px; font-size: 9px; letter-spacing: 0.1em; color: var(--text-40); }
 .connect-sub { margin-top: 4px; }
 .connect-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border-soft); }
-.connect-dot.sp { --brand-rgb: 30,215,96; }
 .connect-dot.am { --brand-rgb: 250,45,72; }
 .connect-dot.is-on { background: rgb(var(--brand-rgb)); box-shadow: 0 0 8px rgba(var(--brand-rgb), 0.6); }
-.provider-card { --brand-rgb: 30,215,96; --brand: rgb(var(--brand-rgb)); position: relative; overflow: hidden; }
+.provider-card { --brand-rgb: 250,45,72; --brand: rgb(var(--brand-rgb)); position: relative; overflow: hidden; }
 .provider-apple { --brand-rgb: 250,45,72; }
 .provider-card::before { content: ''; position: absolute; inset: 0 0 auto; height: 2px; background: linear-gradient(90deg, var(--brand), transparent); opacity: 0.35; }
 .provider-card.is-linked { border-color: rgba(var(--brand-rgb), 0.35); box-shadow: 0 8px 28px -14px rgba(var(--brand-rgb), 0.5); }
@@ -3295,8 +3262,7 @@ html, body {
 .provider-logo { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: rgba(var(--brand-rgb), 0.14); color: var(--brand); }
 .provider-logo svg { width: 16px; height: 16px; }
 .provider-card .sp-badge.is-on { color: var(--brand); border-color: rgba(var(--brand-rgb), 0.4); }
-.provider-btn, .provider-card .sp-connect { background: var(--brand); color: #0b0b0b; border: 0; }
+.provider-btn { background: var(--brand); color: #0b0b0b; border: 0; }
 .provider-btn { width: 100%; padding: 10px; border-radius: 999px; cursor: pointer; font: 600 12px/1 inherit; }
 .provider-apple .provider-btn { color: #fff; }
 .provider-btn:hover { filter: brightness(1.08); }
-.provider-card .sp-help .sp-login { margin-top: 8px; }

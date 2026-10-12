@@ -15,6 +15,9 @@ export function createOverflowMenu({ doc = document } = {}) {
   const moreBtn = doc.getElementById('more-btn');
 
   function closeMore() {
+    // a focused item is about to be hidden, which drops focus to the body;
+    // hand it back to the button that opened the menu instead
+    if (moreMenu?.contains(doc.activeElement)) moreBtn?.focus();
     moreMenu?.classList.add('is-hidden');
     moreBtn?.setAttribute('aria-expanded', 'false');
   }

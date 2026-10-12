@@ -1,5 +1,7 @@
+/* every icon is decoration: the control it sits in carries the name, so the
+   glyph is hidden from assistive tech rather than read as an unnamed image */
 const svg = (inner, viewBox = '0 0 24 24') =>
-  `<svg viewBox="${viewBox}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+  `<svg viewBox="${viewBox}" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 
 export const ICONS = {
   play: svg('<path d="M7 5.5 L19 12 L7 18.5 Z" fill="currentColor" stroke="none" stroke-width="0"/>'),
@@ -26,7 +28,6 @@ export const ICONS = {
   cloud: svg('<path d="M17.2 18.6 H9.2 A6.2 6.2 0 0 1 9.2 6.2 A6.2 6.2 0 0 1 15.4 7.4 H17.2 A4.2 4.2 0 0 1 17.2 18.6 Z" fill="none"/><path d="M9.2 12.8 H16.4" opacity="0.35"/>'),
   galaxy: svg('<circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/><ellipse cx="12" cy="12" rx="7.2" ry="7.2" fill="none" stroke-dasharray="3.2 3.2" opacity="0.7"/><path d="M19.8 8.2 A9.8 9.8 0 0 0 7.2 4.2" opacity="0.6"/><circle cx="19.2" cy="11" r="1.2" fill="currentColor" stroke="none"/><circle cx="6.2" cy="16" r="1" fill="currentColor" stroke="none"/>'),
   monitor: svg('<rect x="3" y="4.2" width="18" height="11.6" rx="1.8" fill="none"/><path d="M8.8 19.8 H15.2"/><path d="M12 15.8 V19.8"/><path d="M9.2 10.8 L11.2 12.8 L15.2 9.2" fill="none"/>'),
-  spotify: svg('<circle cx="12" cy="12" r="9.2" fill="none"/><path d="M8.4 10.6 C10.8 9.8 13.2 10 15.6 10.9" fill="none"/><path d="M8.6 13.2 C10.6 12.6 12.8 12.7 15 13.6" fill="none"/><path d="M9 15.6 C10.6 15.1 12.2 15.2 13.8 16" fill="none"/>'),
   keyboard: svg('<rect x="2.6" y="6" width="18.8" height="12" rx="2.2" fill="none"/><path d="M6.4 9.8 H6.5"/><path d="M9.8 9.8 H9.9"/><path d="M13.2 9.8 H13.3"/><path d="M16.6 9.8 H16.7"/><path d="M6.4 13 H6.5"/><path d="M9.8 13 H9.9"/><path d="M13.2 13 H13.3"/><path d="M16.6 13 H16.7"/><path d="M8.6 15.9 H15.4"/>'),
   plus: svg('<path d="M12 5.2 V18.8"/><path d="M5.2 12 H18.8"/>'),
   more: svg('<circle cx="5.4" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18.6" cy="12" r="1.7" fill="currentColor" stroke="none"/>'),

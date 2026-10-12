@@ -6,8 +6,8 @@ import { bindSheetDrag } from './sheet.js';
  *
  * On phones the drawer is presented as a bottom sheet with a scrim and a
  * drag-to-dismiss handle; on wider layouts it is a side panel. Both share
- * one open flag in `state`, and the transport goes inert under the sheet so
- * it can't be tabbed into while the drawer covers it.
+ * one open flag in `state`, and the page behind a sheet (topbar, stage,
+ * transport) goes inert so it can't be tabbed into while the drawer covers it.
  *
  * @param {object} deps
  * @param {any} deps.state
@@ -30,8 +30,12 @@ export function createDrawer({ state, doc = document }) {
     drawer.setAttribute('aria-hidden', String(!state.drawerOpen));
     drawer.inert = !state.drawerOpen;
     $('shell').classList.toggle('drawer-open', state.drawerOpen);
-    const transport = doc.querySelector('.transport');
-    if (transport) transport.inert = state.drawerOpen && win.innerWidth <= 640;
+    // a sheet covers the page, so the topbar, stage and transport behind it
+    // leave the focus order too; Tab used to walk into them under the scrim
+    const modal = state.drawerOpen && isSheet();
+    for (const el of [doc.querySelector('.topbar'), doc.querySelector('.workspace'), doc.querySelector('.transport')]) {
+      if (el) el.inert = modal;
+    }
   }
 
   function syncDrawer() {
@@ -76,9 +80,23 @@ export function createDrawer({ state, doc = document }) {
     isOpen: () => state.drawerOpen && isSheet(),
     onDismiss: () => setDrawerOpen(false),
   });
+  // Escape closes the drawer as it closes every other panel. It stays out of
+  // the way of a focused text field (the mode filter clears on Escape first),
+  // of a handler that already answered the key, and of any dialog that is
+  // open, which owns its own Escape.
+  win.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented || !state.drawerOpen) return;
+    if (e.target instanceof HTMLElement && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    if (doc.querySelector('[role="dialog"][aria-hidden="false"]')) return;
+    setDrawerOpen(false);
+  });
   // a sheet dragged part-way and then rotated to a wide layout would keep a
-  // stale inline transform
-  win.addEventListener('resize', () => { if (!isSheet()) drawer.style.transform = ''; });
+  // stale inline transform. Re-sync on resize too, so rotating into or out of
+  // the sheet picks up its scrim and its inert state.
+  win.addEventListener('resize', () => {
+    if (!isSheet()) drawer.style.transform = '';
+    syncDrawer();
+  });
   syncDrawer();
 
   return { setDrawerOpen, toggleDrawer, syncDrawer, isSheet };

@@ -39,6 +39,12 @@ export function createKeyboardShortcuts({
   }
 
   (doc.defaultView || window).addEventListener('keydown', (e) => {
+    /* A control that handled the key has already marked it. The seek and
+       volume tracks answer their own arrows, and the drawer tabs answer theirs,
+       so the global arrows used to fire a second time: one arrow on the seek
+       bar scrubbed and also skipped 10s. Browser chords keep their meaning
+       too, so Cmd+R, Cmd+P, Cmd+F and Ctrl+L no longer trigger shortcuts. */
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
     /* Escape closes panels even from a text field: the library focuses its
        search box on open, so with the typing guard first Escape could never
        close it — and every shortcut after that was swallowed by the focused
@@ -52,6 +58,9 @@ export function createKeyboardShortcuts({
     }
     if (isTypingTarget(e.target)) return;
     if (isModePickerTarget(e.target) || isModePickerTarget(doc.activeElement)) return;
+    // Space on a focused button is that button's activation, not play/pause:
+    // a chip used to toggle and start playback together
+    if (e.code === 'Space' && e.target instanceof HTMLElement && e.target.closest('button, [role="button"]')) return;
     switch (e.code) {
       case 'Space':
         e.preventDefault();

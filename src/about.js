@@ -33,7 +33,7 @@ export function createAboutPanel({ shell, trigger, modeCount, themeCount, doc = 
     <h2 id="about-title">AUDIOVISOR</h2>
     <div class="about-tag mono">Real-time audio visualizer</div>
     <p id="about-description">Drop in a track, stream a URL, capture any app's audio or connect your
-    Spotify account — ${modeCount} stage modes, ${themeCount} theme moods, a full
+    Apple Music account — ${modeCount} stage modes, ${themeCount} theme moods, a full
     FX chain and a beat tracker, all rendered live.</p>
     <div class="about-keys">
       <div class="about-key"><kbd>SPACE</kbd><span>Play / Pause</span></div>

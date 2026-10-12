@@ -9,7 +9,6 @@ import { createToasts } from './toast.js';
 import { createFavicon } from './favicon.js';
 import { createShareCard } from './share-card.js';
 import { createAboutPanel } from './about.js';
-import { createShortcutsOverlay } from './shortcuts.js';
 import { createPanels } from './panels.js';
 import { createControls } from './controls.js';
 import { createModePicker } from './mode-picker.js';
@@ -18,7 +17,6 @@ import { createSleepTimer } from './sleep-timer.js';
 import { createLookPresets } from './look-presets.js';
 import { createAiStudio } from './ai-studio.js';
 import { createCollab } from './collab.js';
-import { createRecorder } from './recorder.js';
 import { createStageChrome } from './stage-chrome.js';
 import { createKeyboardShortcuts } from './keyboard.js';
 import { createAutoplayGuard } from './autoplay.js';
@@ -531,13 +529,13 @@ function updateTrackUI() {
   trackInfoEl.classList.toggle('has-track', input !== 'none');
 
   const connect = connectLoader.getConnect();
-  const providerOnly = input === 'spotify' || input === 'apple';
+  const providerOnly = input === 'apple';
   const audioOnly = providerOnly || (input === 'stream' && engine.streamNoTap);
   const providerTrack = providerOnly ? connect?.currentTrack : null;
   const providerPanel = $('provider-playback');
   providerPanel.hidden = !audioOnly;
   if (audioOnly) {
-    $('provider-playback-label').textContent = input === 'apple' ? 'APPLE MUSIC · PLAYBACK' : input === 'spotify' ? 'SPOTIFY · PLAYBACK' : 'DIRECT STREAM · AUDIO ONLY';
+    $('provider-playback-label').textContent = input === 'apple' ? 'APPLE MUSIC · PLAYBACK' : 'DIRECT STREAM · AUDIO ONLY';
     $('provider-playback-title').textContent = providerOnly ? providerTrack?.name || 'Choose a song' : engine.streamTrack?.name || 'Direct stream';
     $('provider-playback-artist').textContent = providerOnly ? providerTrack?.artists || '' : 'Audio samples unavailable in this browser';
     $('provider-playback-note').textContent = providerOnly
@@ -548,14 +546,14 @@ function updateTrackUI() {
     if (providerTrack?.artwork) cover.src = providerTrack.artwork;
     else cover.removeAttribute('src');
     $('provider-placeholder').hidden = !!providerTrack?.artwork;
-    setIcon($('provider-placeholder'), input === 'apple' ? 'music2' : input === 'spotify' ? 'spotify' : 'link');
+    setIcon($('provider-placeholder'), input === 'apple' ? 'music2' : 'link');
   }
   if (providerOnly && providerTrack) {
     const t = providerTrack;
     $('track-name').textContent = t.name;
     $('track-spec').textContent = `${t.artists} · ${t.kind}`;
     $('time-total').textContent = fmtTime(t.duration);
-    const icon = t.provider === 'apple' ? 'music2' : 'spotify';
+    const icon = 'music2';
     trackArtEl.replaceChildren();
     if (t.artwork) {
       const img = document.createElement('img');
@@ -582,12 +580,12 @@ function updateTrackUI() {
     }
   } else if (providerOnly) {
     $('track-name').textContent = 'Choose a song';
-    $('track-spec').textContent = input === 'apple' ? 'APPLE MUSIC' : 'SPOTIFY';
+    $('track-spec').textContent = 'APPLE MUSIC';
     $('time-total').textContent = '0:00';
     trackArtEl.replaceChildren();
     const placeholder = document.createElement('span');
     placeholder.className = 'ic';
-    placeholder.dataset.icon = input === 'apple' ? 'music2' : 'spotify';
+    placeholder.dataset.icon = 'music2';
     trackArtEl.appendChild(placeholder);
     setIcon(placeholder, placeholder.dataset.icon);
     currentArtworkUrl = null;
@@ -747,7 +745,9 @@ const { snapshot } = createShareCard({
 
 $('snapshot-btn').addEventListener('click', snapshot);
 
-createRecorder({ engine, getLiveCanvas: liveCanvas, download: downloadBlob, toast });
+import('./recorder.js')
+  .then(({ createRecorder }) => createRecorder({ engine, getLiveCanvas: liveCanvas, download: downloadBlob, toast }))
+  .catch((err) => console.error('recorder failed to load:', err));
 
 
 /* ---------- mic ---------- */
@@ -955,7 +955,20 @@ createDrawerTabs({ onSourceTab: connectLoader.ensureConnect });
 
 /* ---------- keyboard shortcuts overlay ---------- */
 
-createShortcutsOverlay({ isTypingTarget });
+/* The sheet's list is only read when someone asks for it, so the module loads
+   on first use and stays out of the entry chunk. Until then this stub answers
+   ? and the help button; once the module is up, its own listeners take over. */
+let shortcutsSheet = null;
+const openShortcuts = () => (shortcutsSheet ??= import('./shortcuts.js')
+  .then((m) => m.createShortcutsOverlay({ isTypingTarget })));
+$('help-btn')?.addEventListener('click', () => { if (!shortcutsSheet) openShortcuts().then((s) => s.toggle()); });
+window.addEventListener('keydown', (e) => {
+  if (shortcutsSheet || isTypingTarget(e.target)) return;
+  if (e.key === '?' || (e.key === '/' && !e.shiftKey)) {
+    e.preventDefault();
+    openShortcuts().then((s) => s.toggle());
+  }
+});
 
 
 /* debug/testing hook */

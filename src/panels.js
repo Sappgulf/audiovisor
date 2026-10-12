@@ -2,7 +2,8 @@
 import { setIcon } from './icons.js';
 import { esc, fmtTime } from './utils.js';
 import { clampActive } from './palette.js';
-import * as Library from './library.js';
+// The library (IndexedDB + WAV encoder) loads on first use, not at boot.
+const lib = () => import('./library.js');
 
 /**
  * Queue and library panels.
@@ -88,7 +89,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   }
 
   async function playLibraryRecord(id) {
-    const rec = await Library.getLibraryEntry(id);
+    const rec = await (await lib()).getLibraryEntry(id);
     if (!rec) return;
     if (engine.captureActive) await engine.toggleCapture();
     if (engine.micActive) await engine.toggleMic();
@@ -219,12 +220,12 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
         void playLibraryRecord(id);
       } else if (btn.classList.contains('lib-export')) {
         void (async () => {
-          const rec = await Library.getLibraryEntry(id);
+          const rec = await (await lib()).getLibraryEntry(id);
           if (!rec || !rec.arrayBuffer) return;
           toast('Rendering <b>remix</b>…', { duration: 1600 });
           try {
             const buf = await engine.ctx.decodeAudioData(rec.arrayBuffer.slice(0));
-            const blob = await Library.renderRemixToWav(buf, rec.edits || engine.fx);
+            const blob = await (await lib()).renderRemixToWav(buf, rec.edits || engine.fx);
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -236,7 +237,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
         })();
       } else if (btn.classList.contains('lib-del')) {
         void (async () => {
-          await Library.removeFromLibrary(id);
+          await (await lib()).removeFromLibrary(id);
           renderLibrary();
           setLibraryActive(0, false);
         })();
@@ -304,7 +305,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
       const id = rows[libraryActiveIndex]?.dataset.id;
       if (id) {
         void (async () => {
-          await Library.removeFromLibrary(id);
+          await (await lib()).removeFromLibrary(id);
           renderLibrary();
           setLibraryActive(libraryActiveIndex, true);
         })();
@@ -366,13 +367,15 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
 
   async function renderLibrary() {
     const wasSearchFocused = libraryPanel.contains(document.activeElement) && document.activeElement.id === 'lib-search';
-    const baseMeta = await Library.listLibraryMeta();
+    const baseMeta = await (await lib()).listLibraryMeta();
     const q = (libSearchInput()?.value || '').trim().toLowerCase();
     const filteredMeta = q
       ? baseMeta.filter((m) => m.name.toLowerCase().includes(q) || (m.ext || '').toLowerCase().includes(q))
       : baseMeta;
     let html = `<div class="library-head"><span class="ic ic-lime" data-icon="layers"></span><span class="mono library-title">LIBRARY · ${filteredMeta.length}</span><button class="icon-x" id="lib-close" title="Close"><span class="ic ic-sm" data-icon="close"></span></button></div>
-  <div style="padding:8px 12px; border-bottom:1px solid var(--border-soft)"><input id="lib-search" class="connect-input" placeholder="Search library…" style="width:100%; padding:7px 10px; font-size:11px"/></div>`;
+  <div style="padding:8px 12px; border-bottom:1px solid var(--border-soft)"><input id="lib-search" class="connect-input" placeholder="Search library…" style="width:100%; padding:7px 10px"/></div>`;
+  /* no inline font-size here: an inline 11px beat the 16px phone rule for
+     #lib-search, and iOS zooms the page into any focused input under 16px */
     if (!filteredMeta.length) {
       html += `<div class="library-empty mono">${baseMeta.length ? 'NO MATCHING TRACKS — WIDEN YOUR SEARCH' : 'NO SAVED TRACKS — PLAY A TRACK THEN HIT SAVE'}</div>`;
     } else {
@@ -431,10 +434,10 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
       const tmp = new OfflineAudioContext(ch, len, engine.buffer.sampleRate);
       const src = tmp.createBufferSource(); src.buffer = engine.buffer; src.connect(tmp.destination); src.start(0);
       const rendered = await tmp.startRendering();
-      const blob = await Library.renderRemixToWav(rendered, {});
+      const blob = await (await lib()).renderRemixToWav(rendered, {});
       const ab = await blob.arrayBuffer();
       const edits = { ...engine.fx };
-      const rec = await Library.addToLibrary({
+      const rec = await (await lib()).addToLibrary({
         name: engine.track.name + (Object.values(edits).some(Boolean) ? ' (remix)' : ''),
         ext: 'WAV',
         sampleRate: engine.buffer.sampleRate,

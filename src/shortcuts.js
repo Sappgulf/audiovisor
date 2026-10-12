@@ -76,6 +76,10 @@ export function createShortcutsOverlay({ isTypingTarget, doc = document }) {
     if (!isTypingTarget(e.target) && (e.key === '?' || (e.key === '/' && !e.shiftKey))) {
       e.preventDefault();
       toggle();
+    } else if (e.key === 'Tab' && overlay && !overlay.classList.contains('is-hidden')) {
+      // the sheet is modal and its close button is the only stop, so Tab stays on it
+      e.preventDefault();
+      doc.getElementById('shortcuts-close')?.focus();
     } else if (e.key === 'Escape') {
       toggle(false);
     }

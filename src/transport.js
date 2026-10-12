@@ -23,7 +23,7 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
     try {
       const input = engine.activeInput;
       const connect = getConnect();
-      if (input === 'spotify' || input === 'apple') {
+      if (input === 'apple') {
         const t = connect?.currentTrack;
         if (t) {
           const artwork = t.artwork ? [{ src: t.artwork, sizes: '640x640', type: 'image/jpeg' }] : [];

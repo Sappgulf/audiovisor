@@ -90,11 +90,14 @@ export function createCommandPalette({ commands, doc = document }) {
     else if (e.key === 'Home') { e.preventDefault(); active = 0; render(input.value); }
     else if (e.key === 'End') { e.preventDefault(); active = Math.max(visible.length - 1, 0); render(input.value); }
     else if (e.key === 'Enter') { e.preventDefault(); const c = visible[active]; if (c) { c.action(); close(); } }
-    else if (e.key === 'Escape') close();
+    // Tab would walk out of a modal; the input is the palette's only stop.
+    // Escape is marked handled so the settings drawer behind it stays open.
+    else if (e.key === 'Tab') e.preventDefault();
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
   });
   doc.defaultView?.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); toggle(); }
-    if (e.key === 'Escape' && !palette.classList.contains('is-hidden')) close();
+    if (e.key === 'Escape' && !palette.classList.contains('is-hidden')) { e.preventDefault(); close(); }
   });
 
   return { open, close, toggle };

@@ -22,6 +22,7 @@ export function createVoiceInput({ engine, renderer, toast, doc = document }) {
     if (active) {
       active = false;
       btn.classList.remove('is-on');
+      btn.setAttribute('aria-pressed', 'false');
       if (raf) cancelAnimationFrame(raf);
       synth?.stop();
       if (stream) { stream.getTracks().forEach(tr => tr.stop()); stream = null; }
@@ -40,6 +41,8 @@ export function createVoiceInput({ engine, renderer, toast, doc = document }) {
       const buf = new Float32Array(analyser.fftSize);
       active = true;
       btn.classList.add('is-on');
+      // the class alone told sighted users it was on; screen readers need the state too
+      btn.setAttribute('aria-pressed', 'true');
       toast('Voice AI <b>listening</b> — hum to play');
       const loop = () => {
         if (!active) return;
