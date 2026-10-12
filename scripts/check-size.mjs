@@ -28,8 +28,15 @@ const BUDGETS = {
      these user-facing additions without changing the 101kB total ceiling. */
   /* v8.17: the responsive auto-hiding transport and honest audio-only player
      add ~0.2kB gzip of CSS. Keep the JS ceilings fixed. */
-  entry: 58.25 * 1024, // initial JS chunk, gzipped
-  css: 13.1 * 1024,
+  /* Raised for the upgrade round: the entry was 58.25 kB with about 0.3 kB
+     of room, which left no space for the phone, beat, visual and platform
+     work. The new ceiling keeps about 2.5 kB of room for them. The boot
+     payload still has to stay near 60 kB, so anything large goes behind a
+     dynamic import and the measured entry is reported on every build. */
+  entry: 61 * 1024, // initial JS chunk, gzipped
+  /* CSS raised by 0.4 kB for the phone target sizes, the loop region on the
+     seek track and the tablet layout. Dead rules are still removed first. */
+  css: 13.5 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is
      unchanged; only the total went up with the features. That is the point
@@ -46,7 +53,7 @@ const BUDGETS = {
      on its own, so the total rose by about 8kB. That is the cost of splitting,
      and the boot payload is the number this file exists to protect. Raised
      deliberately, with the entry ceiling unchanged. */
-  total: 110 * 1024,   // all JS chunks, gzipped
+  total: 114 * 1024,   // all JS chunks, gzipped (raised with the entry, see above)
 };
 
 const DIST = 'dist/assets';
