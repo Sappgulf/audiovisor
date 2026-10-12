@@ -101,23 +101,9 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
     setQueueActive(index, true);
   }
 
+  /* the load path and resume tracking live in library.js, off the entry chunk */
   async function playLibraryRecord(id) {
-    const rec = await (await lib()).getLibraryEntry(id);
-    if (!rec) return;
-    if (engine.captureActive) await engine.toggleCapture();
-    if (engine.micActive) await engine.toggleMic();
-    if (engine.isExternal()) engine.pause();
-    engine.stopStream();
-    const blob = new Blob([rec.arrayBuffer]);
-    const file = new File([blob], rec.name + '.' + rec.ext.toLowerCase());
-    await engine.addToQueue([file]);
-    if (rec.edits) {
-      for (const [k, v] of Object.entries(rec.edits)) {
-        if (v) engine.setFx(k, true);
-      }
-    }
-    toggleLibrary(false);
-    toast(`Loaded <b>${esc(rec.name)}</b> from library`);
+    if (await (await lib()).loadLibraryRecord(engine, id, toast)) toggleLibrary(false);
   }
 
   libraryPanel.addEventListener('input', (e) => {
@@ -129,6 +115,10 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   queuePanel.addEventListener('click', (e) => {
     if (e.target.closest('#queue-import-btn')) {
       void queueImport().then((m) => m.pickPlaylist(shell, { engine, toast, onQueued: renderQueue }));
+      return;
+    }
+    if (e.target.closest('#queue-played-btn')) {
+      void queueImport().then((m) => m.clearPlayed({ engine, toast, onDone: () => { renderQueue(); setQueueActive(0, false); } }));
       return;
     }
     const clear = e.target.closest('#queue-clear-btn');
@@ -236,22 +226,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
       if (btn.classList.contains('lib-play')) {
         void playLibraryRecord(id);
       } else if (btn.classList.contains('lib-export')) {
-        void (async () => {
-          const rec = await (await lib()).getLibraryEntry(id);
-          if (!rec || !rec.arrayBuffer) return;
-          toast('Rendering <b>remix</b>…', { duration: 1600 });
-          try {
-            const buf = await engine.ctx.decodeAudioData(rec.arrayBuffer.slice(0));
-            const blob = await (await lib()).renderRemixToWav(buf, rec.edits || engine.fx);
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${rec.name}-remix.wav`;
-            a.click();
-            setTimeout(() => URL.revokeObjectURL(url), 4000);
-            toast('Remix <b>exported</b> as WAV', { duration: 2200 });
-          } catch { toast('<b>Export failed</b>', { duration: 2000 }); }
-        })();
+        void lib().then((m) => m.exportLibraryRecord(engine, id, toast));
       } else if (btn.classList.contains('lib-del')) {
         void (async () => {
           await (await lib()).removeFromLibrary(id);
@@ -340,6 +315,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
       <span class="ic ic-lime" data-icon="list"></span>
       <span class="mono queue-title">QUEUE · ${q.length}${totalText}</span>
       <button class="mini-btn queue-clear-btn" id="queue-clear-btn" title="Clear queue" ${q.length ? '' : 'disabled'}>CLEAR</button>
+      <button class="mini-btn" id="queue-played-btn" title="Clear played" aria-label="Clear played" ${engine.queueIndex > 0 ? '' : 'disabled'}>PLAYED</button>
       <button class="mini-btn" id="queue-import-btn" title="Import a playlist (.m3u, .m3u8, .pls)">IMPORT</button>
       <button class="icon-x" id="queue-shuffle-btn" title="Shuffle queue"><span class="ic ic-sm" data-icon="shuffle"></span></button>
       <button class="icon-x" id="queue-close-btn" title="Close"><span class="ic ic-sm" data-icon="close"></span></button>
@@ -453,30 +429,9 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
     if (show) { queuePanel.classList.add('is-hidden'); setToggle(triggerQueue, false); }
   }
 
+  /* rendering and storing the track lives in library.js, off the entry chunk */
   async function saveToLibrary() {
-    if (!engine.buffer || !engine.track) { toast('<b>No track</b> to save', { duration: 1600 }); return; }
-    // render the current buffer to WAV and store that
-    try {
-      const ch = engine.buffer.numberOfChannels;
-      const len = engine.buffer.length;
-      const tmp = new OfflineAudioContext(ch, len, engine.buffer.sampleRate);
-      const src = tmp.createBufferSource(); src.buffer = engine.buffer; src.connect(tmp.destination); src.start(0);
-      const rendered = await tmp.startRendering();
-      const blob = await (await lib()).renderRemixToWav(rendered, {});
-      const ab = await blob.arrayBuffer();
-      const edits = { ...engine.fx };
-      const rec = await (await lib()).addToLibrary({
-        name: engine.track.name + (Object.values(edits).some(Boolean) ? ' (remix)' : ''),
-        ext: 'WAV',
-        sampleRate: engine.buffer.sampleRate,
-        channels: ch,
-        duration: engine.buffer.duration,
-        arrayBuffer: ab,
-        edits,
-        sourceName: engine.track.name,
-      });
-      toast(`Saved <b>${esc(rec.name)}</b> to library`, { duration: 2000 });
-    } catch (e) { console.error(e); toast('<b>Save failed</b>', { duration: 2000 }); }
+    await (await lib()).saveCurrentTrack(engine, toast);
   }
 
   triggerQueue.addEventListener('click', () => toggleQueue());

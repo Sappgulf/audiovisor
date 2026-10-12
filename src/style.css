@@ -362,26 +362,6 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible, [role=
 
 .status-text { font-size: 10px; color: var(--text-60); letter-spacing: 0.14em; }
 
-.lime-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #1a1816;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.26);
-  transition: transform 0.16s var(--ease), background 0.16s var(--ease), box-shadow 0.16s var(--ease);
-}
-.lime-btn:hover {
-  transform: scale(1.04);
-  background: var(--accent-hover);
-  box-shadow: 0 4px 18px rgba(var(--accent-rgb), 0.32);
-}
-.lime-btn:active { transform: scale(0.98); }
-
 .mic-btn {
   width: 36px;
   height: 36px;
@@ -561,11 +541,6 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible, [role=
   color: var(--text-60);
   transition: opacity 0.35s var(--ease), transform 0.35s var(--ease);
   pointer-events: none;
-}
-.stage-context-eyebrow {
-  color: var(--accent);
-  font-size: 8px;
-  letter-spacing: 0.16em;
 }
 .stage-context strong {
   color: var(--text-strong);
@@ -818,15 +793,6 @@ html.calm .stage.is-look-change::after { animation: none; }
   transform: translateX(-50%);
   background: radial-gradient(circle, rgba(var(--accent-rgb), 0.14), transparent 68%);
   pointer-events: none;
-}
-.drop-eyebrow {
-  position: relative;
-  z-index: 1;
-  display: block;
-  margin-bottom: 18px;
-  color: var(--accent);
-  font-size: 8px;
-  letter-spacing: 0.2em;
 }
 .drop-icon-circle {
   position: relative;
@@ -1199,14 +1165,13 @@ html.calm .stage.is-look-change::after { animation: none; }
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.06em;
-  color: var(--accent);
+  color: var(--accent-hover);
   font-variant-numeric: tabular-nums;
   background: var(--accent-dim);
   padding: 2px 6px;
   border-radius: 4px;
   border: 1px solid transparent;
 }
-.slider-value.is-muted { color: var(--text-40); background: transparent; border-color: transparent; }
 
 input[type="range"].ctrl-slider {
   -webkit-appearance: none;
@@ -1833,7 +1798,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 .cmd-list { max-height: 320px; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
 .cmd-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; color: var(--text-60); }
 .cmd-item.is-active, .cmd-item:hover, .cmd-item[aria-selected="true"] { background: var(--glass-strong); color: var(--text); }
-.cmd-item kbd { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--text-40); background: var(--glass); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; }
+.cmd-item kbd { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--text-60); background: var(--glass); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; }
 .cmd-empty { padding: 12px; font-size: 11px; color: var(--text-40); }
 .cmd-status {
   position: absolute;
@@ -1851,7 +1816,11 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   .drawer-scroll { width: 100%; padding: 20px 16px; }
   .transport { gap: 18px; padding: 0 16px; height: 76px; }
   .track-info { width: 200px; }
-  .pill-nav { display: none; }
+  /* the labelled nav is hidden at this width, but About is the only route to
+     its dialog, so that one icon stays in the top bar as a 44px button */
+  .pill-nav { display: contents; }
+  .pill-nav > :not(#nav-about) { display: none; }
+  #nav-about { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 50%; border: 1px solid var(--border); background: var(--glass); }
   .shell { width: calc(100vw - 16px); height: calc(100vh - 16px); margin-inline: auto; border-radius: 1.25rem; }
 }
 
@@ -1863,7 +1832,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   .seek-console { order: 3; flex-basis: 100%; }
   .utility-controls { gap: 8px; }
   .volume-group { display: none; }
-  .mic-btn, .lime-btn { width: 40px; height: 40px; }
+  .mic-btn { width: 40px; height: 40px; }
   .ghost-btn { width: 40px; height: 40px; }
   .play-btn { width: 48px; height: 48px; }
   /* bottom sheet drawer on mobile */
@@ -1968,7 +1937,6 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 .mini-btn:hover { color: var(--text); border-color: var(--border-strong); background: var(--glass-hover); transform: translateY(-1px); }
 
 .provider-block { display: flex; flex-direction: column; gap: 12px; background: var(--glass); border: 1px solid var(--border-soft); border-radius: 12px; padding: 14px; }
-.apple-block { border-color: rgba(var(--accent-rgb), 0.16); }
 
 .sp-head {
   display: flex;
@@ -1986,7 +1954,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 .sp-badge {
   font-size: 8px;
   letter-spacing: 0.12em;
-  color: var(--accent);
+  color: var(--accent-hover);
   background: var(--accent-dim);
   border: 1px solid var(--accent-line);
   border-radius: 999px;
@@ -2040,7 +2008,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   overflow-wrap: anywhere;
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--accent);
+  color: var(--accent-hover);
   background: var(--accent-dim);
   padding: 2px 6px;
   border-radius: 4px;
@@ -2201,7 +2169,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 .drawer-tab .ic { font-size: 15px; }
 .drawer-tab .tab-label { line-height: 1; }
 .drawer-tab:hover { color: var(--text-60); background: rgba(255,250,243,0.03); }
-.drawer-tab[aria-selected="true"] { color: var(--accent); }
+.drawer-tab[aria-selected="true"] { color: var(--accent-hover); }
 .drawer-tab-ink {
   position: absolute;
   bottom: -1px;
@@ -2463,12 +2431,6 @@ label.add-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 
 /* ---------- Small screens (v8.9.4) ---------- */
 
-/* the pill nav is hidden under 1024px, which left no way to open or close
-   the settings drawer on a phone */
-.compact-only { display: none; }
-@media (max-width: 1024px) {
-  .compact-only { display: flex; }
-}
 
 @media (max-width: 640px) {
   /* the topbar ran off the right edge once the drawer toggle was added;
@@ -2559,9 +2521,9 @@ html, body {
      look wrong at 44px — the tappable box is grown with padding instead. */
   .ghost-btn,
   .mic-btn,
-  .lime-btn,
   .queue-clear-btn,
   .icon-x,
+  .drawer-close,
   .add-btn,
   .drawer-tab,
   .nav-link {
@@ -2570,8 +2532,8 @@ html, body {
   }
   .play-btn { width: 56px; height: 56px; }
   .fx-chip { min-height: 38px; padding-inline: 12px; }
-  .preset-btn, .queue-row { min-height: 44px; }
-  .connect-input, .mode-filter, #lib-search { min-height: 40px; font-size: 16px; }
+  .queue-row { min-height: 44px; }
+  .connect-input, #lib-search { min-height: 44px; font-size: 16px; }
 
   /* the bar stays 8px thin; the padding is the 44px target. The fill, wave
      and playhead sit in the bar's band, not the padded box */
@@ -2633,21 +2595,6 @@ html, body {
   /* iOS zooms the page when a focused input is under 16px */
   input, select, textarea { font-size: 16px; }
 
-  /* ---- range sliders were a 5px-tall target ------------------------------
-     The Sensitivity / Bass / Smoothing / Colour / Bloom controls are native
-     range inputs styled to a 5px track, so the whole hit area was 5px tall —
-     touch worked in principle and was near-impossible with a thumb. Pad the
-     box out to a real target and paint the track into the content box, so
-     the control still *looks* like a 5px line. */
-  input[type="range"].ctrl-slider {
-    height: 44px;
-    padding-block: 19.5px;
-    background-clip: content-box;
-    touch-action: none;
-    /* the inset shadow paints on the border box, so once the box is 44px
-       tall it outlined the whole padded area instead of edging the track */
-    box-shadow: none;
-  }
   .slider-group { margin-block: -6px; }
 
   /* ---- studio / utility buttons sat at 28px ------------------------------ */
@@ -2658,7 +2605,7 @@ html, body {
   #settings-import,
   #settings-reset,
   #tour-replay {
-    min-height: 40px;
+    min-height: 44px;
     padding-inline: 14px;
   }
 
@@ -2678,7 +2625,7 @@ html, body {
   }
   .theme-row { gap: 10px; }
 
-  .fx-chip, .rt-chip, .preset-btn { min-height: 44px; }
+  .fx-chip, .rt-chip { min-height: 44px; }
   .browse-btn { min-height: 44px; padding-inline: 20px; }
 
   /* the mode grid is the main browsing surface on a phone — two columns of
@@ -2822,7 +2769,6 @@ html, body {
   /* the 44px target holds here too; the utility row gives up gap instead */
   .ghost-btn,
   .mic-btn,
-  .lime-btn,
   .add-btn {
     min-width: 44px;
     min-height: 44px;
@@ -3100,6 +3046,13 @@ html, body {
 }
 /* touch tablets are wider than phones, so the phone seek hit area never
    reached them; a coarse pointer gets the same taller track */
+@media (pointer: coarse) {
+  .mini-btn, .fx-chip, .connect-input, .icon-x, .drawer-close { min-height: 44px; }
+  .icon-x, .drawer-close { min-width: 44px; }
+  /* the Sensitivity / Bass / Smoothing / Colour / Bloom sliders are 5px
+     tracks; pad the box to a real target and paint the track into it */
+  input[type="range"].ctrl-slider { height: 44px; padding-block: 19.5px; background-clip: content-box; touch-action: none; box-shadow: none; }
+}
 @media (pointer: coarse) and (min-width: 641px) {
   .seek-track { height: 44px; padding-block: 18px; border: 0; background-clip: content-box; }
   .seek-track::after, #seek-wave { top: 18px; bottom: 18px; height: auto; }
@@ -3113,7 +3066,6 @@ html, body {
     gap: 7px;
     padding: 7px 9px;
   }
-  .stage-context-eyebrow,
   .stage-context-theme { font-size: 7px; }
   .stage-context strong { font-size: 10px; }
   .stage-context-rule { height: 10px; }
@@ -3124,7 +3076,6 @@ html, body {
     border-radius: 22px;
   }
   .dropzone::before { border-radius: 20px; }
-  .drop-eyebrow { margin-bottom: 14px; }
   .drop-icon-circle { width: 56px; height: 56px; margin-bottom: 16px; }
   .drop-title { font-size: clamp(22px, 7vw, 28px); }
   .drop-sub { font-size: 11px; }
@@ -3252,6 +3203,7 @@ html, body {
   transform: none;
   flex-direction: row;
   flex-wrap: wrap;
+  margin-top: 18px;
 }
 .stage.is-empty .dropzone .browse-btn,
 .stage.is-empty .dropzone .drop-secondary {
@@ -3293,5 +3245,4 @@ html, body {
 .provider-card .sp-badge.is-on { color: var(--brand); border-color: rgba(var(--brand-rgb), 0.4); }
 .provider-btn { background: var(--brand); color: #0b0b0b; border: 0; }
 .provider-btn { width: 100%; padding: 10px; border-radius: 999px; cursor: pointer; font: 600 12px/1 inherit; }
-.provider-apple .provider-btn { color: #fff; }
 .provider-btn:hover { filter: brightness(1.08); }

@@ -170,8 +170,13 @@ export function shouldEvaluate(samples, baseline = DEFAULT_BASELINE_MS) {
   if (samples.length >= WINDOW) return true;
   if (samples.length < FAST_WINDOW) return false;
   // every sample must be severe, so one GC pause, a cold first frame after
-  // a mode change, or the huge gap after a backgrounded tab cannot trigger
-  return samples.every((ms) => ms > baseline * SEVERE);
+  // a mode change, or the huge gap after a backgrounded tab cannot trigger.
+  // A loop, not every(): this runs each frame and the callback would be a
+  // fresh closure every time.
+  for (let i = 0; i < samples.length; i++) {
+    if (!(samples[i] > baseline * SEVERE)) return false;
+  }
+  return true;
 }
 
 /**

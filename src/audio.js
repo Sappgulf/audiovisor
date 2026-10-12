@@ -130,6 +130,7 @@ export class AudioEngine {
     this._levels = { bass: 0, mid: 0, high: 0, level: 0, bpm: 0, beatPhase: 0, beatPulse: 0, beatConfidence: 0, drop: 0, chop: false, width: 0 };
 
     this.beat = new BeatTracker();
+    this._syncOffsetMs = 0;
     this.dropDetector = new DropDetector();
 
     this.recDest = null;
@@ -660,6 +661,8 @@ export class AudioEngine {
   }
 
   seek(t) {
+    /* a NaN target would become the playhead and poison getTime() for good */
+    if (!Number.isFinite(t)) return;
     /* onsets are timestamped in song time — a jump invalidates the grid */
     this.beat.reset();
     if (this.isExternal()) {
@@ -706,7 +709,7 @@ export class AudioEngine {
     s = Math.max(0, s);
     e = Math.min(this.buffer.duration, e);
     if (!(s < e)) return null;
-    this._range = { start: s, end: e };
+    this._range = Object.freeze({ start: s, end: e });
     if (!this._loopTimer) this._loopTimer = setInterval(() => this._checkLoop(), 100);
     this._checkLoop();
     return { ...this._range };
@@ -717,9 +720,13 @@ export class AudioEngine {
     if (this._loopTimer) { clearInterval(this._loopTimer); this._loopTimer = null; }
   }
 
-  /** The active A-B region as {start, end}, or null. */
+  /**
+   * The active A-B region as a frozen {start, end}, or null. It is the same
+   * object until the region changes: the render loop reads it every frame,
+   * so this must not allocate.
+   */
   get loop() {
-    return this._range ? { ...this._range } : null;
+    return this._range;
   }
 
   /** Wrap to the region start once the playhead passes its end. True if it wrapped. */
@@ -805,6 +812,7 @@ export class AudioEngine {
     if (!this.queue.length) {
       this._retireSource();
       this.clearLoop();
+      this.beat.reset();
       this.buffer = null;
       this.track = null;
       this.offset = 0;
@@ -1229,6 +1237,8 @@ export class AudioEngine {
     try { this.mediaEl?.pause(); } catch {}
     this.playing = false;
     this.streamTrack = null;
+    /* the stream's grid must not carry over into the file that comes back */
+    this.beat.reset();
     this._setMode(this.hasTrack ? 'file' : 'none');
     this._emit();
   }
@@ -1236,6 +1246,8 @@ export class AudioEngine {
   /* ---------- external transport (Apple Music) ---------- */
 
   setExternal(controller) {
+    /* the previous source's grid must not read as this one's tempo */
+    this.beat.reset();
     this.external = controller;
     if (controller) {
       this._setMode(controller.kind || 'apple');
@@ -1390,10 +1402,25 @@ export class AudioEngine {
        The high band picks up the same edge so cymbal air is no longer
        thrown away at 8kHz. */
     const iTOP = Math.min(n, Math.ceil(16000 / binHz));
-    const bass = bandAvg(freq, 2, iBass);
-    const mid = bandAvg(freq, iBass, iMid);
-    const high = bandAvg(freq, iMid, iTOP);
-    const level = bandAvg(freq, 2, iTOP);
+    /* all four bands come from one walk of the bins, not four. Each band
+       still adds its bins in ascending order, so every mean is bit-identical
+       to bandAvg over its own range, at about half the analyser reads */
+    let sBass = 0;
+    let sMid = 0;
+    let sHigh = 0;
+    let sLevel = 0;
+    const end = Math.max(iTOP, iMid);
+    for (let i = 0; i < end; i++) {
+      const v = freq[i];
+      if (i >= 2 && i < iBass) sBass += v;
+      if (i >= iBass && i < iMid) sMid += v;
+      if (i >= iMid && i < iTOP) sHigh += v;
+      if (i >= 2 && i < iTOP) sLevel += v;
+    }
+    const bass = sBass / Math.max(1, iBass - 2) / 255;
+    const mid = sMid / Math.max(1, iMid - iBass) / 255;
+    const high = sHigh / Math.max(1, iTOP - iMid) / 255;
+    const level = sLevel / Math.max(1, iTOP - 2) / 255;
     /* a loop wrap moves the playhead, so the caller's timeSec is stale */
     if (this._checkLoop()) timeSec = null;
 
@@ -1444,7 +1471,23 @@ export class AudioEngine {
    */
   get beatPhase() {
     if (!(this.beat.bpm > 0)) return 0;
-    return this.beat.phaseAt(this._beatClock() - this.outputLatency());
+    return this.beat.phaseAt(this._beatClock() - this.outputLatency() + this.beat.leadSec);
+  }
+
+  /**
+   * How far the visuals lead the sound, in ms: -300..300, default 0. Applied
+   * inside the beat tracker's clock, so beatPhase, beatCount, beatInBar and
+   * the per-frame levels all move together with no change for their readers.
+   * Non-finite values are ignored; changing it never resets the lock.
+   */
+  get syncOffsetMs() {
+    return this._syncOffsetMs;
+  }
+
+  set syncOffsetMs(ms) {
+    if (!Number.isFinite(ms)) return;
+    this._syncOffsetMs = clamp(ms, -300, 300);
+    this.beat.leadSec = this._syncOffsetMs / 1000;
   }
 
   /** Grid beats reached since the session started. Increments once per beat. */

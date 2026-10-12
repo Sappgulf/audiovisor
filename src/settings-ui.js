@@ -44,6 +44,8 @@ export function createSettingsUI({
       loop: engine.repeat === true,
       autoDj: getAutoDj(),
       reduceFlashing: state.reduceFlashing,
+      speed: engine.speed,
+      syncOffsetMs: engine.syncOffsetMs,
     });
   }
 

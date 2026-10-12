@@ -503,6 +503,8 @@ function applySettings(s, { eq = false } = {}) {
   if (s.autopilot) setAutopilot(true, { silent: true });
   if (s.autoDj) { autoDj = true; setToggle(document.getElementById('autodj-chip'), true, 'is-active'); }
   if (typeof s.reduceFlashing === 'boolean') applyReduceFlashing(s.reduceFlashing);
+  if (s.speed && typeof engine.setSpeed === 'function') engine.setSpeed(s.speed);
+  if (typeof s.syncOffsetMs === 'number' && typeof engine.syncOffsetMs === 'number') engine.syncOffsetMs = s.syncOffsetMs;
 }
 
 function loadSettings() {
@@ -1019,6 +1021,13 @@ boot('drawer tabs', () => createDrawerTabs({
   onSourceTab: () => { connectLoader.ensureConnect(); drawerSections.ensureSocial(); },
   onStudioTab: () => drawerSections.ensureStudio(),
 }));
+/* the Audio tab's speed and sync controls load when it first opens. drawer-tabs
+   reports only Source and Studio, so the tab's own events stand in for it. */
+const tabAudio = document.getElementById('tab-audio');
+const openAudioTab = () => drawerSections.ensureAudio();
+tabAudio?.addEventListener('click', openAudioTab);
+tabAudio?.addEventListener('focus', openAudioTab);
+if (tabAudio?.getAttribute('aria-selected') === 'true') openAudioTab();
 
 /* ---------- keyboard shortcuts overlay ---------- */
 

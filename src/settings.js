@@ -17,6 +17,10 @@ export const SETTINGS_VERSION = 2;
 const READABLE_VERSIONS = [1, 2, 6];
 /** Largest settings file the importer will read. Real exports are a few KB. */
 export const MAX_SETTINGS_BYTES = 64 * 1024;
+/** Playback speeds the Audio tab offers. Any other stored value is dropped. */
+export const SPEEDS = [0.75, 1, 1.25, 1.5];
+/** Visual sync is a delay in milliseconds, within this many either way. */
+export const SYNC_LIMIT_MS = 300;
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -40,6 +44,8 @@ export function serializeSettings(src) {
     loop: !!src.loop,
     autoDj: !!src.autoDj,
     reduceFlashing: !!src.reduceFlashing,
+    speed: src.speed,
+    syncOffsetMs: src.syncOffsetMs,
   };
 }
 
@@ -93,6 +99,10 @@ export function validateSettings(raw, vocab) {
   if (typeof raw.loop === 'boolean') out.loop = raw.loop;
   if (typeof raw.autoDj === 'boolean') out.autoDj = raw.autoDj;
   if (typeof raw.reduceFlashing === 'boolean') out.reduceFlashing = raw.reduceFlashing;
+  if (SPEEDS.includes(raw.speed)) out.speed = raw.speed;
+
+  const sync = num(raw.syncOffsetMs);
+  if (sync !== null && Math.abs(sync) <= SYNC_LIMIT_MS) out.syncOffsetMs = sync;
 
   const vol = num(raw.volume);
   if (vol !== null) out.volume = clamp01(vol);

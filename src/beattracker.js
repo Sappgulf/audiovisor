@@ -60,6 +60,10 @@ export class BeatTracker {
        and would drag the gate down into the hats on loud tracks) scales
        the floor down for quiet music while loud peaks pin it at its old
        fixed value, keeping locked-tempo behaviour there identical. */
+    /* visual lead over what is heard, in seconds (the engine sets it from the
+       sync offset). Phase, bar and beat count all read the grid at heard+lead,
+       so they move together. reset() keeps it: it is a setting, not state */
+    this.leadSec = 0;
     this._fluxPeak = 0;
     /* The adaptive floor itself: starts at the ceiling so a track's first
        second behaves exactly like the old fixed gate (no 8th-note head
@@ -191,7 +195,7 @@ export class BeatTracker {
     if (this._quietUntil === Infinity) this._quietUntil = tSec + this._settleSec;
 
     const lat = Number.isFinite(latency) ? clamp(latency, 0, 0.5) : 0;
-    const heard = tSec - lat;   // song position leaving the speaker right now
+    const heard = tSec - lat + this.leadSec;   // song position the visuals show now
 
     /* decay the onset envelope across audio time */
     if (dt > 0) this.pulse *= Math.pow(0.5, dt / 0.11);
@@ -280,7 +284,10 @@ export class BeatTracker {
         this._gridMax = k;
       }
       if (this._bar < 0) this._bar = this._gridMax & 3;
-      this._judgeBar(bass, this.phase < 0.5 ? k : k + 1);
+      /* the bass in this frame is the song at tSec, so it belongs to the beat
+         nearest tSec, not the one the speaker is on: judging by `heard` put
+         each accent a latency (and now a visual lead) early in the bar */
+      this._judgeBar(bass, Math.round((tSec - this._anchor) * this.bpm / 60));
     }
   }
 
@@ -389,10 +396,16 @@ export class BeatTracker {
   _estimateTempo() {
     if (this._intervalCount < 4) return;
 
-    /* cluster folded intervals within 6% tolerance; strongest cluster wins */
+    /* cluster folded intervals within 6% tolerance; strongest cluster wins.
+       Sorted in the fixed scratch array by insertion: subarray views here
+       would allocate on every onset */
     const sorted = this._intervalScratch;
-    sorted.set(this._intervals.subarray(0, this._intervalCount));
-    sorted.subarray(0, this._intervalCount).sort();
+    for (let i = 0; i < this._intervalCount; i++) {
+      const v = this._intervals[i];
+      let j = i;
+      while (j > 0 && sorted[j - 1] > v) { sorted[j] = sorted[j - 1]; j--; }
+      sorted[j] = v;
+    }
     let best = null;
     let runStart = 0;
     for (let i = 1; i <= this._intervalCount; i++) {

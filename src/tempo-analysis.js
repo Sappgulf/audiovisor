@@ -141,19 +141,27 @@ export function analyzeTempoAsync(samples, sampleRate) {
     try { return analyzeTempo(samples, sampleRate); } catch { return { bpm: 0, confidence: 0 }; }
   };
   if (typeof Worker === 'undefined') return Promise.resolve(sync());
+  let worker;
   try {
-    const worker = new Worker(new URL('./dsp-worker.js', import.meta.url), { type: 'module' });
-    return new Promise((resolve) => {
-      let settled = false;
-      const done = (v) => { if (settled) return; settled = true; worker.terminate(); resolve(v); };
-      worker.onmessage = (e) => done(e.data);
-      worker.onerror = () => done(sync());
-      worker.onmessageerror = () => done(sync());
-      // copy so the engine's buffer is never transferred away
-      const copy = samples.slice();
-      worker.postMessage({ samples: copy, sampleRate }, [copy.buffer]);
-    });
+    worker = new Worker(new URL('./dsp-worker.js', import.meta.url), { type: 'module' });
   } catch {
     return Promise.resolve(sync());
   }
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v) => { if (settled) return; settled = true; worker.terminate(); resolve(v); };
+    worker.onmessage = (e) => done(e.data);
+    worker.onerror = () => done(sync());
+    worker.onmessageerror = () => done(sync());
+    /* a send that throws (a rejected transfer) is a failed worker too. Inside
+       the executor, not the try above: the executor would turn a throw into a
+       rejected promise and leave the worker running */
+    try {
+      // copy so the engine's buffer is never transferred away
+      const copy = samples.slice();
+      worker.postMessage({ samples: copy, sampleRate }, [copy.buffer]);
+    } catch {
+      done(sync());
+    }
+  });
 }

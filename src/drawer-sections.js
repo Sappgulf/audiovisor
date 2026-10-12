@@ -42,5 +42,11 @@ export function createDrawerSections({ state, engine, toast, setFx, setTheme, sa
     'AI studio',
   );
 
-  return { ensureSocial, ensureStudio };
+  /** @type {() => Promise<unknown>} */
+  const ensureAudio = once(
+    () => import('./audio-tab.js').then(({ createAudioTab }) => createAudioTab({ engine, saveSettings })),
+    'Audio tab',
+  );
+
+  return { ensureSocial, ensureStudio, ensureAudio };
 }

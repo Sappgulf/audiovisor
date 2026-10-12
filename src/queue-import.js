@@ -20,6 +20,19 @@ let current = null;
 let input = null;
 
 /**
+ * Clear played: drop every entry before the current one, using the engine's
+ * own removeFromQueue so the current track keeps playing. There is no undo,
+ * because toasts carry no actions.
+ * @param {{ engine: any, toast: Function, onDone: () => void }} deps
+ */
+export function clearPlayed({ engine, toast, onDone }) {
+  const n = Math.max(0, engine.queueIndex);
+  for (let i = 0; i < n; i++) engine.removeFromQueue(0);
+  toast(n ? `Cleared <b>${n}</b> played` : 'Nothing <b>played</b> yet', { duration: 1600 });
+  onDone();
+}
+
+/**
  * Open the playlist picker. The chosen file is queued and onQueued() runs.
  * @param {HTMLElement} shell  the file input lives here, outside the re-rendered queue
  * @param {{ engine: any, toast: Function, onQueued: () => void }} deps
