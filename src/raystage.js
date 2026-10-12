@@ -187,7 +187,7 @@ export class RayStage {
        ACES held clipping at 0.00% throughout, so the headroom was simply
        being left on the table. 1.3 roughly doubles measured brightness
        while keeping the deep blacks and most of the saturation. */
-    this.exposure = 1.3;
+    this.exposure = 1.05;
     this.t = 0;
     this.beat = 0;
     this.frames = 0;

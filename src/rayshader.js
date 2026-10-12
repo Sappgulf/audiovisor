@@ -76,7 +76,12 @@ vec3 pal(int i) { return uPal[i % uPalN]; }
 vec3 palf(float t) {
   float f = clamp(t, 0.0, 0.9999) * float(uPalN - 1);
   int i = int(floor(f));
-  return mix(pal(i), pal(i + 1), fract(f));
+  vec3 c = mix(pal(i), pal(i + 1), fract(f));
+  /* Chroma lift. Many theme ramps end in a near-white stop, and every
+     emissive and albedo lookup sampled it, so the scenes read pastel. A
+     30% push toward saturation keeps each hue; the luminance is untouched. */
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  return max(mix(vec3(l), c, 1.3), vec3(0.0));
 }
 
 /* ---------------- hash / noise ---------------- */
@@ -197,6 +202,8 @@ mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 /* material id written by the scene fns, resolved at shade time */
 float g_id;
 float g_aux;
+/* view forward of the current camera; the backdrop glow is centred on it */
+vec3 g_fw = vec3(0.0, 0.0, -1.0);
 
 /* ---------------- scenes ---------------- */
 
@@ -256,7 +263,7 @@ float scScope(vec3 p) {
   float bound = length(p) - 4.3;
   if (bound > 0.3) { g_id = 26.0; g_aux = 0.22; return bound; }
   float d = 1e9;
-  float ring = abs(sdTorus(p.xzy, vec2(2.55 + uBass * 0.07, 0.026))) - 0.004;
+  float ring = abs(sdTorus(p.xzy, vec2(2.55 + uBass * 0.07, 0.034))) - 0.004;
   if (ring < d) { d = ring; g_id = 1.0; g_aux = 0.6; }
   float tick = abs(sdTorus(p.xzy, vec2(1.55 + uHigh * 0.06, 0.014))) - 0.003;
   if (tick < d) { d = tick; g_id = 1.0; g_aux = 0.35; }
@@ -265,7 +272,7 @@ float scScope(vec3 p) {
      segments when the slab could be nearer than what is already found. */
   float slab = max(length(p.xy) - 3.8, abs(p.z) - 0.45);
   if (slab >= d) return d;
-  float rad = 0.046 + uBeat * 0.022 + uLevel * 0.016;
+  float rad = 0.07 + uBeat * 0.028 + uLevel * 0.02;
   /* The trace is radial — point k sits at angle k/40 of a turn — so only the
      segments around p's own angle can be nearest. Walk a window of 5 rather
      than all 40, and cap the result so a far segment skipped by the window
@@ -315,7 +322,7 @@ float scParticles(vec3 p) {
     float fade = smoothstep(5.4, 1.6, length(id * c));
     /* Broader, brighter particles read as intentional drifting embers instead
        of sensor noise. The outer falloff still protects the starfield edge. */
-    float r = (0.075 + 0.20 * band * uSens + uBeat * 0.055 * h.z) * fade;
+    float r = (0.10 + 0.26 * band * uSens + uBeat * 0.07 * h.z) * fade;
     float s = sdSphere(q, max(r, 0.001));
     if (s < d) { d = s; g_id = 4.0; g_aux = fract(h.z * 3.7); }
   }
@@ -406,7 +413,7 @@ float scPlasma(vec3 p) {
   float energy = spec(0.14) * uSens;
   /* Face the plasma ring toward the camera; a horizontal torus read as a
      featureless pink saucer from the previous rig. */
-  float torus = sdTorus(p.xzy, vec2(1.18 + uBass * 0.10, 0.34 + energy * 0.10 + uBeat * 0.04));
+  float torus = sdTorus(p.xzy, vec2(1.18 + uBass * 0.10, 0.42 + energy * 0.12 + uBeat * 0.05));
   if (torus < d) { d = torus; g_id = 4.0; g_aux = 0.35 + uMid * 0.3; }
   for (int i = 0; i < 5; i++) {
     float fi = float(i);
@@ -496,7 +503,7 @@ float scFluid(vec3 p) {
               + 0.08 * sin(a * 5.0 + uTime * 0.45 + uHigh * 2.5);
   float major = 1.42 + pulse + band * 0.15 * uSens;
   float centreY = 0.28 * sin(a * 2.0 + uTime * 0.42) + 0.12 * sin(a * 4.0 - uTime * 0.3);
-  float minor = 0.17 + band * 0.10 * uSens + uBeat * 0.045 + uBass * 0.035;
+  float minor = 0.24 + band * 0.12 * uSens + uBeat * 0.05 + uBass * 0.04;
   float ribbon = length(vec2(r - major, p.y - centreY)) - minor;
   g_id = 10.0; g_aux = band;
   float innerLoop = abs(sdTorus(p.yxz, vec2(0.92 + uMid * 0.08, 0.024 + uHigh * 0.018))) - 0.008;
@@ -522,7 +529,7 @@ float scTensor(vec3 p) {
   float ry = length(lp.xz) - (0.012 + uMid * 0.022);
   float rz = length(lp.xy) - (0.012 + uHigh * 0.018);
   float d = min(rx, min(ry, rz));
-  g_id = 6.0; g_aux = 0.3;
+  g_id = 4.0; g_aux = 0.3 + uBass * 0.2;
   float node = sdSphere(lp, 0.03 + e * 0.06 * uSens + uBeat * 0.018);
   if (node < d) { d = node; g_id = 4.0; g_aux = e; }
   d = max(d, length(p) - 3.4);          // lattice reads as a core, not a wall
@@ -622,7 +629,7 @@ float scBloom(vec3 p) {
         petal -= vec3(0.39 * size + bloom * 0.12 + uBeat * 0.05, 0.0, 0.0);
         petal.yz *= rot(0.18 + uHigh * 0.24);
         float petalD = sdEllipsoid(petal, vec3(0.40 * size + bloom * 0.11, 0.25 * size, 0.13 * size));
-        if (petalD < d) { d = petalD; g_id = 4.0; g_aux = fract(float(k) / 5.0 + fi * 0.28 + 0.1); }
+        if (petalD < d) { d = petalD; g_id = 13.0; g_aux = fract(float(k) / 5.0 + fi * 0.28 + 0.1); }
       }
       float heart = sdSphere(flower, 0.17 * size + uBeat * 0.04 + bloom * 0.04);
       if (heart < d) { d = heart; g_id = 4.0; g_aux = 0.94; }
@@ -760,10 +767,10 @@ float scGpu(vec3 p) {
 float scVinyl(vec3 p) {
   vec3 q = p;
   q.xz *= rot(0.34);          // tilt the deck toward the camera
-  float disc = sdCyl(q, 0.1, 3.4);
-  disc = max(disc, -sdCyl(q - vec3(0.0, 0.12, 0.0), 0.35, 0.08));
+  float disc = sdCyl(q, 0.06, 3.1);
+  disc = max(disc, -sdCyl(q - vec3(0.0, 0.07, 0.0), 0.3, 0.09));
   g_id = 23.0; g_aux = length(q.xz);
-  float label = sdCyl(q - vec3(0.0, 0.1, 0.0), 0.14, 0.86);
+  float label = sdCyl(q - vec3(0.0, 0.065, 0.0), 0.02, 0.92);
   if (label < disc) { disc = label; g_id = 24.0; }
   float arm = sdCapsule(p, vec3(2.9, 0.5, 2.9), vec3(0.5, 0.18, 0.5), 0.05);
   if (arm < disc) { disc = arm; g_id = 25.0; }
@@ -830,7 +837,7 @@ Mat matOf(float id, float aux, vec3 p) {
     m.alb = vec3(0.035); m.rough = 0.16 + 0.12 * uIdle; m.metal = 1.0;
   } else if (id < 1.5) {                // lit metal slab
     m.alb = c * 0.55; m.rough = 0.22; m.metal = 1.0;
-    m.emis = c * (0.14 + 1.0 * spec(aux) * uSens + uBeat * 0.3);
+    m.emis = c * (0.14 + 1.0 * spec(aux) * uSens + uBeat * 0.3) * (0.3 + 0.9 * clamp(p.y / 2.8, 0.0, 1.0));
   } else if (id < 2.5 && uMode == 16) {  // restrained polar jet, tinted to the active theme
     m.alb = vec3(0.0); m.rough = 1.0; m.metal = 0.0;
     m.emis = palf(0.74) * (0.34 + uBeat * 0.35 + uDrop * 0.45);
@@ -844,7 +851,7 @@ Mat matOf(float id, float aux, vec3 p) {
     m.alb = c * 0.1; m.rough = 0.3; m.metal = 0.0;
     m.emis = c * (1.1 + 2.2 * spec(aux) + uBeat * 1.1);
   } else if (id < 5.5) {                // spectrogram terrace
-    vec3 cc = palf(pow(clamp(aux, 0.0, 1.0), 0.55));
+    vec3 cc = palf(0.12 + 0.7 * pow(clamp(aux, 0.0, 1.0), 0.7));
     m.alb = cc * 0.5; m.rough = 0.5; m.metal = 0.15;
     /* the newest edge answers treble: a hat lands and the waterfall's front
        lip lights up even where that bin's column isn't tall yet */
@@ -852,7 +859,7 @@ Mat matOf(float id, float aux, vec3 p) {
     /* the terrace answers the kick and the drop, not just the waterfall:
        beat lifts the whole relief, the drop surges it harder */
     m.emis = cc * (0.18 + pow(aux, 2.1) * 1.15) * (1.0 + uBeat * 0.35 + uDrop * 0.5)
-           + palf(0.82) * pow(1.0 - age, 5.0) * uHigh * 0.55;
+           + palf(0.82) * pow(1.0 - age, 5.0) * uHigh * 0.25;
   } else if (id < 6.5) {                // structural strut / bezel
     m.alb = palf(0.3) * 0.25; m.rough = 0.3; m.metal = 0.8;
     m.emis = palf(0.25) * (0.12 + uLevel * 0.25);
@@ -864,7 +871,7 @@ Mat matOf(float id, float aux, vec3 p) {
        used to freeze on hits — every other mode pulsed while the mountains
        sat still — so the crest line now lifts with the beat and shimmers
        with treble. */
-    m.emis = (palf(aux) * crest * 1.15 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06)
+    m.emis = (palf(aux) * crest * 0.7 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06)
            * (1.0 + uBeat * 0.45 + uHigh * crest * 0.35);
   } else if (id < 8.5) {                // city block + windows
     // anti-aliased window grid: hard step() speckles badly at distance
@@ -876,7 +883,7 @@ Mat matOf(float id, float aux, vec3 p) {
     float lit = step(0.28, hash13(floor(wp)));   // some windows are dark
     float win = wy * max(wx, wz) * lit;
     m.alb = vec3(0.02); m.rough = 0.22; m.metal = 0.5;
-    m.emis = palf(aux) * win * (0.5 + aux * 0.9 + uBeat * 0.35 + uDrop * 0.4);
+    m.emis = palf(aux) * win * (0.3 + aux * 0.6 + uBeat * 0.35 + uDrop * 0.4);
   } else if (id < 9.5) {                // wet asphalt
     m.alb = vec3(0.012); m.rough = 0.14; m.metal = 0.9;
   } else if (id < 10.5) {               // liquid chrome
@@ -902,8 +909,8 @@ Mat matOf(float id, float aux, vec3 p) {
   } else if (id < 13.5) {               // fractal shell
     vec3 cc = palf(fract(aux * 3.2 + 0.15 * sin(p.y * 2.0) + uTime * 0.03));
     m.alb = cc * (0.35 + 0.5 * (1.0 - aux));
-    m.rough = 0.22 + aux * 0.2; m.metal = 0.8;
-    m.emis = cc * (0.15 + pow(1.0 - aux, 2.0) * 0.9 + uBeat * 0.35 + uDrop * 0.4);
+    m.rough = 0.3 + aux * 0.2; m.metal = 0.35;
+    m.emis = cc * (0.10 + pow(1.0 - aux, 2.0) * 1.1 + uBeat * 0.35 + uDrop * 0.4);
   } else if (id < 14.5) {               // spare glass material
     m.alb = vec3(0.9); m.rough = 0.06; m.metal = 0.0; m.trans = 1.0;
     m.emis = palf(0.3) * 0.08;
@@ -924,8 +931,8 @@ Mat matOf(float id, float aux, vec3 p) {
                          + sweepLine * 1.0 + crosshair * 0.035)
            + palf(0.88) * sweepLine * 0.65;
   } else if (id < 16.5) {               // gpu voxel
-    m.alb = vec3(0.03); m.rough = 0.25; m.metal = 0.6;
-    m.emis = palf(aux) * (0.06 + aux * 1.15 + uBeat * 0.28);
+    m.alb = vec3(0.012); m.rough = 0.2; m.metal = 0.85;
+    m.emis = palf(0.2 + aux * 0.55) * (0.05 + aux * 0.55 + uBeat * 0.22);
   } else if (id < 17.5) {               // prism beam / dispersion fan
     m.alb = vec3(0.0); m.rough = 1.0;
     // saturate the palette walk so the fan reads as a spectrum, not a white wedge
@@ -947,23 +954,24 @@ Mat matOf(float id, float aux, vec3 p) {
     vec3 cc = palf(aux);
     m.alb = cc * 0.2; m.rough = 0.12; m.metal = 0.3;
     m.emis = cc * (1.4 + uLevel * 1.6 + uBeat * 0.8);
-  } else if (id < 23.5) {               // vinyl grooves — glossy black + spectrum burn
+  } else if (id < 23.5) {               // vinyl grooves — black lacquer, colour walks outward
     float r = aux;
-    float rr = clamp(r / 3.4, 0.0, 1.0);
-    float grooves = 0.5 + 0.5 * sin(r * 64.0);
+    float rr = clamp(r / 3.1, 0.0, 1.0);
+    float grooves = 0.5 + 0.5 * sin(r * 72.0);
     float band = spec(pow(rr, 0.92));
     float ang = atan2s(p.z, p.x);
     float sweep = smoothstep(-0.55, 0.55, sin(ang - uTime * (1.2 + uLevel * 1.6) + uBeat * 0.3));
-    m.alb = vec3(0.010); m.rough = 0.16; m.metal = 0.88;
-    m.emis = palf(pow(rr, 1.15))
-      * (grooves * (0.05 + band * 0.10)
-         + sweep * grooves * band * (1.3 + uBeat * 0.9)
-         + grooves * uHigh * 0.22
-         + uBeat * 0.10);
-  } else if (id < 24.5) {               // record label
+    /* a darker lacquer with less mirror, so the deck no longer mirrors the
+       backdrop into a white dome; the palette colour is what carries it */
+    m.alb = vec3(0.004); m.rough = 0.3; m.metal = 0.2;
+    vec3 tint = palf(0.12 + rr * 0.8);
+    m.emis = tint * (grooves * 0.035 + band * grooves * 0.20
+                     + sweep * grooves * band * (0.9 + uBeat * 0.8)
+                     + grooves * uHigh * 0.15);
+  } else if (id < 24.5) {               // record label — a vivid palette disc
     vec3 cc = palf(0.5);
-    m.alb = cc * 0.6; m.rough = 0.6; m.metal = 0.0;
-    m.emis = palf(0.5) * (0.05 + uBeat * 0.22);
+    m.alb = cc * 0.22; m.rough = 0.4; m.metal = 0.0;
+    m.emis = palf(0.72) * (0.08 + uBeat * 0.30 + uLevel * 0.12);
   } else if (id < 25.5) {               // tonearm — brushed metal
     m.alb = vec3(0.55); m.rough = 0.18; m.metal = 0.95;
   } else if (id < 26.5) {               // matte enclosure wall
@@ -996,7 +1004,7 @@ Mat matOf(float id, float aux, vec3 p) {
   // per-mode emissive gain: dense scenes (particle/voxel fields) would
   // otherwise bloom into a flat white sheet
   float gain = 1.0;
-  if (uMode == 3)  gain = 0.45;   // particles
+  if (uMode == 3)  gain = 0.6;    // particles
   if (uMode == 5)  gain = 0.55;   // spectro terrace
   if (uMode == 6)  gain = 0.55;   // tunnel
    if (uMode == 14) gain = 0.62;   // tensor — band-coupled rods earn more light
@@ -1007,7 +1015,7 @@ Mat matOf(float id, float aux, vec3 p) {
   if (uMode == 12) gain = 1.2;    // orb
   if (uMode == 16) gain = 1.3;    // void
   if (uMode == 21) gain = 0.8;    // gpu
-  if (uMode == 22) gain = 2.4;    // vinyl — dark deck, the groove burn carries it
+  if (uMode == 22) gain = 1.7;    // vinyl — dark deck, the groove burn carries it
   if (uMode == 13) gain = 2.1;    // fluid — chrome in a dark room needs the lift
   m.emis *= 0.42 * gain * mix(0.75, 1.35, uPop);
   return m;
@@ -1031,24 +1039,29 @@ vec3 envBase(vec3 rd) {
   vec3 sky = mix(vec3(0.004, 0.0038, 0.0035), palf(0.15) * 0.035, pow(up, 2.0));
   sky += palf(0.75) * 0.012 * pow(clamp(-rd.y * 0.5 + 0.5, 0.0, 1.0), 3.0);
   vec3 key = normalize(vec3(0.55, 0.75, -0.4));
-  sky += palf(0.5) * pow(clamp(dot(rd, key), 0.0, 1.0), 96.0) * (1.1 + uLevel * 0.9);
+  sky += palf(0.5) * pow(clamp(dot(rd, key), 0.0, 1.0), 96.0) * (0.5 + uLevel * 0.5);
   vec3 rim = normalize(vec3(-0.7, 0.2, 0.5));
   sky += palf(0.9) * pow(clamp(dot(rd, rim), 0.0, 1.0), 48.0) * 0.25;
+  /* a soft palette glow behind the subject, centred on the view: the scene
+     sits in front of a lit backdrop instead of a flat black one */
+  sky += palf(0.62) * pow(max(dot(rd, g_fw), 0.0), 22.0) * (0.06 + uLevel * 0.06 + uBeat * 0.04);
   if (uMode == 10 || uMode == 11 || uMode == 16 || uMode == 17 || uMode == 3) sky += starField(rd);
   if (uMode == 8) {
     // dusk wash + aurora ribbon over the ridges
-    sky += palf(0.2) * 0.05 * pow(clamp(rd.y * 1.6 + 0.2, 0.0, 1.0), 1.5);
+    sky += palf(0.2) * 0.02 * pow(clamp(rd.y * 1.6 + 0.2, 0.0, 1.0), 1.5);
     float band = exp(-pow((rd.y - 0.26) * 6.0, 2.0));
     float ripple = 0.45 + 0.55 * sin(rd.x * 7.0 + uTime * 0.5) * sin(rd.x * 3.0 - uTime * 0.3);
-    sky += palf(0.7) * band * ripple * (0.3 + uLevel * 0.55);
+    sky += palf(0.45) * band * ripple * (0.16 + uLevel * 0.30);
     sky += starField(rd) * 0.5;
   }
   if (uMode == 1) {
     // low sun on a sea horizon: the ribbons used to play to an empty void
     vec3 sun = normalize(vec3(0.42, 0.10, -0.90));
-    sky += palf(0.88) * pow(clamp(dot(rd, sun), 0.0, 1.0), 260.0) * (2.4 + uBeat * 1.4);
-    float hz = exp(-pow((rd.y - 0.015) * 26.0, 2.0));
-    sky += palf(0.72) * hz * (0.30 + uLevel * 0.5);
+    sky += palf(0.88) * pow(clamp(dot(rd, sun), 0.0, 1.0), 420.0) * (1.5 + uBeat * 0.9);
+    /* the horizon was a flat white band across the whole frame; a thin glow
+       on the line where the sea meets the sky reads as light instead */
+    float hz = exp(-pow((rd.y - 0.015) * 40.0, 2.0));
+    sky += palf(0.72) * hz * (0.10 + uLevel * 0.16);
     sky += palf(0.30) * exp(-pow((rd.y - 0.24) * 3.4, 2.0)) * 0.05;
     sky += starField(rd) * smoothstep(0.06, 0.4, rd.y) * (0.7 + uLevel);
   }
@@ -1151,11 +1164,14 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, Mat m, float shadows) {
   vec3 hot = mix(m.emis, vec3(dot(m.emis, vec3(0.2126, 0.7152, 0.0722))) * 1.35, 0.28);
   float hit = pow(clamp(uBeat, 0.0, 1.0), 0.55);
   vec3 col = hot * wrap * (1.0 + hit * 0.55);
-  vec3 kc = mix(vec3(1.0, 0.97, 0.92), palf(0.55), 0.4) * (1.45 + uLevel * 0.7 + uBeat * 0.3);
+  /* key and fill are held well under the old levels: at 1.45 a mid-tone
+     albedo lit by the key went near white, which is what made the scenes pastel.
+     The palette and the emission carry the colour now. */
+  vec3 kc = mix(vec3(1.0, 0.95, 0.88), palf(0.55), 0.55) * (0.95 + uLevel * 0.5 + uBeat * 0.25);
   float sh = shadows > 0.5 ? softShadow(p + n * 0.01, key, 12.0) : 1.0;
   col += brdf(n, v, key, m, kc) * sh;
   vec3 fill = normalize(vec3(-0.6, 0.35, 0.55));
-  col += brdf(n, v, fill, m, mix(vec3(0.75, 0.82, 0.95), palf(0.8), 0.35) * (0.55 + uBeat * 0.4));
+  col += brdf(n, v, fill, m, mix(vec3(0.6, 0.7, 0.9), palf(0.8), 0.5) * (0.3 + uBeat * 0.3));
   /* AO rides the same flag as the shadow: the calls that skip one (bounce
      shading inside reflections and glass, the self-lit sphere fields) are
      the ones where three more SDF taps per pixel buy nothing visible */
@@ -1224,9 +1240,9 @@ vec3 volColor(float dens, vec3 p) {
      (0.12 -> 0.8) washed five-colour palettes out to their pale end */
   float rr = clamp(r * 0.2, 0.0, 1.0);
   vec3 c = mix(palf(0.55 - rr * 0.4), palf(0.08 + rr * 0.15), smoothstep(0.2, 0.9, rr));
-  float paleMix = (uMode == 20) ? 0.24 : 0.55;
+  float paleMix = (uMode == 20) ? 0.04 : 0.55;
   c = mix(c, palf(0.78), smoothstep(0.35, 0.9, t) * paleMix);
-  float whiteCore = (uMode == 20) ? 0.025 : 0.25;
+  float whiteCore = (uMode == 20) ? 0.0 : 0.25;
   c = mix(c, vec3(1.0, 0.95, 0.9), pow(t, 4.0) * whiteCore);   // keep hue in the dense core
   /* the lamp wax sits behind glass and loses half its light to the wall
      march — it measured a third of the nebula's brightness. Base it hotter
@@ -1321,7 +1337,7 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 19) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.045) * 0.04, 3.55, cos(t * 0.045) * 0.04); ta = vec3(0.0); ap = 0.0; fov = 1.32 * min(1.0, aspect); }
   else if (uMode == 20) { ro = vec3(0.0, 0.0, 4.65); ap = 0.0; }
   else if (uMode == 21) { ro = vec3(sin(t * 0.12) * 2.9, 1.95, cos(t * 0.12) * 2.9); ta = vec3(0.0, -0.1, 0.0); ap = 0.015; }
-  else if (uMode == 22) { ro = vec3(0.0, 3.3 + sin(t * 0.2) * 0.12, 2.9); ta = vec3(0.0, -0.05, 0.0); ap = 0.028; }
+  else if (uMode == 22) { ro = vec3(0.0, 4.6 + sin(t * 0.2) * 0.12, 3.2); ta = vec3(0.0, 0.0, 0.0); ap = 0.02; fov = 1.35; }
   else                  { ro = vec3(sin(t * 0.12) * 4.0, 2.0, cos(t * 0.12) * 4.0); ap = 0.03; }
   /* cinematic pass layered over every rig, applied BEFORE the basis is
      built from ro→ta: a second, slower drift breaks the lone-sinusoid sway
@@ -1343,6 +1359,7 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
      so move its forward target with it or the bore exits the phone frame. */
   if (uMode == 6) ta = ro + vec3(0.0, 0.0, -1.0);
   vec3 fw = normalize(ta - ro);
+  g_fw = fw;
   vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
   vec3 up = cross(rt, fw);
   vec3 dir = normalize(uv.x * rt + uv.y * up + fov * fw);
@@ -1569,11 +1586,17 @@ void main() {
   col += bl * uBloomAmt * 1.6 * (1.0 + uDrop * 0.9);
 
   col *= uExposure * (1.0 + pow(clamp(uBeat, 0.0, 1.0), 0.6) * 0.62 + uDrop * 0.4);
-  col = aces(col);
+  /* Tone-map the luminance and scale the colour by it. Per-channel ACES drove
+     every bright neon toward white, which is why the scenes read pastel. Scaling
+     keeps a saturated highlight saturated, and only the brightest channel clips. */
+  float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  float tl = aces(vec3(lum)).x;
+  col *= tl / max(lum, 1e-4);
+  col = min(col, vec3(1.0));
   col = pow(col, vec3(1.0 / 2.2));
   // saturation from the Color Pop control
   float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
-  col = mix(vec3(l), col, 0.85 + uPop * 0.5);
+  col = mix(vec3(l), col, 1.08 + uPop * 0.5);
   /* palette split-tone: shadows sink toward the deepest palette colour,
      highlights lean to the brightest, so every mode sits inside one
      cohesive colourway */
