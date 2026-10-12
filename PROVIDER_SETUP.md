@@ -4,7 +4,7 @@
 
 ## Source and deployment distinction
 
-As of October 12, 2026, default `main` includes approval-gated Spotify integration code. The public demo's Vercel production deployment points to `claude/audit-improve-0187dWQy` at `fe02a915567137fa9bd115fde72a8092d4f70ee1`; that branch's README has removed Spotify from its source list and setup instructions. Do not assume default-branch integrations are enabled on the hosted demo.
+As of October 12, 2026, default `main` includes approval-gated Spotify integration code. The public demo was reviewed on `claude/audit-improve-0187dWQy`, initially at snapshot `fe02a915567137fa9bd115fde72a8092d4f70ee1`; that branch's README had removed Spotify from its source list and setup instructions. Production deployments can advance independently of this documentation snapshot. Do not assume default-branch integrations are enabled on the hosted demo.
 
 The Spotify instructions below apply only to a separate appropriately approved deployment of the main-branch implementation. Both branches describe Apple Music playback as a still player view, without beat-driven visuals. Local files, analyzable direct URLs, and permitted live inputs are the supported route for audio-reactive scenes.
 
