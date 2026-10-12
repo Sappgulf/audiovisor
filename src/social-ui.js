@@ -22,9 +22,9 @@ export function createSocialFeed({ state, toast, doc = document }) {
     <div style="padding:8px 10px; background:var(--glass); border:1px solid var(--border-soft); border-radius:8px; display:flex; justify-content:space-between; align-items:center">
       <div style="min-width:0">
         <div style="font-size:11px; font-weight:600; color:var(--text)">${esc(e.title)}</div>
-        <div style="font-size:10px; color:var(--text-40)">${esc(e.user)} · ${esc(e.mode)} · ${e.likes}♥</div>
+        <div style="font-size:10px; color:var(--text-40)">${esc(e.user)} · ${esc(e.mode)} · ${Number(e.likes) || 0}♥</div>
       </div>
-      <button class="ghost-btn" data-like="${e.id}" style="width:28px; height:28px; flex-shrink:0"><span class="ic ic-sm" data-icon="record"></span></button>
+      <button class="ghost-btn" data-like="${esc(e.id)}" style="width:28px; height:28px; flex-shrink:0"><span class="ic ic-sm" data-icon="record"></span></button>
     </div>`).join('');
     el.querySelectorAll('[data-like]').forEach(b => b.addEventListener('click', () => { Social.likeFeed(b.dataset.like); renderSocial(); }));
   }

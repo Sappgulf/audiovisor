@@ -30,8 +30,11 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(request, copy));
+          // an error page cached here would be served offline in its place
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(request, copy));
+          }
           return res;
         })
         .catch(() => caches.match(request).then((r) => r || caches.match('/')))
@@ -66,10 +69,16 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  /* API responses are never copied into Cache Storage. /api/apple-music-token
+     returns a signed developer credential marked no-store, and the offline
+     fallback in the catch would otherwise hand that copy back long after it
+     was issued. The same goes for any response that asks not to be stored. */
   e.respondWith(
     fetch(request)
       .then((res) => {
-        if (res.ok) {
+        const cacheable = res.ok && !url.pathname.startsWith('/api/')
+          && !/no-store/i.test(res.headers.get('Cache-Control') || '');
+        if (cacheable) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(request, copy));
         }

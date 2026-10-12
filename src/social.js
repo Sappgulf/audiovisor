@@ -8,14 +8,15 @@ const newId = () => Math.random().toString(36).slice(2, 9);
 
 export function getFeed() {
   const feed = readJSON(KEY, []);
-  return Array.isArray(feed) ? feed : [];
+  // one null or non-object row would throw inside the renderer and blank the whole feed
+  return Array.isArray(feed) ? feed.filter((e) => e && typeof e === 'object') : [];
 }
 
 export function postToFeed({ title, mode, theme, fx }) {
   const feed = getFeed();
   const entry = {
     id: newId(),
-    title: title || 'Untitled Mix',
+    title: String(title || 'Untitled Mix').slice(0, 120),
     mode, theme, fx,
     likes: 0,
     at: Date.now(),
@@ -37,7 +38,7 @@ export function likeFeed(id) {
 
 export function getFollows() {
   const list = readJSON(FOLLOW_KEY, []);
-  return Array.isArray(list) ? list : [];
+  return Array.isArray(list) ? list.filter((u) => typeof u === 'string') : [];
 }
 
 export function toggleFollow(user) {

@@ -20,6 +20,8 @@ export async function developerToken() {
 
   const response = await fetch('/api/apple-music-token', {
     headers: { Accept: 'application/json' },
+    // a stalled request should fail into the retryable path, not hang the card
+    signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined,
   });
   let body = {};
   try { body = await response.json(); } catch {}

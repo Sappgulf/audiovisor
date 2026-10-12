@@ -59,12 +59,21 @@ export function parseRedirect(search) {
 
 /* ---------- storage ---------- */
 
+/* Reading window.localStorage itself throws when the browser blocks site
+   data, so the accessor is guarded as well as the calls made on it. */
 function localStore() {
-  return typeof window !== 'undefined' ? window.localStorage : null;
+  try { return typeof window !== 'undefined' ? window.localStorage : null; } catch { return null; }
 }
 
 function sessionStore() {
-  return typeof window !== 'undefined' ? window.sessionStorage : null;
+  try { return typeof window !== 'undefined' ? window.sessionStorage : null; } catch { return null; }
+}
+
+/* A stalled request on a phone would otherwise leave the Connect panel
+   waiting with no way out. Bounded here, retried only by the user. */
+const NET_TIMEOUT_MS = 15000;
+function netSignal() {
+  return typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(NET_TIMEOUT_MS) : undefined;
 }
 
 function parseStore(storage, key) {
@@ -192,6 +201,7 @@ export class SpotifyClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
+      signal: netSignal(),
     });
     if (!res.ok) {
       if (this.onError) this.onError('Spotify token exchange failed');
@@ -241,6 +251,7 @@ export class SpotifyClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
+      signal: netSignal(),
     });
     if (!res.ok) {
       this.logout();
@@ -267,6 +278,7 @@ export class SpotifyClient {
     const call = () =>
       fetch(`${API_BASE}${path}`, {
         ...opts,
+        signal: netSignal(),
         headers: {
           Authorization: `Bearer ${token}`,
           ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
@@ -320,7 +332,9 @@ export class SpotifyClient {
       const player = new window.Spotify.Player({
         name: 'AUDIOVISOR',
         volume: 0.75,
-        getOAuthToken: (cb) => this.ensureToken().then((t) => t && cb(t)),
+        /* getOAuthToken has no error path. A failed refresh must not leave a
+           rejected promise behind; the SDK's own auth_error reports it. */
+        getOAuthToken: (cb) => this.ensureToken().then((t) => t && cb(t)).catch(() => {}),
       });
 
       player.addListener('ready', ({ device_id }) => {

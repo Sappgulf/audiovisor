@@ -79,4 +79,11 @@ describe('request handling', () => {
     const nav = sw.slice(sw.indexOf("request.mode === 'navigate'"));
     expect(nav.slice(0, 200)).toMatch(/fetch\(request\)/);
   });
+
+  it('never copies /api responses or no-store responses into the cache', () => {
+    /* /api/apple-music-token returns a signed developer credential marked
+       no-store; caching it would let the offline fallback replay it later. */
+    expect(sw).toMatch(/!url\.pathname\.startsWith\('\/api\/'\)/);
+    expect(sw).toMatch(/no-store/i);
+  });
 });

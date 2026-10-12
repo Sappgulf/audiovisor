@@ -345,6 +345,8 @@ export class ConnectPanel {
       this.engine.playUrl(url, { name }).then(() => {
         this.toast(`Streaming <b>${esc(name)}</b>`);
         this.setCurrentTrack(null);
+      }).catch((err) => {
+        this.toast(`<b>Stream failed</b> — ${esc(err?.message || err)}`, { duration: 3400 });
       });
     };
     sources.querySelector('#chip-url').addEventListener('click', () => {
