@@ -66,6 +66,7 @@ export class BeatTracker {
     this._fluxHistCount = 0;
     this._fluxHistPos = 0;
     this._lastOnset = -1e9;
+    this._pendingOnset = null;
     this._intervalCount = 0;
     this._fluxPeak = 0;
     this._floor = 0.008;

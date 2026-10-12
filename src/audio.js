@@ -47,7 +47,7 @@ export function stereoWidth(bufL, bufR) {
  *  - 'mic'      live microphone (analysis-only, no speaker routing)
  *  - 'capture'  system/tab audio capture (analysis-only)
  *  - 'stream'   HTMLMediaElement URLs (radio/podcast/direct links)
- *  - 'spotify' / 'apple' account playback (no decoded audio access)
+ *  - 'apple' account playback (no decoded audio access)
  */
 export class AudioEngine {
   constructor() {
@@ -142,7 +142,7 @@ export class AudioEngine {
   }
 
   isExternalMode() {
-    return this.mode === 'spotify' || this.mode === 'apple';
+    return this.mode === 'apple';
   }
 
   isExternal() {
@@ -290,8 +290,12 @@ export class AudioEngine {
       this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
       this.waveData = new Uint8Array(this.analyser.fftSize);
       this.beatFreq = new Uint8Array(this.beatAnalyser.frequencyBinCount);
+      /* FX chosen before the context existed (restored settings, a preset on
+         boot) were recorded in this.fx but never reached the nodes */
+      for (const name of Object.keys(this.fx)) if (this.fx[name]) this.setFx(name, true);
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    // iOS reports 'interrupted' after a call or a lock screen, not 'suspended'
+    if (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted') this.ctx.resume()?.catch(() => {});
   }
 
   /** Analysis-only bus: mic + capture feed this and it never reaches speakers. */
@@ -454,11 +458,17 @@ export class AudioEngine {
     if (!item.buffer && item.file) {
       const wasPlaying = this.playing;
       this._rehydrate(i).then((buf) => {
-        if (this.queueIndex !== i || !buf) return;
+        // stale if the slot was rebuilt meanwhile (same index, new entry)
+        if (this.queue[i] !== item || this.queueIndex !== i || !buf || this.buffer) return;
         this.buffer = buf;
         if (wasPlaying) { this.playing = false; this.play(); }
         this._emit();
-      }).catch(() => {});
+      }).catch(() => {
+        if (this.queue[i] !== item || this.queueIndex !== i) return;
+        this.playing = false;
+        this._emit();
+        this._fire('error', 'Could not reload this track — the file may be gone');
+      });
     }
   }
 
@@ -469,7 +479,7 @@ export class AudioEngine {
   }
 
   playTrack(i) {
-    if (!this.queue.length) return;
+    if (!this.queue[i]) return;
     if (this.playing) this._retireSource();
     this._applyQueueItem(i);
     this.playing = false;
@@ -543,7 +553,7 @@ export class AudioEngine {
     if (this.playing) return;
     this._connectSource();
     this.source.start(0, this.offset % this.buffer.duration);
-    this.startedAt = this.ctx.currentTime - this.offset;
+    this.startedAt = this.ctx.currentTime - this.offset / this.speed;
     this.playing = true;
     this._emit();
   }
@@ -594,7 +604,7 @@ export class AudioEngine {
       this._retireSource();
       this._connectSource();
       this.source.start(0, this.offset);
-      this.startedAt = this.ctx.currentTime - this.offset;
+      this.startedAt = this.ctx.currentTime - this.offset / this.speed;
     }
     this._emit();
   }
@@ -721,8 +731,12 @@ export class AudioEngine {
   }
 
   setSpeed(mult) {
+    /* the clock is anchored in wall time, so a rate change re-anchors it or
+       the playhead jumps by (old - new) × elapsed */
+    const pos = this.playing && this.mode === 'file' && this.buffer && this.ctx ? this.getTime() : null;
     this.speed = mult;
     if (this.source) this.source.playbackRate.value = mult;
+    if (pos !== null) this.startedAt = this.ctx.currentTime - pos / mult;
   }
 
   setSmoothing(v) {
@@ -819,6 +833,10 @@ export class AudioEngine {
     let offset = 0;
     if (bpm > 0) offset = this.getTime() % (60 / bpm);
     this._applyQueueItem(i);
+    /* _connectSource() disconnects this.sourceGain, which is still the
+       outgoing track's gain here: detach our reference first so the old
+       track fades out instead of being cut at once */
+    this.sourceGain = null;
     this._connectSource();
     const t = this.ctx.currentTime;
     if (this.sourceGain) {
@@ -835,9 +853,10 @@ export class AudioEngine {
       setTimeout(() => { try { oldSrc?.stop(); } catch {} try { oldGain?.disconnect(); } catch {} }, fadeSec * 1000 + 100);
     }
     this.source.start(0, offset);
-    this.startedAt = t - offset;
+    this.startedAt = t - offset / this.speed;
     this.playing = true;
     this._emit();
+    if (this.onQueueChange) this.onQueueChange();
   }
 
   /* ---------- mic (analysis-only) ---------- */
@@ -846,9 +865,12 @@ export class AudioEngine {
     this._ensureCtx();
     this._ensureTap();
     if (this.micActive) return;
-    this.micStream = await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false },
     });
+    // a second enable during the permission prompt already won: drop this one
+    if (this.micActive) { stream.getTracks().forEach((tr) => tr.stop()); return; }
+    this.micStream = stream;
     this.micSource = this.ctx.createMediaStreamSource(this.micStream);
     this.micSource.connect(this.tapGain);
     if (this.playing) this.pause();
@@ -881,6 +903,7 @@ export class AudioEngine {
     if (!navigator.mediaDevices?.getDisplayMedia) {
       throw new Error('Tab capture is not supported in this browser');
     }
+    if (this.captureActive) return;
     this._ensureCtx();
     this._ensureTap();
     const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -888,6 +911,7 @@ export class AudioEngine {
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       preferCurrentTab: true,
     });
+    if (this.captureActive) { stream.getTracks().forEach((t) => t.stop()); return; }
     const audioTracks = stream.getAudioTracks();
     stream.getVideoTracks().forEach((t) => t.stop());
     if (!audioTracks.length) {
@@ -966,7 +990,8 @@ export class AudioEngine {
       try {
         await p;
       } catch (err) {
-        if (err?.name !== 'AbortError') this._onStreamError(err);
+        if (err?.name === 'NotAllowedError') this.playing = false; // needs a tap; the stream is fine
+        else if (err?.name !== 'AbortError') this._onStreamError(err);
       }
     }
     this._emit();
@@ -1039,12 +1064,12 @@ export class AudioEngine {
     this._emit();
   }
 
-  /* ---------- external transport (Spotify / Apple Music) ---------- */
+  /* ---------- external transport (Apple Music) ---------- */
 
   setExternal(controller) {
     this.external = controller;
     if (controller) {
-      this._setMode(controller.kind || 'spotify');
+      this._setMode(controller.kind || 'apple');
       this.playing = controller.isPlaying?.() ?? false;
     } else {
       this._setMode(this.hasTrack ? 'file' : 'none');
@@ -1101,7 +1126,8 @@ export class AudioEngine {
     }
     if (!this.buffer) return 0;
     if (!this.playing) return this.offset;
-    const t = this.ctx.currentTime - this.startedAt;
+    // song position moves at the playback rate, so 1.5x audio runs 1.5x fast
+    const t = (this.ctx.currentTime - this.startedAt) * this.speed;
     return this.loop ? t % this.buffer.duration : Math.min(t, this.buffer.duration);
   }
 
@@ -1133,7 +1159,7 @@ export class AudioEngine {
       return this._frameData;
     }
     if (this.isExternalMode()) {
-      // MusicKit and Spotify expose transport state, not decoded PCM. A fake
+      // MusicKit exposes transport state, not decoded PCM. A fake
       // spectrum would misrepresent the song and couple protected playback to
       // the visualizer, so account playback remains audio-only.
       return null;

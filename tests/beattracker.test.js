@@ -248,3 +248,16 @@ describe('BeatTracker', () => {
     expect(pulses).toBeLessThan(4);
   });
 });
+
+describe('BeatTracker reset', () => {
+  it('a seek drops an onset still waiting for the speaker', () => {
+    const bt = new BeatTracker();
+    const rest = restSpectrum();
+    bt.process(rest, 0);
+    bt.process(makeOnsetSpectrum(), 1.0, 0.2); // stamped 1.0s, audible at 1.2s
+    bt.reset();                                // seek back to 0.5s
+    bt.process(rest, 0.5, 0.2);
+    bt.process(rest, 1.4, 0.2);                // the old onset's audible time has passed
+    expect(bt.pulse).toBe(0);
+  });
+});

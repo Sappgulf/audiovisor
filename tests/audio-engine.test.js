@@ -624,3 +624,151 @@ describe('stereo width', () => {
     expect(lv.width).toBeCloseTo(1, 3);
   });
 });
+
+describe('playback clock, transitions and recovery', () => {
+  let engine;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+  });
+
+  it('advances the song position at the playback rate, not wall time', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+    engine.setSpeed(1.5);
+    engine.ctx.currentTime = 10;
+    expect(engine.getTime()).toBeCloseTo(15, 5);
+  });
+
+  it('a mid-song rate change keeps the playhead where it was', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+    engine.ctx.currentTime = 4;
+    engine.setSpeed(2);
+    expect(engine.getTime()).toBeCloseTo(4, 5);
+    engine.ctx.currentTime = 5;
+    expect(engine.getTime()).toBeCloseTo(6, 5);
+  });
+
+  it('seeking at a non-unit rate lands on the requested time', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.setSpeed(1.5);
+    engine.play();
+    engine.seek(30);
+    engine.ctx.currentTime = 2;
+    expect(engine.getTime()).toBeCloseTo(33, 5);
+  });
+
+  it('crossfade fades the outgoing track instead of cutting it', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
+    engine.play();
+    const outgoing = engine.sourceGain;
+    engine.crossfadeTo(1, 4);
+    expect(outgoing.connections).toContain(engine.filter);
+    expect(engine.queueIndex).toBe(1);
+  });
+
+  it('crossfade refreshes the queue UI like any other track change', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
+    engine.play();
+    const onChange = vi.fn();
+    engine.onQueueChange = onChange;
+    engine.crossfadeTo(1, 4);
+    expect(onChange).toHaveBeenCalled();
+  });
+
+  it('a late reload for a replaced queue does not overwrite the new track', async () => {
+    await engine.addToQueue([makeFile('old.wav')]);
+    engine.queue[0].buffer = null; // as if released under memory pressure
+    engine.playTrack(0);           // starts reloading the old file
+    engine.clearQueue();
+    await engine.addToQueue([makeFile('new.wav')]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(engine.track.name).toBe('new');
+    expect(engine.buffer).toBe(engine.queue[0].buffer);
+  });
+
+  it('a failed reload of a released track reports it and stops', async () => {
+    await engine.addToQueue([makeFile('a.wav'), makeFile('b.wav')]);
+    engine.queue[1].buffer = null;
+    const errors = [];
+    engine.on('error', (m) => errors.push(m));
+    engine.ctx.failDecodeCount = 2;
+    engine.playTrack(1);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(engine.playing).toBe(false);
+    expect(errors.length).toBe(1);
+  });
+
+  it('FX chosen before the audio context exists reach the nodes once it is built', async () => {
+    engine.setFx('reverb', true);
+    await engine.addToQueue([makeFile()]);
+    expect(engine.reverbGain.gain.value).toBe(0.35);
+  });
+
+  it('resumes a context the OS interrupted (phone call, lock screen)', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.ctx.state = 'interrupted';
+    engine.play();
+    expect(engine.ctx.state).toBe('running');
+  });
+
+  it('a stream blocked by the autoplay policy reads paused, not as a failed stream', async () => {
+    const realAudio = globalThis.Audio;
+    globalThis.Audio = class {
+      constructor() { this.src = ''; this.paused = true; }
+      addEventListener() {}
+      removeAttribute() {}
+      load() {}
+      pause() { this.paused = true; }
+      play() {
+        const err = new Error('play() was not allowed');
+        err.name = 'NotAllowedError';
+        return Promise.reject(err);
+      }
+    };
+    try {
+      engine.ctx = null;
+      engine._ensureCtx();
+      engine.ctx.createMediaElementSource = () => new FakeNode(engine.ctx);
+      const errors = [];
+      engine.on('error', (m) => errors.push(m));
+      await engine.playUrl('https://example.com/live.mp3', { name: 'Live' });
+      expect(engine.playing).toBe(false);
+      expect(engine.streamNoTap).toBe(false);
+      expect(errors).toEqual([]);
+    } finally {
+      globalThis.Audio = realAudio;
+    }
+  });
+
+  it('a second mic enable during the permission prompt keeps only one stream', async () => {
+    await engine.addToQueue([makeFile()]);
+    const tracks = [];
+    const prev = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {
+        mediaDevices: {
+          getUserMedia: async () => {
+            const t = { stop: vi.fn() };
+            tracks.push(t);
+            return { getTracks: () => [t] };
+          },
+        },
+      },
+    });
+    engine.ctx.createMediaStreamSource = () => new FakeNode(engine.ctx);
+    try {
+      await Promise.all([engine.enableMic(), engine.enableMic()]);
+      expect(tracks.length).toBe(2);
+      expect(tracks.filter((t) => t.stop.mock.calls.length > 0).length).toBe(1);
+    } finally {
+      if (prev) Object.defineProperty(globalThis, 'navigator', prev);
+      else delete globalThis.navigator;
+    }
+  });
+});

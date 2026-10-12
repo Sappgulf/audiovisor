@@ -18,11 +18,17 @@
 export function createPlayState({ engine, panels, setIcon, setToggle, getDropzone, onTrackChange, doc = document }) {
   const $ = (id) => doc.getElementById(id);
   let wakeLock = null;
+  let wakePending = false;
 
   async function syncWakeLock(playing) {
     try {
-      if (playing && navigator.wakeLock && !wakeLock) {
-        wakeLock = await navigator.wakeLock.request('screen');
+      if (playing && navigator.wakeLock && !wakeLock && !wakePending) {
+        // back-to-back refreshes would each request a lock and orphan the first
+        wakePending = true;
+        let lock;
+        try { lock = await navigator.wakeLock.request('screen'); } finally { wakePending = false; }
+        if (!engine.playing) { await lock.release(); return; }
+        wakeLock = lock;
         wakeLock.addEventListener('release', () => { wakeLock = null; });
       } else if (!playing && wakeLock) {
         await wakeLock.release();
@@ -45,7 +51,6 @@ export function createPlayState({ engine, panels, setIcon, setToggle, getDropzon
     switch (engine.activeInput) {
       case 'mic': text = playing || engine.micActive ? 'Live · Mic' : 'Mic ready'; break;
       case 'capture': text = 'Live · Capture'; break;
-      case 'spotify': text = playing ? 'SPOTIFY · Playing' : 'SPOTIFY · Paused'; break;
       case 'apple': text = playing ? 'APPLE MUSIC · Playing' : 'APPLE MUSIC · Paused'; break;
       case 'stream': text = playing ? 'STREAM · Live' : 'STREAM · Paused'; break;
       case 'track': text = playing ? 'Live · Track' : 'Paused · Track'; break;
@@ -59,7 +64,7 @@ export function createPlayState({ engine, panels, setIcon, setToggle, getDropzon
   function refreshStatusDot() {
     const dot = doc.querySelector('#status-pill .status-dot');
     const live = engine.playing || engine.micActive || engine.captureActive;
-    dot.classList.toggle('is-live', live);
+    dot?.classList.toggle('is-live', live);
   }
 
   function syncDropzone() {

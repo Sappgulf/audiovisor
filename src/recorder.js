@@ -17,8 +17,15 @@ import * as Library from './library.js';
  * @param {Document} [deps.doc]
  */
 export function createRecorder({ engine, getLiveCanvas, download, toast, doc = document }) {
-  let recorder = null;
-  let chunks = [];
+  /** the take in progress: { rec, stream, parts } */
+  let take = null;
+
+  /* the canvas capture keeps rendering frames until its video track stops.
+     Only the video track: the audio track belongs to the engine's shared
+     recording destination and must survive for the next take. */
+  function stopVideo(stream) {
+    stream?.getVideoTracks().forEach((t) => t.stop());
+  }
 
   function setRecBtn(on) {
     doc.getElementById('record-btn').classList.toggle('is-rec', on);
@@ -29,45 +36,49 @@ export function createRecorder({ engine, getLiveCanvas, download, toast, doc = d
       toast('<b>Recording unavailable</b> — browser lacks MediaRecorder', { duration: 3000 });
       return;
     }
+    let stream = null;
     try {
-      const stream = getLiveCanvas().captureStream(60);
+      stream = getLiveCanvas().captureStream(60);
       try {
         const audio = engine.getRecordStream();
         if (audio) audio.getAudioTracks().forEach((t) => stream.addTrack(t));
       } catch {}
       const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
         .find((m) => MediaRecorder.isTypeSupported(m)) || '';
-      chunks = [];
-      recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8000000 } : undefined);
-      recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-      recorder.start(1000);
+      // each take owns its chunks, so a take still flushing never mixes with the next
+      const parts = [];
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8000000 } : undefined);
+      rec.ondataavailable = (e) => { if (e.data.size) parts.push(e.data); };
+      rec.start(1000);
+      take = { rec, stream, parts };
       setRecBtn(true);
       toast('RECORDING <b>LIVE</b> — press again to save', { duration: 2200 });
     } catch (err) {
       console.error(err);
-      recorder = null;
+      stopVideo(stream);
+      take = null;
       toast('<b>Recording failed to start</b>', { duration: 2600 });
     }
   }
 
   function stopRecording() {
-    const r = recorder;
-    if (!r) return;
-    recorder = null;
+    const t = take;
+    if (!t) return;
+    take = null;
     setRecBtn(false);
-    r.onstop = () => {
-      const blob = new Blob(chunks, { type: r.mimeType || 'video/webm' });
-      chunks = [];
+    t.rec.onstop = () => {
+      stopVideo(t.stream);
+      const blob = new Blob(t.parts, { type: t.rec.mimeType || 'video/webm' });
       if (!blob.size) return;
       download(blob, `audiovisor-session-${fmtStamp()}.webm`);
       toast('SESSION <b>SAVED</b> — WebM downloaded', { duration: 2800 });
     };
-    if (r.state !== 'inactive') r.stop();
-    else r.onstop();
+    if (t.rec.state !== 'inactive') t.rec.stop();
+    else t.rec.onstop();
   }
 
   doc.getElementById('record-btn').addEventListener('click', () => {
-    if (recorder) stopRecording();
+    if (take) stopRecording();
     else startRecording();
   });
 

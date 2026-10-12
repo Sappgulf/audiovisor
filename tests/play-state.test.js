@@ -38,7 +38,7 @@ describe('first-run stage', () => {
     expect(document.getElementById('dropzone').classList.contains('is-hidden')).toBe(false);
   });
 
-  it.each(['track', 'mic', 'capture', 'stream', 'spotify', 'apple'])(
+  it.each(['track', 'mic', 'capture', 'stream', 'apple'])(
     'reveals the default visual when %s becomes the source', (source) => {
       const { document, engine, listeners } = setup();
       engine.activeInput = source;
@@ -53,4 +53,33 @@ describe('first-run stage', () => {
       expect(document.getElementById('dropzone').classList.contains('is-hidden')).toBe(false);
     },
   );
+});
+
+describe('screen wake lock', () => {
+  it('asks for one lock even when status refreshes arrive back to back', async () => {
+    const { engine, listeners } = setup();
+    let requests = 0;
+    const prev = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {
+        wakeLock: {
+          request: async () => {
+            requests++;
+            return { addEventListener() {}, release: async () => {} };
+          },
+        },
+      },
+    });
+    try {
+      engine.playing = true;
+      listeners.get('state')();
+      listeners.get('state')();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(requests).toBe(1);
+    } finally {
+      if (prev) Object.defineProperty(globalThis, 'navigator', prev);
+      else delete globalThis.navigator;
+    }
+  });
 });

@@ -27,6 +27,8 @@ export class FFT {
     this.cos = new Array(size / 2);
     /** @type {number[]} */
     this.sin = new Array(size / 2);
+    /** @type {Float64Array} reused output, overwritten by each call */
+    this.mags = new Float64Array(size >> 1);
     for (let i = 0; i < size / 2; i++) {
       this.cos[i] = Math.cos((-2 * Math.PI * i) / size);
       this.sin[i] = Math.sin((-2 * Math.PI * i) / size);
@@ -38,7 +40,8 @@ export class FFT {
    * magnitude of the first half of the spectrum.
    *
    * @param {ArrayLike<number>} samples
-   * @returns {Float64Array} magnitudes, length size/2
+   * @returns {Float64Array} magnitudes, length size/2 (the instance's own
+   *   buffer: copy it if it must outlive the next call)
    */
   magnitudes(samples) {
     const n = this.size;
@@ -71,7 +74,7 @@ export class FFT {
       }
     }
     const half = n >> 1;
-    const mags = new Float64Array(half);
+    const mags = this.mags;
     for (let i = 0; i < half; i++) mags[i] = Math.hypot(re[i], im[i]);
     return mags;
   }

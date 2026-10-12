@@ -36,6 +36,8 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
     try {
       const errors = await engine.addToQueue(audioFiles);
       if (!engine.hasTrack) {
+        $('status-text').textContent = 'Decode failed';
+        $('status-pill')?.setAttribute('title', 'Decode failed');
         toast('<b>Decode failed</b> — no playable files', { duration: 3000 });
         return;
       }

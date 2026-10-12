@@ -46,3 +46,26 @@ describe('Library (IndexedDB)', () => {
     expect(blob.size).toBeGreaterThan(44);
   });
 });
+
+describe('Library read validation', () => {
+  it('lists a damaged row with safe defaults instead of breaking the list', async () => {
+    const { addToLibrary, listLibraryMeta } = await import('../src/library.js');
+    await addToLibrary({ name: 'Good', ext: 'WAV', sampleRate: 1, channels: 1, duration: 1, arrayBuffer: new ArrayBuffer(4) });
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open('audiovisor.library', 1);
+      req.onsuccess = () => {
+        const db = req.result;
+        const t = db.transaction('tracks', 'readwrite');
+        t.objectStore('tracks').put({ id: 'damaged', name: 42, created: 'yesterday' });
+        t.oncomplete = () => { db.close(); resolve(); };
+        t.onerror = () => reject(t.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+    const list = await listLibraryMeta();
+    const damaged = list.find((r) => r.id === 'damaged');
+    expect(damaged.name).toBe('Untitled');
+    expect(damaged.created).toBe(0);
+    expect(list[list.length - 1].id).toBe('damaged');
+  });
+});

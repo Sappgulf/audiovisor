@@ -136,7 +136,10 @@ export function analyzeTempo(samples, sampleRate, opts = {}) {
  * @returns {Promise<{ bpm: number, confidence: number }>}
  */
 export function analyzeTempoAsync(samples, sampleRate) {
-  const sync = () => analyzeTempo(samples, sampleRate);
+  // a failed analysis answers "no tempo"; it must not throw out of the promise
+  const sync = () => {
+    try { return analyzeTempo(samples, sampleRate); } catch { return { bpm: 0, confidence: 0 }; }
+  };
   if (typeof Worker === 'undefined') return Promise.resolve(sync());
   try {
     const worker = new Worker(new URL('./dsp-worker.js', import.meta.url), { type: 'module' });
@@ -145,6 +148,7 @@ export function analyzeTempoAsync(samples, sampleRate) {
       const done = (v) => { if (settled) return; settled = true; worker.terminate(); resolve(v); };
       worker.onmessage = (e) => done(e.data);
       worker.onerror = () => done(sync());
+      worker.onmessageerror = () => done(sync());
       // copy so the engine's buffer is never transferred away
       const copy = samples.slice();
       worker.postMessage({ samples: copy, sampleRate }, [copy.buffer]);

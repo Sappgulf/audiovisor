@@ -17,6 +17,8 @@ export function createAutopilot({ state, chip, shuffleBtn, toast, setToggle, sav
     setToggle(chip, on, 'is-active');
     setToggle(shuffleBtn, on);
     if (on) {
+      // a second "on" must not stack a second timer on top of the first
+      if (state.autopilotTimer) clearInterval(state.autopilotTimer);
       state.autopilotTimer = setInterval(randomizeLook, 12000);
       randomizeLook();
       if (!opts.silent) toast('AUTOPILOT <b>ON</b> — cycling modes &amp; themes', { duration: 1800 });

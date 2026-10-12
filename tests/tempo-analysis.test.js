@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { analyzeTempo } from '../src/tempo-analysis.js';
 
 const SR = 44100;
@@ -73,5 +73,29 @@ describe('analyzeTempo', () => {
 
   it('returns no lock for a signal shorter than one FFT window', () => {
     expect(analyzeTempo(new Float32Array(100), SR)).toEqual({ bpm: 0, confidence: 0 });
+  });
+});
+
+describe('analyzeTempoAsync failure paths', () => {
+  it('resolves to no tempo for input the analyser cannot read', async () => {
+    const { analyzeTempoAsync } = await import('../src/tempo-analysis.js');
+    await expect(analyzeTempoAsync({ length: 4096 }, SR)).resolves.toEqual({ bpm: 0, confidence: 0 });
+  });
+});
+
+describe('dsp worker', () => {
+  it('answers a malformed message with no tempo instead of throwing', async () => {
+    const prevSelf = globalThis.self;
+    const posted = [];
+    globalThis.self = { postMessage: (m) => posted.push(m) };
+    try {
+      vi.resetModules();
+      await import('../src/dsp-worker.js');
+      globalThis.self.onmessage({ data: { samples: { length: 4096 }, sampleRate: SR } });
+      globalThis.self.onmessage({ data: null });
+      expect(posted).toEqual([{ bpm: 0, confidence: 0 }, { bpm: 0, confidence: 0 }]);
+    } finally {
+      globalThis.self = prevSelf;
+    }
   });
 });

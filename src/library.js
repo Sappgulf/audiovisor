@@ -2,19 +2,40 @@ const DB_NAME = 'audiovisor.library';
 const DB_VER = 1;
 const STORE = 'tracks';
 
+let dbPromise = null;
+
+/* one connection per page: every call used to open a new one and never close it */
 function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VER);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const s = db.createObjectStore(STORE, { keyPath: 'id' });
-        s.createIndex('created', 'created');
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VER);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE)) {
+          const s = db.createObjectStore(STORE, { keyPath: 'id' });
+          s.createIndex('created', 'created');
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        db.onversionchange = () => { db.close(); dbPromise = null; };
+        resolve(db);
+      };
+      req.onerror = () => { dbPromise = null; reject(req.error); };
+    });
+  }
+  return dbPromise;
+}
+
+/* records come back as stored; repair what the UI reads so one damaged row
+   cannot break the whole list or its sort */
+function readRecord(r) {
+  if (!r || typeof r !== 'object' || typeof r.id !== 'string') return null;
+  return {
+    ...r,
+    name: typeof r.name === 'string' ? r.name : 'Untitled',
+    created: Number.isFinite(r.created) ? r.created : 0,
+  };
 }
 
 function tx(store, mode, fn) {
@@ -24,6 +45,7 @@ function tx(store, mode, fn) {
     const req = fn(o);
     t.oncomplete = () => resolve(req?.result);
     t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error || new Error('Library write aborted'));
     // for getAll etc, resolve on req success
     if (req && req.onsuccess) req.onsuccess = () => resolve(req.result);
     if (req && req.onerror) req.onerror = () => reject(req.error);
@@ -59,7 +81,7 @@ export async function listLibrary() {
     const o = t.objectStore(STORE);
     const idx = o.index('created');
     const req = idx.getAll();
-    req.onsuccess = () => resolve(req.result.sort((a,b)=>b.created-a.created));
+    req.onsuccess = () => resolve(req.result.map(readRecord).filter(Boolean).sort((a,b)=>b.created-a.created));
     req.onerror = () => reject(req.error);
   });
 }
@@ -73,7 +95,10 @@ export async function getLibraryEntry(id) {
   return new Promise((resolve, reject) => {
     const t = db.transaction(STORE, 'readonly');
     const req = t.objectStore(STORE).get(id);
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const rec = readRecord(req.result);
+      resolve(rec?.arrayBuffer ? rec : null);
+    };
     req.onerror = () => reject(req.error);
   });
 }

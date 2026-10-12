@@ -20,17 +20,17 @@ export function createAutoplayGuard({ engine, toast, refreshStatus, doc = docume
 
   function ensureAudible() {
     const ctx = engine.ctx;
-    if (!ctx || ctx.state !== 'suspended' || armed) return;
+    if (!ctx || (ctx.state !== 'suspended' && ctx.state !== 'interrupted') || armed) return;
     armed = true;
     toast('Tap anywhere to <b>start audio</b>', { duration: 5000 });
     const kick = () => {
+      win.removeEventListener('pointerdown', kick, true);
+      win.removeEventListener('keydown', kick, true);
       ctx.resume().then(() => {
         armed = false;
         if (!engine.playing) engine.play();
         refreshStatus();
-      }).catch(() => {});
-      win.removeEventListener('pointerdown', kick, true);
-      win.removeEventListener('keydown', kick, true);
+      }).catch(() => { armed = false; });
     };
     win.addEventListener('pointerdown', kick, true);
     win.addEventListener('keydown', kick, true);
