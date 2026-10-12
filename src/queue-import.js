@@ -60,7 +60,7 @@ export async function importPlaylistFile(file, deps) {
     deps.toast('<b>Could not read</b> that playlist', { duration: 2600 });
     return;
   }
-  let entries = [];
+  let entries;
   try {
     entries = parsePlaylist(text) || [];
   } catch {

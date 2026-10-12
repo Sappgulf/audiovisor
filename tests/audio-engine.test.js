@@ -1054,3 +1054,36 @@ describe('sleep fade output scale', () => {
     expect(engine.volume).toBe(0.6);
   });
 });
+
+describe('decoded metadata for the library and failure messages', () => {
+  let engine;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+  });
+
+  it('tags a video container as kind video and keeps the full file name', async () => {
+    const d = await engine.decodeFile(makeFile('Clip.MP4'));
+    expect(d.meta.kind).toBe('video');
+    expect(d.meta.fileName).toBe('Clip.MP4');
+    expect(d.meta.name).toBe('Clip');
+  });
+
+  it('tags an audio file as kind audio', async () => {
+    const d = await engine.decodeFile(makeFile('song.mp3'));
+    expect(d.meta.kind).toBe('audio');
+    expect(d.meta.fileName).toBe('song.mp3');
+  });
+
+  it('reports a failed file as { name, error } with the decode error attached', async () => {
+    await engine.addToQueue([makeFile('warm.mp3')]);
+    engine.ctx.failDecodeCount = 2;
+    const errors = await engine.addToQueue([makeFile('bad.mp4')]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].name).toBe('bad.mp4');
+    expect(errors[0].error).toBeInstanceOf(Error);
+  });
+});

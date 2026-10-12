@@ -2755,6 +2755,8 @@ html, body {
   .track-art { width: 32px; height: 32px; }
   .transport-controls { flex: 0 0 auto; }
   .utility-controls { flex: 0 1 auto; gap: 4px; }
+  /* the format line is the card's text; the icon above it is decoration */
+  .dropzone .drop-visual { display: none; }
   /* a phone on its side is still a touch screen: keep the 44px target */
   .ghost-btn, .mic-btn, .add-btn { min-width: 44px; min-height: 44px; }
   .seek-console { order: 9; flex: 1 1 100%; }
@@ -2830,7 +2832,7 @@ html, body {
     gap: 8px 14px;
     margin-bottom: calc(14px + var(--sab));
   }
-  .track-info { width: auto; flex: 0 1 200px; }
+  .track-info { width: auto; flex: 0 1 170px; }
   .transport-controls { flex: 0 0 auto; }
   .utility-controls { flex: 0 1 auto; }
   .seek-console { order: 9; flex: 1 1 100%; }
