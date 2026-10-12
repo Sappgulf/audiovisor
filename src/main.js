@@ -261,6 +261,18 @@ function setModeStory(id) {
   $('mode-story-copy').textContent = story.story;
 }
 
+/* A raytrace mode change restarts the sample history, so the first frames of
+   the new mode are grainy and the picture cuts. Fading the canvas in over that
+   restart hides it, the way the Canvas2D stage dissolves between modes. Skipped
+   under reduce-flashing and reduced motion, like the other look-change motion. */
+function dipRayStage() {
+  const c = $('ray-canvas');
+  if (!c || !state.raytraceWanted || !ray.ok || state.reduceFlashing || prefersReducedMotion()) return;
+  c.classList.remove('is-dip');
+  void c.offsetWidth;
+  c.classList.add('is-dip');
+}
+
 function setMode(id, { restore = false } = {}) {
   if (!MODES.some((m) => m.id === id)) return;
   /* Restoring a saved mode alone keeps the first-run stage idle; an active
@@ -276,10 +288,12 @@ function setMode(id, { restore = false } = {}) {
      stepping then has to undo; the climb takes it back up if there is room. */
   const start = state.rayQualityExplicit ? state.rayQuality : initialTier(state.rayQuality);
   if (ray.ok && ray.quality !== start) ray.setQuality(start);
+  const changed = state.modeId !== id;
   state.modeId = id;
   setModeStory(id);
   renderer.setMode(id);
   ray.setMode(id);
+  if (changed && !restore) dipRayStage();
   picker.setActiveMode(id);
   syncStageContext();
   pulseStage();
@@ -1038,6 +1052,7 @@ let shortcutsSheet = null;
 const openShortcuts = () => (shortcutsSheet ??= import('./shortcuts.js')
   .then((m) => m.createShortcutsOverlay({ isTypingTarget })));
 $('help-btn')?.addEventListener('click', () => { if (!shortcutsSheet) openShortcuts().then((s) => s.toggle()); });
+$('shortcuts-more-btn')?.addEventListener('click', () => { if (!shortcutsSheet) openShortcuts().then((s) => s.toggle()); });
 window.addEventListener('keydown', (e) => {
   if (shortcutsSheet || isTypingTarget(e.target)) return;
   if (e.key === '?' || (e.key === '/' && !e.shiftKey)) {

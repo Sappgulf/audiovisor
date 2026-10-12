@@ -66,8 +66,12 @@ function bandAvg(freq, a, b) {
   return s / Math.max(1, b - a) / 255;
 }
 
-export class AudioEngine {
+/* Speed and sync changes are events so a panel that shows them (the Audio tab)
+   repaints whichever path changed them: its own chips, the Chop N Screwed FX
+   chain, or an imported settings file. */
+export class AudioEngine extends EventTarget {
   constructor() {
+    super();
     this.ctx = null;
     this.buffer = null;
     this.track = null;
@@ -894,6 +898,7 @@ export class AudioEngine {
     this.speed = mult;
     if (this.source) this.source.playbackRate.value = mult;
     if (pos !== null) this.startedAt = this.ctx.currentTime - pos / mult;
+    this.dispatchEvent(new Event('speedchange'));
   }
 
   setSmoothing(v) {
@@ -1473,6 +1478,7 @@ export class AudioEngine {
     if (!Number.isFinite(ms)) return;
     this._syncOffsetMs = clamp(ms, -300, 300);
     this.beat.leadSec = this._syncOffsetMs / 1000;
+    this.dispatchEvent(new Event('syncchange'));
   }
 
   /** Grid beats reached since the session started. Increments once per beat. */

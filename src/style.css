@@ -637,17 +637,23 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible, [role=
   gap: 8px;
   padding: 7px 11px;
   border: 1px solid var(--border-soft);
-  background: rgba(26, 24, 22, 0.72);
+  /* near-opaque: a bright stage behind a 72% backing washed the labels out,
+     and phones drop the blur, so the backing has to carry the contrast alone */
+  background: rgba(14, 13, 12, 0.86);
   border-radius: 999px;
   backdrop-filter: blur(16px);
   box-shadow: 0 2px 12px rgba(0,0,0,0.2);
 }
-.chip-label { font-size: 10px; color: var(--text-40); letter-spacing: 0.12em; }
+.chip-label { font-size: 10px; color: var(--text-60); letter-spacing: 0.12em; }
 .chip-value { font-size: 10px; color: var(--text-strong); font-variant-numeric: tabular-nums; letter-spacing: 0.06em; }
 /* the tempo chip lights its value on beat 1 of the bar */
 #bpm-chip.is-downbeat .chip-value { color: var(--accent); }
-.chip-accent { border-color: var(--accent-line); background: var(--accent-dim); }
-.chip-accent .chip-label { color: var(--accent); }
+/* the accent tint sits over the same dark backing, not in place of it */
+.chip-accent { border-color: var(--accent-line); background: linear-gradient(var(--accent-dim), var(--accent-dim)), rgba(14, 13, 12, 0.86); }
+/* a saturated theme accent can fall under 4.5:1 on its own tint; mixing toward
+   the cream text keeps the hue and lifts the label. Older browsers skip the
+   second declaration and keep the plain accent. */
+.chip-accent .chip-label { color: var(--accent); color: color-mix(in oklab, var(--accent) 60%, var(--text-strong)); }
 
 /* beat-reactive chrome */
 #shell { --beat: 0; }
@@ -2291,6 +2297,9 @@ input:focus-visible,
   visibility: hidden;
 }
 .stage-canvas.is-live { visibility: visible; }
+/* a raytrace mode change fades in over the sample restart (see dipRayStage) */
+.stage-canvas.is-dip { animation: ray-fade-in 0.5s var(--ease) both; }
+@keyframes ray-fade-in { from { opacity: 0.18; } to { opacity: 1; } }
 #viz-canvas.is-off { visibility: hidden; }
 
 /* control that exists but can't run in this browser (e.g. no WebGL2) */
@@ -2412,6 +2421,7 @@ input:focus-visible,
 .browse-btn {
   margin-top: 18px;
   padding: 9px 20px;
+  line-height: inherit;
   border-radius: 999px;
   border: 1px solid var(--accent-line);
   background: var(--accent-dim);
@@ -2426,9 +2436,8 @@ input:focus-visible,
 }
 .browse-btn:hover { background: var(--accent); border-color: var(--accent); color: #1a1816; }
 
-/* the transport Add control is a <label> now — keep it looking like a button */
-label.add-btn { user-select: none; }
-label.add-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* the transport Add control is a button; its label should not select as text */
+.add-btn { user-select: none; }
 
 /* ---------- Small screens (v8.9.4) ---------- */
 
@@ -2974,6 +2983,7 @@ html, body {
 .provider-playback-add {
   margin-top: 22px;
   padding: 11px 16px;
+  line-height: inherit;
   color: var(--accent);
   border: 1px solid var(--accent-line);
   border-radius: 999px;

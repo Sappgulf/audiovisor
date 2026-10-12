@@ -171,17 +171,11 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
     }
   }
 
-  // labels open the picker themselves; these keep keyboard users working
-  $('add-btn')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFilePicker(); }
-  });
-  $('browse-label')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFilePicker(); }
-  });
-  const localFileLabel = /** @type {HTMLElement | null} */ ($('provider-playback')?.querySelector('.provider-playback-add'));
-  localFileLabel?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFilePicker(); }
-  });
+  // these are real buttons, so Enter and Space arrive as clicks and screen
+  // readers announce them as buttons; the picker opens from the click itself
+  $('add-btn')?.addEventListener('click', openFilePicker);
+  $('browse-label')?.addEventListener('click', openFilePicker);
+  $('provider-local-btn')?.addEventListener('click', openFilePicker);
   $('add-more-btn')?.addEventListener('click', () => { closeMore(); openFilePicker(); });
   $('stage').addEventListener('click', (e) => {
     // clicking the empty stage is a shortcut for "add files"; once a track is

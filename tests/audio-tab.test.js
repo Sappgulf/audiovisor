@@ -123,3 +123,36 @@ describe('loading the tab', () => {
     expect(createAudioTab({ engine, saveSettings })).toBeNull();
   });
 });
+
+describe('repainting when the engine changes', () => {
+  // the real engine, so these exercise the events it actually emits
+  let AudioEngine;
+  beforeEach(async () => {
+    ({ AudioEngine } = await import('../src/audio.js'));
+    engine = new AudioEngine();
+  });
+
+  it('moves the speed chips when the FX chain changes the speed', () => {
+    createAudioTab({ engine, saveSettings });
+    engine.setSpeed(1.5);
+    expect(chip(1.5).classList.contains('is-active')).toBe(true);
+    expect(chip(1).classList.contains('is-active')).toBe(false);
+  });
+
+  it('moves the sync slider and its label when the offset is set elsewhere', () => {
+    createAudioTab({ engine, saveSettings });
+    engine.syncOffsetMs = -90;
+    expect(slider().value).toBe('-90');
+    expect(label().textContent).toBe('-90 ms');
+  });
+
+  it('ignores changes made on a different engine', () => {
+    createAudioTab({ engine, saveSettings });
+    engine.setSpeed(1.25);
+    expect(chip(1.25).classList.contains('is-active')).toBe(true);
+    // another engine's changes do not reach this panel's chips
+    const other = new AudioEngine();
+    other.setSpeed(0.75);
+    expect(chip(0.75).classList.contains('is-active')).toBe(false);
+  });
+});

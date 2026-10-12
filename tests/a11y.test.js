@@ -38,6 +38,18 @@ describe('static accessibility audit', () => {
     expect(serious, summary).toEqual([]);
   });
 
+  it('makes every file-picker control a real button, so it takes focus and keys', () => {
+    expect(document.querySelectorAll('label[role="button"]')).toHaveLength(0);
+    for (const id of ['add-btn', 'browse-label']) {
+      expect(document.getElementById(id)?.tagName, id).toBe('BUTTON');
+    }
+    expect(document.querySelector('.provider-playback-add')?.tagName).toBe('BUTTON');
+  });
+
+  it('puts the keyboard shortcuts in the overflow menu, so phones can reach them', () => {
+    expect(document.querySelector('#more-menu #shortcuts-more-btn')).not.toBeNull();
+  });
+
   it('labels every button and link', () => {
     const named = [...results.violations, ...results.incomplete]
       .filter((v) => v.id === 'button-name' || v.id === 'link-name');

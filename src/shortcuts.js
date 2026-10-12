@@ -70,6 +70,8 @@ export function createShortcutsOverlay({ isTypingTarget, doc = document }) {
   }
 
   doc.getElementById('help-btn')?.addEventListener('click', () => toggle());
+  // the overflow menu carries the same entry, which is the only route on phones
+  doc.getElementById('shortcuts-more-btn')?.addEventListener('click', () => toggle());
   doc.getElementById('shortcuts-close')?.addEventListener('click', () => toggle(false));
   overlay?.addEventListener('click', (e) => { if (e.target === overlay) toggle(false); });
 

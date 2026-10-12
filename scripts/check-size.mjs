@@ -53,7 +53,11 @@ const BUDGETS = {
      on its own, so the total rose by about 8kB. That is the cost of splitting,
      and the boot payload is the number this file exists to protect. Raised
      deliberately, with the entry ceiling unchanged. */
-  total: 114 * 1024,   // all JS chunks, gzipped (raised with the entry, see above)
+  /* Raised 114 -> 120 kB. The total sat at 113.4 kB (99%) after the Audio
+     tab, library resume, phone and accessibility work, which left no room for
+     the next change. The added weight is all in lazy chunks; the entry stays
+     at its ceiling and is still reported on every build. */
+  total: 120 * 1024,   // all JS chunks, gzipped (raised with the entry, see above)
 };
 
 const DIST = 'dist/assets';

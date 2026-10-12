@@ -84,5 +84,12 @@ export function createAudioTab({ engine, saveSettings, doc = document }) {
   slider.disabled = reset.disabled = !syncLive;
   paintSpeed();
   paintSync(syncLive ? engine.syncOffsetMs : 0);
+  // repaint when the engine changes either value by any route: the FX chain's
+  // speed, a settings import, or a control elsewhere. Engines without events
+  // (older builds, test doubles) keep the paint-on-open behaviour.
+  if (typeof engine.addEventListener === 'function') {
+    engine.addEventListener('speedchange', paintSpeed);
+    engine.addEventListener('syncchange', () => paintSync(engine.syncOffsetMs ?? 0));
+  }
   return { el: wrap };
 }

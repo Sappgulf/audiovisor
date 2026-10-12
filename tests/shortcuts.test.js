@@ -20,6 +20,7 @@ describe('createShortcutsOverlay', () => {
   beforeEach(() => {
     document.body.innerHTML = `
       <button id="help-btn"></button>
+      <button id="shortcuts-more-btn"></button>
       <div id="shortcuts-overlay" class="is-hidden" aria-hidden="true">
         <div id="shortcuts-grid"></div>
         <button id="shortcuts-close"></button>
@@ -40,6 +41,11 @@ describe('createShortcutsOverlay', () => {
     expect(controls.overlay.classList.contains('is-hidden')).toBe(false);
     document.getElementById('shortcuts-close').click();
     expect(controls.overlay.classList.contains('is-hidden')).toBe(true);
+  });
+
+  it('opens from the overflow-menu entry, the way in on phones', () => {
+    document.getElementById('shortcuts-more-btn').click();
+    expect(controls.overlay.classList.contains('is-hidden')).toBe(false);
   });
 
   it('opens on ? and closes on Escape', () => {
