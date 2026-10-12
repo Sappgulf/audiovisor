@@ -13,7 +13,8 @@ import { createChromeVisibility } from './chrome-visibility.js';
 export function loopSpan(region, duration) {
   if (!region || !(duration > 0)) return { left: '0%', width: '0%' };
   const at = (t) => Math.min(100, Math.max(0, (t / duration) * 100));
-  return { left: `${at(region.start)}%`, width: `${Math.max(0, at(region.end) - at(region.start))}%` };
+  const left = at(region.start);
+  return { left: `${left}%`, width: `${Math.max(0, at(region.end) - left)}%` };
 }
 
 /**
@@ -181,8 +182,22 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
   // a new source has no loop to keep, so the A-B state starts over with it
   engine.on?.('source', () => { abStep = 0; paintAb(); });
   // a loaded file brings its length; the span needs it, so repaint on state too
-  engine.on?.('state', () => { paintSeekLoop(); syncPositionState(); });
+  engine.on?.('state', () => { paintSeekLoop(); syncPositionState(); paintTempo(); });
   paintAb();
+
+  /* Tempo chip: the value to one decimal ("--" with no tempo), and the chip
+     marked while beat 1 of the bar sounds. Writes wait for a change. */
+  const bpmChip = $('bpm-chip');
+  const bpmValue = $('bpm-value');
+  let shownDown = false;
+  function paintTempo() {
+    const bpm = engine.displayBpm;
+    const text = bpm > 0 ? bpm.toFixed(1) : '--';
+    if (bpmValue && bpmValue.textContent !== text) bpmValue.textContent = text;
+    const down = bpm > 0 && engine.beatInBar === 0;
+    if (bpmChip && down !== shownDown) bpmChip.classList.toggle('is-downbeat', (shownDown = down));
+  }
+  paintTempo();
 
   bindDragTrack(seekTrack, (ratio) => {
     const d = engine.getDuration();
@@ -290,5 +305,5 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
     }
   });
 
-  return { transportToggle, setVolumeUI, updateMediaSession, seekTrack, paintSeekLoop };
+  return { transportToggle, setVolumeUI, updateMediaSession, seekTrack, paintSeekLoop, paintTempo };
 }

@@ -669,6 +669,8 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible, [role=
 }
 .chip-label { font-size: 10px; color: var(--text-40); letter-spacing: 0.12em; }
 .chip-value { font-size: 10px; color: var(--text-strong); font-variant-numeric: tabular-nums; letter-spacing: 0.06em; }
+/* the tempo chip lights its value on beat 1 of the bar */
+#bpm-chip.is-downbeat .chip-value { color: var(--accent); }
 .chip-accent { border-color: var(--accent-line); background: var(--accent-dim); }
 .chip-accent .chip-label { color: var(--accent); }
 
@@ -2786,7 +2788,7 @@ html, body {
   .dropzone .drop-visual { display: none; }
   /* a phone on its side is still a touch screen: keep the 44px target */
   .ghost-btn, .mic-btn, .add-btn { min-width: 44px; min-height: 44px; }
-  .dropzone .browse-btn, .dropzone .drop-secondary { min-height: 44px; }
+  .stage .dropzone .icon-btn { min-height: 44px; }
   .volume-track::before { inset: -20px 0; }
   .toasts { bottom: calc(var(--tp-h, 96px) + 8px); }
   .seek-console { order: 9; flex: 1 1 100%; }

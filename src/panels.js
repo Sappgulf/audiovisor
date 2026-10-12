@@ -49,21 +49,8 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   const getQueueRows = () => queuePanel.querySelectorAll('.queue-row');
   const getLibraryRows = () => libraryPanel.querySelectorAll('.library-row');
 
-  // Both panels are modal dialogs: Tab wraps inside the open one, and focus
-  // that wanders out (a click on the page, a re-render) is brought back in.
-  const TABBABLE = 'button:not([disabled]), input, [tabindex="0"]';
-  function trapTab(panel, e) {
-    const items = panel.querySelectorAll(TABBABLE);
-    if (e.key !== 'Tab' || !items.length) return;
-    const edge = e.shiftKey ? items[0] : items[items.length - 1];
-    if (document.activeElement !== edge) return;
-    e.preventDefault();
-    (e.shiftKey ? items[items.length - 1] : items[0]).focus();
-  }
-  document.addEventListener('focusin', (e) => {
-    const open = [queuePanel, libraryPanel].find((p) => !p.classList.contains('is-hidden'));
-    if (open && !open.contains(e.target)) open.querySelector(TABBABLE)?.focus();
-  });
+  // Tab wrapping lives in panel-focus.js, loaded on the first open
+  const dialogs = () => import('./panel-focus.js').then((m) => m.setDialogs([queuePanel, libraryPanel]));
 
   function setQueueActive(index, doFocus = false) {
     const rows = getQueueRows();
@@ -181,7 +168,6 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   });
 
   queuePanel.addEventListener('keydown', (e) => {
-    trapTab(queuePanel, e);
     const rows = getQueueRows();
     if (e.target.closest('.queue-remove')) return;
     if (!rows.length) {
@@ -284,7 +270,6 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
   });
 
   libraryPanel.addEventListener('keydown', (e) => {
-    trapTab(libraryPanel, e);
     const rows = getLibraryRows();
     // Escape still closes from the search box, with focus in it, so focus can return
     if (e.target.closest('#lib-search') && e.key !== 'Escape') return;
@@ -392,13 +377,14 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
     setToggle(triggerQueue, show);
     if (!show && hadFocus) triggerQueue.focus();
     if (show) {
+      void dialogs();
       // warm the import module now: opening a file picker must happen inside the click, not after a network fetch
       void queueImport();
       queueActiveIndex = clampActive(engine.queueIndex, engine.queue.length);
       renderQueue();
       requestAnimationFrame(() => {
         const rows = getQueueRows();
-        if (!rows.length) { queuePanel.querySelector(TABBABLE)?.focus(); return; }
+        if (!rows.length) { queuePanel.querySelector('button:not([disabled])')?.focus(); return; }
         rows[queueActiveIndex]?.focus();
       });
     }
@@ -455,6 +441,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
     setToggle(triggerLibrary, show);
     if (!show && hadFocus) triggerLibrary.focus();
     if (show) {
+      void dialogs();
       renderLibrary().then(() => {
         const sInput = libSearchInput();
         // open at the library search field for quick filtering

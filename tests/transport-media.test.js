@@ -146,3 +146,74 @@ describe('lock-screen position state', () => {
     await expect(transport.updateMediaSession()).resolves.toBeUndefined();
   });
 });
+
+describe('tempo chip', () => {
+  beforeEach(() => {
+    document.body.innerHTML = `${DOM.replace('<main', '<div id="bpm-chip"><span id="bpm-value">--.--</span></div><main')}`;
+  });
+
+  function mountTempo(engineExtra = {}) {
+    const engine = {
+      activeInput: 'local', playing: false, volume: 1, loop: null, repeat: false, speed: 1,
+      time: 0, track: null, getDuration: () => 100, getTime: () => 0, on: vi.fn(), toggle: vi.fn(),
+      skip: vi.fn(), seek: vi.fn(), setVolume: vi.fn(), prevTrack: vi.fn(), nextTrack: vi.fn(),
+      displayBpm: null, beatInBar: 0, ...engineExtra,
+    };
+    const transport = createTransport({
+      engine, getConnect: () => null, setToggle: vi.fn(), saveSettings: vi.fn(), toast: vi.fn(),
+      openFilePicker: vi.fn(), doc: document,
+    });
+    return { engine, transport };
+  }
+
+  it('shows "--" with no tempo and rounds a known one to one decimal', () => {
+    const { engine, transport } = mountTempo();
+    transport.paintTempo();
+    expect(document.getElementById('bpm-value').textContent).toBe('--');
+    engine.displayBpm = 121.56;
+    transport.paintTempo();
+    expect(document.getElementById('bpm-value').textContent).toBe('121.6');
+  });
+
+  it('marks the chip only on beat 1, and only while a tempo is known', () => {
+    const { engine, transport } = mountTempo();
+    transport.paintTempo();
+    expect(document.getElementById('bpm-chip').classList.contains('is-downbeat')).toBe(false);
+    engine.displayBpm = 120;
+    engine.beatInBar = 0;
+    transport.paintTempo();
+    expect(document.getElementById('bpm-chip').classList.contains('is-downbeat')).toBe(true);
+    engine.beatInBar = 2;
+    transport.paintTempo();
+    expect(document.getElementById('bpm-chip').classList.contains('is-downbeat')).toBe(false);
+  });
+
+  it('writes the value only when it changes', () => {
+    const { engine, transport } = mountTempo({ displayBpm: 120 });
+    const el = document.getElementById('bpm-value');
+    let writes = 0;
+    let text = el.textContent;   // what creation already painted
+    Object.defineProperty(el, 'textContent', {
+      configurable: true,
+      get: () => text,
+      set: (v) => { writes += 1; text = v; },
+    });
+    // the value was painted on creation, so repeats of it write nothing
+    transport.paintTempo();
+    transport.paintTempo();
+    transport.paintTempo();
+    expect(writes).toBe(0);
+    engine.displayBpm = 121;
+    transport.paintTempo();
+    expect(writes).toBe(1);
+    expect(text).toBe('121.0');
+  });
+
+  it('tolerates an engine with no tempo members at all', () => {
+    const { engine, transport } = mountTempo();
+    delete engine.displayBpm;
+    delete engine.beatInBar;
+    expect(() => transport.paintTempo()).not.toThrow();
+    expect(document.getElementById('bpm-value').textContent).toBe('--');
+  });
+});

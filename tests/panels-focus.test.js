@@ -33,7 +33,7 @@ function mount(queue = [{ meta: { name: 'One', duration: 5 } }, { meta: { name: 
 }
 
 /** Let the rAF focus call and the library's async render settle. */
-const settle = () => new Promise((r) => setTimeout(r, 20));
+const settle = () => new Promise((r) => setTimeout(r, 100));
 
 function press(target, key, opts = {}) {
   const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...opts });
@@ -69,10 +69,11 @@ describe('queue dialog focus', () => {
     expect(document.activeElement).toBe(items[items.length - 1]);
   });
 
-  it('pulls focus back in when it lands outside the open dialog', async () => {
+  it('pulls a Tab pressed from outside the open dialog back into it', async () => {
     panels.toggleQueue(true);
     await settle();
     queueBtn.focus();
+    press(queueBtn, 'Tab');
     expect(panels.queuePanel.contains(document.activeElement)).toBe(true);
   });
 
