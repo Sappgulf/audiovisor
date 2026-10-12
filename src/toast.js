@@ -24,9 +24,7 @@ export function renderToastText(el, msg) {
   const tpl = document.createElement('template');
   tpl.innerHTML = String(msg);
   for (const node of tpl.content.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      el.append(node.data);
-    } else if (node.nodeName === 'B') {
+    if (node.nodeName === 'B') {
       const b = document.createElement('b');
       b.textContent = node.textContent;
       el.append(b);
