@@ -111,7 +111,9 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     fetch(request)
       .then((res) => {
-        const cacheable = res.ok && !url.pathname.startsWith('/api/')
+        /* default songs are megabytes each and stream from the network; they are
+           not copied into Cache Storage */
+        const cacheable = res.ok && !url.pathname.startsWith('/api/') && !url.pathname.startsWith('/songs/')
           && !/no-store/i.test(res.headers.get('Cache-Control') || '');
         if (cacheable) {
           const copy = res.clone();

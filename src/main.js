@@ -729,7 +729,7 @@ const { closeMore } = boot('overflow menu', () => createOverflowMenu()) ?? { clo
 
 /* ---------- file loading ---------- */
 
-const { openFilePicker, dropzone } = createFileLoader({
+const { openFilePicker, dropzone, loadFiles } = createFileLoader({
   engine,
   toast,
   updateTrackUI,
@@ -738,6 +738,42 @@ const { openFilePicker, dropzone } = createFileLoader({
   // a playlist dropped on the stage queues its links, same as the queue's Import
   onPlaylist: (items, name, left) => { void import('./queue-import.js').then((m) => m.queueEntries(items, { engine, toast, onQueued: panels.renderQueue }, name, left)).catch((err) => console.error('playlist import failed', err)); },
 });
+
+/* default songs to try: the picks appear only when public/songs/manifest.json exists */
+void import('./default-songs.js').then(async (songsMod) => {
+  const picks = document.getElementById('song-picks');
+  if (!picks) return;
+  const base = import.meta.env.BASE_URL;
+  const songs = await songsMod.fetchSongList(base);
+  if (!songs.length) return;
+  picks.replaceChildren(...songs.map((song, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'fx-chip';
+    b.dataset.song = String(i);
+    b.title = `Load ${song.title} to try the visualizer`;
+    const label = document.createElement('span');
+    label.className = 'chip-txt';
+    label.textContent = song.title;
+    b.append(label);
+    return b;
+  }));
+  picks.addEventListener('click', async (e) => {
+    const btn = /** @type {HTMLButtonElement | null} */ (e.target instanceof Element ? e.target.closest('button[data-song]') : null);
+    if (!btn) return;
+    const song = songs[Number(btn.dataset.song)];
+    btn.disabled = true;
+    try {
+      const file = await songsMod.fetchSongFile(base, song);
+      await loadFiles([file]);
+    } catch {
+      toast(`<b>${esc(song.title)}</b> is not available right now`, { duration: 2600 });
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  picks.classList.remove('is-hidden');
+}).catch((err) => console.error('default songs failed', err));
 
 $('play-demo')?.addEventListener('click', async () => {
   const { renderDemoTrack, DEMO_META } = await import('./demo-track.js');

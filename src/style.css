@@ -859,6 +859,8 @@ html.calm .stage.is-look-change::after { animation: none; }
   background: var(--accent-dim);
   transform: translateY(-1px);
 }
+/* default songs to try: a row of chips under the drop actions */
+.song-picks { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
 .drop-meta {
   position: relative;
   z-index: 1;
