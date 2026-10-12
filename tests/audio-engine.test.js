@@ -223,7 +223,7 @@ describe('AudioEngine', () => {
 
   it('loop mode repeats instead of advancing', async () => {
     await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
-    engine.loop = true;
+    engine.repeat = true;
     engine.play();
     expect(engine.source.loop).toBe(true);
     engine.source.onended();
@@ -979,12 +979,12 @@ describe('A-B loop', () => {
   it('rejects start >= end and leaves no region behind', () => {
     expect(engine.setLoop(10, 5)).toBeNull();
     expect(engine.setLoop(7, 7)).toBeNull();
-    expect(engine.loopRange).toBeNull();
+    expect(engine.loop).toBeNull();
   });
 
   it('clamps the region to the track', () => {
     expect(engine.setLoop(-5, 1000)).toEqual({ start: 0, end: 100 });
-    expect(engine.loopRange).toEqual({ start: 0, end: 100 });
+    expect(engine.loop).toEqual({ start: 0, end: 100 });
   });
 
   it('wraps to the start without resetting the beat grid', () => {
@@ -1015,13 +1015,13 @@ describe('A-B loop', () => {
     engine.play();
     engine.pause();
     engine.play();
-    expect(engine.loopRange).toEqual({ start: 10, end: 20 });
+    expect(engine.loop).toEqual({ start: 10, end: 20 });
   });
 
   it('is cleared when another track loads', () => {
     engine.setLoop(10, 20);
     engine.playTrack(1);
-    expect(engine.loopRange).toBeNull();
+    expect(engine.loop).toBeNull();
   });
 
   it('needs a loaded file; streams and idle engines get null', () => {
@@ -1085,5 +1085,117 @@ describe('decoded metadata for the library and failure messages', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0].name).toBe('bad.mp4');
     expect(errors[0].error).toBeInstanceOf(Error);
+  });
+});
+
+describe('queued stream items (addUrlItems)', () => {
+  let engine;
+  const URL_A = 'https://a.test/x.mp3';
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+  });
+
+  afterEach(() => {
+    engine.clearLoop();
+    delete globalThis.Audio;
+  });
+
+  it('pushes one entry per http(s) item and skips every other scheme', () => {
+    engine.addUrlItems([
+      { url: URL_A, name: 'X', meta: { name: 'X', ext: 'MP3' } },
+      { url: 'ftp://h.test/x.mp3' },
+      { url: 'javascript:alert(1)' },
+      { url: 'not a url' },
+      { url: 'http://b.test/y.m3u8', name: 'Y' },
+    ]);
+    expect(engine.queue).toHaveLength(2);
+    expect(engine.queue[0]).toMatchObject({ url: URL_A, buffer: null, file: null });
+    expect(engine.queue[0].meta).toMatchObject({ name: 'X', ext: 'MP3' });
+    expect(engine.queue[1].meta.name).toBe('Y');
+  });
+
+  it('selects index 0 when nothing was selected, and reports the queue change', () => {
+    engine.onQueueChange = vi.fn();
+    expect(engine.queueIndex).toBe(-1);
+    engine.addUrlItems([{ url: URL_A, name: 'X' }]);
+    expect(engine.queueIndex).toBe(0);
+    expect(engine.onQueueChange).toHaveBeenCalledTimes(1);
+    engine.addUrlItems([{ url: 'https://c.test/z.mp3', name: 'Z' }]);
+    expect(engine.queueIndex).toBe(0);
+  });
+
+  it('selecting a stream item hands its url to playUrl', () => {
+    engine.addUrlItems([{ url: URL_A, name: 'X' }]);
+    engine.playUrl = vi.fn(() => Promise.resolve());
+    engine.playTrack(0);
+    expect(engine.playUrl).toHaveBeenCalledWith(URL_A, expect.objectContaining({ name: 'X' }));
+  });
+
+  it('auto-advancing from a file onto a stream item plays the stream, not silence', async () => {
+    await engine.addToQueue([makeFile('local.mp3')]);
+    engine.addUrlItems([{ url: URL_A, name: 'X' }]);
+    engine.playUrl = vi.fn(() => Promise.resolve());
+    engine.play();
+    engine.source.onended();
+    expect(engine.playUrl).toHaveBeenCalledWith(URL_A, expect.objectContaining({ name: 'X' }));
+  });
+
+  it('play() loads a selected but unloaded stream item', () => {
+    class FakeAudioEl {
+      constructor() { this.src = ''; }
+      addEventListener() {}
+      removeAttribute() {}
+      load() {}
+      pause() {}
+      play() { return Promise.resolve(); }
+    }
+    globalThis.Audio = FakeAudioEl;
+    engine.addUrlItems([{ url: URL_A, name: 'X' }]);
+    engine.play();
+    expect(engine.mode).toBe('stream');
+    expect(engine.streamTrack.url).toBe(URL_A);
+    expect(engine.playing).toBe(true);
+  });
+
+  it('crossfading into a stream item switches to it outright', async () => {
+    await engine.addToQueue([makeFile('local.mp3')]);
+    engine.addUrlItems([{ url: URL_A, name: 'X' }]);
+    engine.playTrack = vi.fn();
+    engine.crossfadeTo(1);
+    expect(engine.playTrack).toHaveBeenCalledWith(1);
+  });
+});
+
+describe('repeat and the A-B loop are separate', () => {
+  let engine;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+  });
+
+  it('loop is null by default and repeat is false', () => {
+    expect(engine.loop).toBeNull();
+    expect(engine.repeat).toBe(false);
+  });
+
+  it('repeat toggles as a boolean without touching the A-B loop', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
+    engine.repeat = !engine.repeat;
+    expect(engine.repeat).toBe(true);
+    engine.setLoop(10, 20);
+    expect(engine.loop).toEqual({ start: 10, end: 20 });
+    expect(engine.repeat).toBe(true);
+    engine.repeat = !engine.repeat;
+    expect(engine.repeat).toBe(false);
+    expect(engine.loop).toEqual({ start: 10, end: 20 });
+    engine.clearLoop();
+    expect(engine.loop).toBeNull();
   });
 });

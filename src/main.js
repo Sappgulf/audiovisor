@@ -487,7 +487,7 @@ function applySettings(s, { eq = false } = {}) {
     $('volume-fill').style.width = `${s.volume * 100}%`;
   }
   if (s.loop) {
-    engine.loop = true;
+    engine.repeat = true;
     setToggle($('loop-btn'), true);
   }
   if (s.autopilot) setAutopilot(true, { silent: true });

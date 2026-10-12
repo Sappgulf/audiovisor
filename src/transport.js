@@ -86,16 +86,16 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
 
   $('prev-btn').addEventListener('click', () => engine.prevTrack());
   $('next-btn').addEventListener('click', () => engine.nextTrack());
-  /* engine.loop is an A-B region ({start, end}) or null. The repeat toggle
-     used to own that property as a boolean, so while a region is set it
-     steps aside instead of overwriting the region. */
-  const regionOf = () => (engine.loop && typeof engine.loop === 'object' ? engine.loop : null);
+  /* engine.loop is the A-B region ({start, end}) or null, and engine.repeat
+     is the whole-track repeat boolean. While a region is set, repeat steps
+     aside instead of fighting the region. */
+  const regionOf = () => engine.loop || null;
   $('loop-btn').addEventListener('click', () => {
     if (regionOf()) { toast('A-B loop is on, clear it with <b>A-B</b> first', { duration: 1600 }); return; }
-    engine.loop = !engine.loop;
-    setToggle($('loop-btn'), engine.loop === true);
+    engine.repeat = !engine.repeat;
+    setToggle($('loop-btn'), engine.repeat === true);
     saveSettings();
-    toast(engine.loop ? 'LOOP <b>ON</b>' : 'LOOP <b>OFF</b>', { duration: 1200 });
+    toast(engine.repeat ? 'LOOP <b>ON</b>' : 'LOOP <b>OFF</b>', { duration: 1200 });
   });
 
   /* Tempo and A-B loop sit in the Studio tab, where a phone has the room.

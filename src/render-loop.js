@@ -235,10 +235,11 @@ export function createRenderLoop({
        while one is selected. */
     const rtOn = !audioOnly && state.raytraceWanted && ray.ok && !raySuspended && !isPluginMode(state.modeId);
     /* reduce-flashing is a renderer setting; the ray stage reads its own copy */
-    if (ray.calm !== renderer.calm) ray.calm = renderer.calm;
-    if (renderer.calm !== _calmCls) {
-      _calmCls = renderer.calm;
-      doc.documentElement.classList.toggle('calm', _calmCls);
+    const calm = !!renderer.calm;
+    if (ray.calm !== calm) ray.calm = calm;
+    if (calm !== _calmCls) {
+      _calmCls = calm;
+      doc.documentElement.classList.toggle('calm', calm);
     }
     // Surface a runtime GPU context loss instead of silently swapping
     // renderers. A browser without WebGL2 is an expected capability fallback,
@@ -257,7 +258,7 @@ export function createRenderLoop({
        BPM chip). The value moves in tiny increments 60+ times a second, so
        only touch the style when it has moved enough to see. */
     {
-      const beatVal = audioOnly ? 0 : rtOn ? (ray.chromeBeat ?? ray.beat) : renderer.chromeBeat;
+      const beatVal = audioOnly ? 0 : rtOn ? (ray.chromeBeat ?? ray.beat) : (renderer.chromeBeat ?? renderer.beat);
       if (Math.abs(beatVal - _lastBeatWritten) > 0.004) {
         _lastBeatWritten = beatVal;
         shellEl.style.setProperty('--beat', beatVal.toFixed(3));
@@ -265,6 +266,7 @@ export function createRenderLoop({
     }
 
     if (audioOnly) {
+      renderer._lastFrameDrawn = false;
       doc.getElementById('ray-canvas').classList.remove('is-live');
       doc.getElementById('viz-canvas').classList.add('is-off');
       if (webgpuCanvas) webgpuCanvas.style.display = 'none';
@@ -303,15 +305,21 @@ export function createRenderLoop({
       if (webgpuCanvas) webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
       doc.getElementById('viz-canvas').classList.toggle('is-off', gpuMode);
       if (gpuMode && !idle && levels) {
+        // the 2D canvas is not drawn this frame, so it cannot be the next dissolve's source
+        renderer._lastFrameDrawn = false;
         // a NaN level would reach the shader as a NaN uniform; hold it at silence
         const gpuLevel = Number.isFinite(levels.level) ? levels.level : 0;
         if (gpuWebgpu) renderWebGPU(gpuWebgpu, renderer.t, gpuLevel);
         else renderWebGL2(gpuWebgl2, renderer.t, gpuLevel, webgpuCanvas.width, webgpuCanvas.height);
       } else {
+        /* the GPU Core fallback swaps the 2D mode every frame. A raw swap, not
+           setMode(): setMode resets the stage state and starts a mode dissolve,
+           and the void mode reads none of that state anyway */
         const effMode = state.modeId === 'gpu' ? 'void' : null;
-        if (effMode) renderer.setMode(effMode);
+        const realMode = renderer.mode;
+        if (effMode) renderer.mode = effMode;
         renderer.render(idle, freq, wave, levels, dtMs * (1 - 0.45 * (levels?.drop || 0)), stereoL, stereoR);
-        if (effMode) renderer.setMode('gpu');
+        if (effMode) renderer.mode = realMode;
         frameDrawn = gpuMode ? webgpuCanvas : renderer.canvas;
       }
     }

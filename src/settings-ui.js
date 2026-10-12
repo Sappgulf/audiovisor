@@ -41,7 +41,7 @@ export function createSettingsUI({
       sliders: Object.fromEntries(Object.entries(sliderEls).map(([k, el]) => [k, parseFloat(el.value)])),
       eq: eqFreqs.map((_, i) => engine.eqFilters?.[i]?.gain.value || 0),
       volume: engine.volume,
-      loop: engine.loop,
+      loop: engine.repeat === true,
       autoDj: getAutoDj(),
       reduceFlashing: state.reduceFlashing,
     });

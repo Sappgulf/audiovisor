@@ -24,7 +24,7 @@ function setup(engineExtra = {}) {
   document.body.innerHTML = TRANSPORT_DOM;
   const listeners = {};
   const engine = {
-    activeInput: 'local', playing: false, volume: 1, loop: false, time: 12,
+    activeInput: 'local', playing: false, volume: 1, loop: false, repeat: false, time: 12,
     toggle: vi.fn(), skip: vi.fn(), seek: vi.fn(), setVolume: vi.fn(),
     prevTrack: vi.fn(), nextTrack: vi.fn(), getDuration: () => 100,
     getTime: vi.fn(() => engine.time),
@@ -124,16 +124,17 @@ describe('repeat (loop) button', () => {
   beforeEach(() => { document.body.innerHTML = ''; });
 
   it('toggles the repeat boolean when no A-B region is set', () => {
-    const { engine, saveSettings } = setup({ loop: false });
+    const { engine, saveSettings } = setup({ repeat: false, loop: null });
     click('loop-btn');
-    expect(engine.loop).toBe(true);
+    expect(engine.repeat).toBe(true);
     expect(saveSettings).toHaveBeenCalled();
   });
 
   it('does not overwrite an A-B region with a boolean', () => {
     const region = { start: 5, end: 9 };
-    const { engine, toast } = setup({ loop: region });
+    const { engine, toast } = setup({ loop: region, repeat: false });
     click('loop-btn');
+    expect(engine.repeat).toBe(false);
     expect(engine.loop).toBe(region);
     expect(toast).toHaveBeenCalled();
   });

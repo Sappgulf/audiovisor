@@ -106,9 +106,8 @@ export class AudioEngine {
 
     this.playing = false;
     /* whole-track repeat (boolean, read by the transport and settings) */
-    this.loop = false;
-    /* A-B region {start, end} in seconds, or null. Named loopRange because
-       `loop` above is the boolean the UI toggles. */
+    this.repeat = false;
+    /* A-B region {start, end} in seconds, or null: see the `loop` getter */
     this._range = null;
     this._loopTimer = null;
     this._taps = [];
@@ -417,6 +416,24 @@ export class AudioEngine {
   }
 
   /**
+   * Queue http(s) stream items (imported playlists). Each entry carries no
+   * buffer or file; _applyQueueItem hands it to playUrl when it is selected.
+   * Anything that is not an http or https URL is skipped.
+   */
+  addUrlItems(items) {
+    for (const it of items || []) {
+      let protocol;
+      try { protocol = new URL(it?.url).protocol; } catch { continue; }
+      if (protocol !== 'http:' && protocol !== 'https:') continue;
+      const { url, meta, ...rest } = it;
+      const m = { ...rest, ...(meta || {}) };
+      this.queue.push({ url, buffer: null, file: null, meta: { ...m, name: m.name || url } });
+    }
+    if (this.queueIndex === -1 && this.queue.length) this.queueIndex = 0;
+    if (this.onQueueChange) this.onQueueChange();
+  }
+
+  /**
    * Queue a buffer we rendered ourselves (the built-in demo). Same path as a
    * decoded file, so seek, FX and the analysers all apply.
    */
@@ -483,6 +500,16 @@ export class AudioEngine {
   _applyQueueItem(i) {
     this.queueIndex = i;
     const item = this.queue[i];
+    if (item.url) {
+      // a stream has no decoded buffer: load it through the element path
+      this.buffer = null;
+      this.track = item.meta;
+      this.offset = 0;
+      this.beat.reset();
+      this.clearLoop();
+      this.playUrl(item.url, item.meta).catch(() => {});
+      return;
+    }
     this.buffer = item.buffer;
     this.track = item.meta;
     this.offset = 0;
@@ -544,7 +571,7 @@ export class AudioEngine {
     src.buffer = this.buffer;
     src.playbackRate.value = this.speed;
     // The demo is a short loop; keep it cycling until a real track replaces it.
-    src.loop = this.loop || !!this.track?.demo;
+    src.loop = this.repeat || !!this.track?.demo;
     this.sourceGain = this.ctx.createGain();
     this.sourceGain.gain.value = 1;
     src.connect(this.sourceGain);
@@ -558,7 +585,7 @@ export class AudioEngine {
       }
       if (this.playing) {
         this.playing = false;
-        if (!this.loop && this.queueIndex < this.queue.length - 1) {
+        if (!this.repeat && this.queueIndex < this.queue.length - 1) {
           this.playTrack(this.queueIndex + 1);
           if (this.onQueueChange) this.onQueueChange();
           return;
@@ -579,6 +606,12 @@ export class AudioEngine {
       this.playing = true;
       if (this.external?.play) this.external.play();
       this._emit();
+      return;
+    }
+    // queued stream selected but not loaded yet (addUrlItems): load it now
+    const cur = this.queue[this.queueIndex];
+    if (cur?.url && !this.buffer && this.mode !== 'stream') {
+      this._applyQueueItem(this.queueIndex);
       return;
     }
     if (this.mode === 'stream') {
@@ -685,7 +718,7 @@ export class AudioEngine {
   }
 
   /** The active A-B region as {start, end}, or null. */
-  get loopRange() {
+  get loop() {
     return this._range ? { ...this._range } : null;
   }
 
@@ -942,6 +975,8 @@ export class AudioEngine {
 
   crossfadeTo(i, fadeSec = 4) {
     if (!this.queue[i] || i === this.queueIndex) return;
+    // a stream cannot be faded into a decoded buffer; switch to it outright
+    if (this.queue[i].url) { this.playTrack(i); return; }
     /* a released buffer would start a source with no audio in it: that source
        plays nothing, ends at once, and its onended advances the queue. Decode
        first, then crossfade. */
@@ -1258,7 +1293,7 @@ export class AudioEngine {
     if (!this.playing) return this.offset;
     // song position moves at the playback rate, so 1.5x audio runs 1.5x fast
     const t = (this.ctx.currentTime - this.startedAt) * this.speed;
-    return this.loop ? t % this.buffer.duration : Math.min(t, this.buffer.duration);
+    return this.repeat ? t % this.buffer.duration : Math.min(t, this.buffer.duration);
   }
 
   getDuration() {

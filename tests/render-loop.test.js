@@ -35,11 +35,11 @@ describe('frame copies', () => {
 
   /* A loop with an idle engine and a 2D renderer: each frame goes through the
      plain Canvas2D path, which is enough to exercise the copy service. */
-  function makeLoop({ calm = false } = {}) {
+  function makeLoop({ calm = false, modeId = 'bars' } = {}) {
     const viz = document.getElementById('viz-canvas');
     const renderer = {
       w: 800, h: 600, dpr: 1, _scale: 1, t: 0, beat: 0, chromeBeat: 0,
-      calm, sm: { bass: 0 }, quality: 'high', canvas: viz,
+      calm, sm: { bass: 0 }, quality: 'high', canvas: viz, mode: modeId,
       render: vi.fn(), updateAnalysis: vi.fn(), setMode: vi.fn(),
       setQuality: vi.fn(), resize: vi.fn(),
     };
@@ -51,7 +51,7 @@ describe('frame copies', () => {
     };
     const loop = createRenderLoop({
       engine, renderer, getRay: () => ray,
-      state: { modeId: 'bars', raytraceWanted: false },
+      state: { modeId, raytraceWanted: false },
       toast: vi.fn(),
       getGpu: () => ({ webgpuState: null, webgl2State: null, webgpuCanvas: null }),
       drawVu: vi.fn(), drawWaveform: vi.fn(),
@@ -93,6 +93,19 @@ describe('frame copies', () => {
     const pending = requestFrameCopy();
     vi.advanceTimersByTime(2000);
     expect(await pending).toBeNull();
+  });
+
+  it('the GPU Core fallback draws void by a raw mode swap, not setMode', () => {
+    const { loop, renderer } = makeLoop({ modeId: 'gpu' });
+    const seen = [];
+    renderer.render = vi.fn(() => seen.push(renderer.mode));
+    loop.start();
+    flush(16);
+    flush(32);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((m) => m === 'void')).toBe(true);
+    expect(renderer.mode).toBe('gpu');
+    expect(renderer.setMode).not.toHaveBeenCalled();
   });
 
   it('mirrors calm onto the document and the ray stage', () => {
