@@ -96,6 +96,27 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
     openFilePicker();
   });
 
+  // Sample tracks live in public/samples. They go through loadFiles like any
+  // picked file, so decode, toasts and the dropzone hand-off all match.
+  const sampleButtons = /** @type {HTMLButtonElement[]} */ ([...doc.querySelectorAll('[data-sample]')]);
+  async function loadSample(btn) {
+    const name = btn.dataset.sampleName || btn.dataset.sample;
+    sampleButtons.forEach((b) => { b.disabled = true; });
+    toast(`Loading <b>${name}</b>…`, { duration: 2000 });
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}samples/${btn.dataset.sample}.mp3`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      await loadFiles([new File([blob], `${name}.mp3`, { type: 'audio/mpeg' })]);
+    } catch (err) {
+      console.error(err);
+      toast(`<b>Couldn't load ${name}</b> — try again`, { duration: 3000 });
+    } finally {
+      sampleButtons.forEach((b) => { b.disabled = false; });
+    }
+  }
+  sampleButtons.forEach((btn) => btn.addEventListener('click', () => loadSample(btn)));
+
   ['dragenter', 'dragover'].forEach((ev) =>
     (doc.defaultView || window).addEventListener(ev, (e) => {
       e.preventDefault();
