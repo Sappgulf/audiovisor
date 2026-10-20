@@ -3273,6 +3273,14 @@ html, body {
   border-color: var(--accent);
 }
 
+/* first-run sample tracks; the dropzone is only up while nothing is playing */
+.drop-samples { position: relative; z-index: 1; display: grid; justify-items: center; gap: 9px; margin-top: 18px; }
+.drop-samples-label { color: var(--text-40); font: 8px var(--font-mono); letter-spacing: 0.13em; text-transform: uppercase; }
+.drop-samples-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; width: min(100%, 300px); }
+.drop-sample { min-height: 30px; padding: 6px 12px; border: 1px solid var(--border-strong); border-radius: 99px; color: var(--text-60); font-size: 12px; transition: color 0.18s var(--ease), border-color 0.18s var(--ease), background 0.18s var(--ease); }
+.drop-sample:hover:not(:disabled) { color: var(--text-strong); border-color: var(--accent-line); background: var(--accent-dim); }
+.drop-sample:disabled { opacity: 0.5; cursor: progress; }
+
 /* the save-to-library button sits absolutely in the track card's corner;
    keep the title and spec text clear of it */
 .track-info .track-meta { padding-right: 28px; min-width: 0; }
