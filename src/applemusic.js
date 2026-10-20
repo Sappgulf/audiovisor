@@ -142,7 +142,7 @@ export class AppleMusicClient {
       this._configurePromise = developerToken().then((token) => loadMusicKit().then(async (MusicKit) => {
         await MusicKit.configure({
           developerToken: token,
-          app: { name: 'AUDIOVISOR', build: '8.17.1' },
+          app: { name: 'AUDIOVISOR', build: '8.17.2' },
         });
         this.music = MusicKit.getInstance();
         this._bindEvents();
