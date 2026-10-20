@@ -33,6 +33,12 @@ describe('deployment caching', () => {
     }
   });
 
+  it('caches first-run samples for a day, but not as immutable', () => {
+    const value = header('/samples/(.*)', 'Cache-Control');
+    expect(value).toContain('max-age=86400');
+    expect(value).not.toContain('immutable');
+  });
+
   it('allows microphone and display capture, which the visualizer needs', () => {
     const policy = header('/(.*)', 'Permissions-Policy');
     expect(policy).toContain('microphone=(self)');

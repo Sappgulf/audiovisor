@@ -216,6 +216,36 @@ await step('tapless direct stream shows its analysis limitation', async () => {
   if (!state.noSamples || !state.stillView || !state.label.includes('AUDIO ONLY') || state.title !== 'Independent radio') throw new Error(JSON.stringify(state));
   return state.label;
 });
+await step('first-run sample button loads and plays', async () => {
+  const samplePage = await ctx.newPage();
+  samplePage.setDefaultTimeout(20_000);
+  const localErrors = [];
+  samplePage.on('pageerror', (e) => localErrors.push('PAGEERROR ' + e.message));
+  samplePage.on('console', (m) => { if (m.type() === 'error') localErrors.push('console ' + m.text().slice(0, 200)); });
+  try {
+    await samplePage.goto(server.resolvedUrls.local[0], { waitUntil: 'load' });
+    await samplePage.waitForFunction(() => window.__av?.ray);
+    await samplePage.waitForSelector('[data-sample="night-voltage"]', { state: 'visible' });
+    await samplePage.click('[data-sample="night-voltage"]');
+    await samplePage.waitForFunction(
+      () => document.getElementById('track-name')?.textContent.includes('Night Voltage'),
+      null,
+      { timeout: 20_000 },
+    );
+    const state = await samplePage.evaluate(() => ({
+      playing: window.__av.engine.playing,
+      track: window.__av.engine.track?.name,
+      hidden: document.getElementById('dropzone').classList.contains('is-hidden'),
+    }));
+    if (!state.playing || !state.track?.includes('Night Voltage') || !state.hidden) {
+      throw new Error(JSON.stringify(state));
+    }
+    return state.track;
+  } finally {
+    errors.push(...localErrors);
+    await samplePage.close();
+  }
+});
 await snap('07-end');
 console.log(results.join('\n'));
 const failed = results.filter((r) => !r.startsWith('ok')).length;

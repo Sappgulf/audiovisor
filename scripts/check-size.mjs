@@ -28,10 +28,10 @@ const BUDGETS = {
      these user-facing additions without changing the 101kB total ceiling. */
   /* v8.17: the responsive auto-hiding transport and honest audio-only player
      add ~0.2kB gzip of CSS. Keep the JS ceilings fixed. */
-  /* v8.17.1: the first-run "Try a sample" row (four pill buttons in a 2x2
-     grid under the dropzone actions) adds ~0.2kB gzip of CSS. The JS
-     ceilings are untouched. */
-  entry: 58.25 * 1024, // initial JS chunk, gzipped
+  /* v8.17.5: the first-run "Try a sample" row adds ~0.2kB gzip of CSS and
+     its fetch/decode handler adds ~0.2kB to the entry. Raise both ceilings by
+     that amount only; the 101kB total is unchanged. */
+  entry: 58.5 * 1024, // initial JS chunk, gzipped
   css: 13.3 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is

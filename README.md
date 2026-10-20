@@ -1,10 +1,10 @@
-# AUDIOVISOR — v8.17.4
+# AUDIOVISOR — v8.17.5
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-three stage modes and thirty-two themes. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
 
-### Maintenance (v8.17.1–v8.17.4)
+### Maintenance (v8.17.1–v8.17.5)
 - **CI tests the real build** — the PWA and service-worker suites assert against `dist/`, but CI ran the tests before the build, so those checks never actually covered a fresh push. The workflow and `npm run ci` now build first.
 - **Clean-checkout tests** — `npm test` skips the built-artifact assertions when `dist/` is absent instead of failing the whole file; CI still runs them against the build.
 - **Dependency refresh** — dev tooling updated within range and `npm audit` now reports zero vulnerabilities.
@@ -13,9 +13,11 @@ A hifi, real-time music visualizer for the browser. Drop in a track or use a per
 - **Mobile ARIA cleanup** — the wordmark wrapper carried an `aria-label` without a role, which axe reports as `aria-prohibited-attr` on phones; the `h1` already names the brand. A static test now keeps it that way.
 - **MusicKit off the critical path** — index.html eagerly loaded Apple's ~140 KB MusicKit SDK on a 72-second cache for every visitor, Apple Music user or not. The existing on-demand loader now owns it, so Spotify, local-file and live-input sessions never fetch it.
 - **Search and label polish** — a description, canonical URL and `og:url` give the page proper search/social metadata, and the three dropzone buttons now include their visible wording in the accessible name (WCAG 2.5.3).
+- **First-run samples** — the four built-in tracks from `add-sample-tracks` (Night Voltage, Velvet Ash, Still Yours, Last Seen) load through the same decode path as dropped files. A contract test keeps every button backed by a real MP3, the E2E pass clicks one and waits for playback, and `/samples/*` gets bounded edge caching.
 
 ### Sources
 - **Local files** — drag & drop, the **Add** control in the transport, or **Browse files** on the stage (MP3, WAV, FLAC, OGG, M4A…); multi-select builds a playlist queue
+- **Sample tracks** — four built-in first-run tracks (Night Voltage, Velvet Ash, Still Yours, Last Seen) for trying the stage without a file on hand
 - **Spotify Connect (approval-gated)** — PKCE OAuth and Web Playback SDK code is available for an approved deployment; this public deployment has no Spotify Client ID *(Premium required for playback)*
 - **Apple Music** — authorize with MusicKit on the Web, browse personal playlists, and start playback in Apple Music's protected player *(Apple Music subscription required for playback)*
 - **Tab / system capture** — visualize audio you have permission to use (Chrome/Edge; share a tab with "share tab audio" enabled)
