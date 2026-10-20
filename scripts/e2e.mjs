@@ -68,9 +68,11 @@ const vis = (sel) => page.isVisible(sel);
 const text = (sel) => page.textContent(sel);
 const snap = (n) => page.screenshot({ path: `${SP}/e2e-${MOBILE ? 'm' : 'd'}-${n}.png`, timeout: 15_000 });
 
-await page.goto(server.resolvedUrls.local[0]);
-await page.waitForLoadState('networkidle');
-await page.waitForFunction(() => window.__av?.ray);
+/* First load also waits on the font CDN and the lazy raytrace chunk, so it
+   needs its own generous budget; the 3.5s default is for individual steps. */
+await page.goto(server.resolvedUrls.local[0], { waitUntil: 'load', timeout: 30_000 });
+await page.waitForLoadState('networkidle', { timeout: 30_000 });
+await page.waitForFunction(() => window.__av?.ray, null, { timeout: 30_000 });
 await page.waitForTimeout(1500);
 await step('first paint: audio entry point visible while renderer waits', async () => {
   const state = await page.evaluate(() => ({

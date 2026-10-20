@@ -40,9 +40,10 @@ export default defineConfig({
     sourcemap: false,
     cssMinify: true,
     // scripts/check-size.mjs enforces the real gzip budgets; keep Vite's
-    // own warning above the known-large entry chunk so local builds only
-    // flag unexpected growth, not the intentional splits.
-    chunkSizeWarningLimit: 160,
+    // own warning above the known-large entry chunk (currently ~183 kB raw)
+    // so local builds only flag unexpected growth, not the intentional
+    // splits.
+    chunkSizeWarningLimit: 200,
   },
   test: {
     /* Several suites do real work rather than mocking it — parsing every

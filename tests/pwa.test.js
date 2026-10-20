@@ -6,13 +6,18 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 
+/* These assert against the built output, so a clean checkout with no dist/
+   would fail before anything was wrong. CI builds before it tests; a local
+   `npm test` skips the built-artifact checks instead of failing the suite. */
+const hasDist = existsSync('dist/manifest.json') && existsSync('dist/index.html');
 let manifest, html;
 beforeAll(() => {
+  if (!hasDist) return;
   manifest = JSON.parse(readFileSync('dist/manifest.json', 'utf8'));
   html = readFileSync('dist/index.html', 'utf8');
 });
 
-describe('web app manifest', () => {
+describe.skipIf(!hasDist)('web app manifest', () => {
   it('ships every icon it references', () => {
     expect(manifest.icons.length).toBeGreaterThan(0);
     for (const icon of manifest.icons) {
@@ -53,7 +58,7 @@ describe('web app manifest', () => {
   });
 });
 
-describe('iOS home-screen meta', () => {
+describe.skipIf(!hasDist)('iOS home-screen meta', () => {
   it('points at a PNG apple-touch-icon that exists', () => {
     const m = html.match(/rel="apple-touch-icon"\s+href="([^"]+)"/);
     expect(m, 'no apple-touch-icon link').toBeTruthy();
@@ -71,7 +76,7 @@ describe('iOS home-screen meta', () => {
   });
 });
 
-describe('viewport', () => {
+describe.skipIf(!hasDist)('viewport', () => {
   it('opts into the display cutout so safe-area insets resolve', () => {
     const m = html.match(/name="viewport"[\s\S]*?content="([^"]+)"/);
     expect(m[1]).toContain('viewport-fit=cover');
@@ -366,7 +371,7 @@ describe('touch-device compositing', () => {
     expect(thin, `relies on a blur it does not get on touch: ${thin.join(', ')}`).toEqual([]);
   });
 
-  it('disables both the prefixed and unprefixed property in the built CSS', () => {
+  it.skipIf(!hasDist)('disables both the prefixed and unprefixed property in the built CSS', () => {
     /* The blur ships as both -webkit-backdrop-filter and backdrop-filter.
        Written standard-first, the minifier collapsed the override pair and
        kept only the -webkit- form — which would have left the blur running

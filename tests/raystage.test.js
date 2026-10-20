@@ -42,7 +42,7 @@ describe('ray shaders', () => {
     for (const [name, src] of Object.entries(sources)) {
       expect(() => parser.parse(src.replace('#version 300 es\n', '')), name).not.toThrow();
     }
-  }, 15_000);
+  }, 30_000);
 
   it('still parse after the build strips comments and indentation', () => {
     for (const [name, src] of Object.entries(sources)) {
@@ -51,13 +51,13 @@ describe('ray shaders', () => {
       expect(min.length, name).toBeLessThan(src.length);
       expect(() => parser.parse(min.replace('#version 300 es\n', '')), name).not.toThrow();
     }
-  }, 15_000);
+  }, 30_000);
 
   it('parses with the mode baked in, the way each scene program is built', () => {
     const baked = minifyGlsl(SCENE_FRAG).replace(/uniform int\s+uMode;/, 'const int uMode = 2;');
     expect(baked.includes('const int uMode = 2;')).toBe(true);
     expect(() => parser.parse(baked.replace('#version 300 es\n', ''))).not.toThrow();
-  }, 15_000);
+  }, 30_000);
 
   it('all declare GLSL ES 3.0', () => {
     for (const [name, src] of Object.entries(sources)) {

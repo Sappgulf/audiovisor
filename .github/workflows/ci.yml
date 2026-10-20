@@ -33,11 +33,13 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
-      - name: Test & coverage
-        run: npm run coverage
-
+      # The PWA and service-worker suites assert against dist/, so the build
+      # has to exist before the tests run.
       - name: Build
         run: npm run build
+
+      - name: Test & coverage
+        run: npm run coverage
 
       - name: Bundle budget
         run: npm run size

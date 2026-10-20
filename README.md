@@ -1,8 +1,14 @@
-# AUDIOVISOR — v8.17.0
+# AUDIOVISOR — v8.17.1
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-three stage modes and thirty-two themes. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Maintenance (v8.17.1)
+- **CI tests the real build** — the PWA and service-worker suites assert against `dist/`, but CI ran the tests before the build, so those checks never actually covered a fresh push. The workflow and `npm run ci` now build first.
+- **Clean-checkout tests** — `npm test` skips the built-artifact assertions when `dist/` is absent instead of failing the whole file; CI still runs them against the build.
+- **Dependency refresh** — dev tooling updated within range and `npm audit` now reports zero vulnerabilities.
+- **Reliable E2E start** — the front-to-back runner gives first load its own budget for the font CDN and lazy stage chunk instead of inheriting the 3.5s per-step timeout.
 
 ### Sources
 - **Local files** — drag & drop, the **Add** control in the transport, or **Browse files** on the stage (MP3, WAV, FLAC, OGG, M4A…); multi-select builds a playlist queue
