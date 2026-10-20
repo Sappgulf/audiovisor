@@ -1,16 +1,18 @@
-# AUDIOVISOR — v8.17.3
+# AUDIOVISOR — v8.17.4
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-three stage modes and thirty-two themes. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
 
-### Maintenance (v8.17.1–v8.17.3)
+### Maintenance (v8.17.1–v8.17.4)
 - **CI tests the real build** — the PWA and service-worker suites assert against `dist/`, but CI ran the tests before the build, so those checks never actually covered a fresh push. The workflow and `npm run ci` now build first.
 - **Clean-checkout tests** — `npm test` skips the built-artifact assertions when `dist/` is absent instead of failing the whole file; CI still runs them against the build.
 - **Dependency refresh** — dev tooling updated within range and `npm audit` now reports zero vulnerabilities.
 - **Reliable E2E start** — the front-to-back runner gives first load its own budget for the font CDN and lazy stage chunk instead of inheriting the 3.5s per-step timeout.
 - **Production caching** — Vercel was serving content-hashed `/assets/*` with `max-age=0, must-revalidate`, so repeat visits re-downloaded the entry chunk. `vercel.json` now marks hashed assets immutable for a year, gives thumbnails/icons bounded caching, and adds `nosniff`, a trimmed referrer policy and a permissions policy that still allows mic and display capture.
 - **Mobile ARIA cleanup** — the wordmark wrapper carried an `aria-label` without a role, which axe reports as `aria-prohibited-attr` on phones; the `h1` already names the brand. A static test now keeps it that way.
+- **MusicKit off the critical path** — index.html eagerly loaded Apple's ~140 KB MusicKit SDK on a 72-second cache for every visitor, Apple Music user or not. The existing on-demand loader now owns it, so Spotify, local-file and live-input sessions never fetch it.
+- **Search and label polish** — a description, canonical URL and `og:url` give the page proper search/social metadata, and the three dropzone buttons now include their visible wording in the accessible name (WCAG 2.5.3).
 
 ### Sources
 - **Local files** — drag & drop, the **Add** control in the transport, or **Browse files** on the stage (MP3, WAV, FLAC, OGG, M4A…); multi-select builds a playlist queue

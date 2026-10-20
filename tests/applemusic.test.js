@@ -1,7 +1,18 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   appleArtworkUrl, mapApplePlaylist, mapAppleTrack, developerToken, _resetTokenCache, AppleMusicClient,
 } from '../src/applemusic.js';
+
+describe('Apple Music loading', () => {
+  it('keeps the MusicKit SDK out of the initial HTML', () => {
+    /* ~140 KB from a third-party CDN on a 72s cache; only Apple Music
+       visitors should pay for it, and src/applemusic.js injects it on
+       demand. */
+    const html = readFileSync('index.html', 'utf8');
+    expect(html).not.toContain('js-cdn.music.apple.com');
+  });
+});
 
 describe('Apple Music mapping', () => {
   it('normalizes a library track for the shared transport UI', () => {

@@ -53,9 +53,9 @@ function loadMusicKit() {
     };
     window.addEventListener('musickitloaded', ready, { once: true });
 
-    /* The script is also present in index.html for the normal app boot. This
-       fallback keeps the client usable when the module is loaded in isolation
-       or a host page omitted the script tag. */
+    /* Loaded only when Apple Music is actually configured. The SDK is ~140 KB
+       on someone else's cache policy, so keeping it out of index.html means a
+       local-file or Spotify visitor never pays for it. */
     if (!document.querySelector(`script[src="${MUSIC_KIT_SCRIPT}"]`)) {
       const script = document.createElement('script');
       script.src = MUSIC_KIT_SCRIPT;
@@ -142,7 +142,7 @@ export class AppleMusicClient {
       this._configurePromise = developerToken().then((token) => loadMusicKit().then(async (MusicKit) => {
         await MusicKit.configure({
           developerToken: token,
-          app: { name: 'AUDIOVISOR', build: '8.17.3' },
+          app: { name: 'AUDIOVISOR', build: '8.17.4' },
         });
         this.music = MusicKit.getInstance();
         this._bindEvents();

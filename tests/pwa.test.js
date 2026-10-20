@@ -76,6 +76,20 @@ describe.skipIf(!hasDist)('iOS home-screen meta', () => {
   });
 });
 
+describe.skipIf(!hasDist)('search metadata', () => {
+  it('describes the app for search results', () => {
+    const m = html.match(/<meta name="description" content="([^"]+)"/);
+    expect(m, 'no meta description').toBeTruthy();
+    expect(m[1].length).toBeGreaterThan(80);
+    expect(m[1].length).toBeLessThan(180);
+  });
+
+  it('declares one canonical and matching social URL', () => {
+    expect(html).toMatch(/<link rel="canonical" href="https:\/\/[^"]+"/);
+    expect(html).toMatch(/<meta property="og:url" content="https:\/\/[^"]+"/);
+  });
+});
+
 describe.skipIf(!hasDist)('viewport', () => {
   it('opts into the display cutout so safe-area insets resolve', () => {
     const m = html.match(/name="viewport"[\s\S]*?content="([^"]+)"/);
