@@ -38,6 +38,14 @@ describe('static accessibility audit', () => {
     expect(serious, summary).toEqual([]);
   });
 
+  it('does not put an accessible name on an unroled container', () => {
+    /* The wordmark's wrapper carried aria-label without a role, which axe
+       flags as aria-prohibited-attr; the h1 already names the brand. */
+    const brand = document.querySelector('.brand');
+    expect(brand).toBeTruthy();
+    expect(brand.hasAttribute('aria-label')).toBe(false);
+  });
+
   it('labels every button and link', () => {
     const named = [...results.violations, ...results.incomplete]
       .filter((v) => v.id === 'button-name' || v.id === 'link-name');
