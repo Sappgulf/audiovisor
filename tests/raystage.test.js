@@ -82,6 +82,16 @@ describe('ray shaders', () => {
     for (const i of idx) expect(fn.includes(`m == ${i}`)).toBe(true);
   });
 
+  it('does not shadow the material struct inside matOf', () => {
+    /* The GLSL parser used above checks syntax, not semantics: a local
+       `float m` in a material branch compiled fine as text but the driver
+       rejected every `m.alb` after it. Keep the struct's names reserved. */
+    const body = SCENE_FRAG.slice(SCENE_FRAG.indexOf('Mat matOf('), SCENE_FRAG.indexOf('// per-mode emissive gain'));
+    expect(body, 'a local m shadows the Mat struct').not.toMatch(
+      /\b(?:float|int|vec[234]|mat[234])\s+m\s*=/,
+    );
+  });
+
   it('keeps the radar contacts phase-locked to the deck sweep', () => {
     /* The contact flare in scRadar must read the same sweep fraction the
        deck material draws its phosphor wedge from — fract(a / TAU - uTime *

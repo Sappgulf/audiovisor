@@ -4,7 +4,7 @@
  * a tile with no preview, and nothing anywhere complains.
  *
  * This cannot detect a *stale* thumbnail — a mode whose visuals changed since
- * the last `npm run thumbs` — because that would mean re-rendering all 22 on
+ * the last `npm run thumbs` — because that would mean re-rendering all 24 on
  * every test run. It does catch the two failures that actually happen: a mode
  * with no thumbnail at all, and a thumbnail left behind by a removed mode.
  *

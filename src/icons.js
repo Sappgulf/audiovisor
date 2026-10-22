@@ -50,6 +50,7 @@ export const ICONS = {
   radar: svg('<circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="4.8" opacity="0.55"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><path d="M12 12 L18 6"/><path d="M3.8 10 A8.4 8.4 0 0 1 7 5.2" opacity="0.5"/><circle cx="16.4" cy="9.6" r="1" fill="currentColor" stroke="none" opacity="0.85"/>'),
   vinyl: svg('<circle cx="12" cy="12" r="8.4"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12 6.8 A5.2 5.2 0 0 1 17.2 12" opacity="0.7"/><path d="M12 9.2 A2.8 2.8 0 0 1 14.8 12" opacity="0.5"/>'),
   lava: svg('<path d="M7.4 20.6 C4.8 18.4 4.2 15.2 5.4 11.8 C6.4 9 6.2 7 7.6 5 C8.8 3.4 11 3 12.6 4.2 C14.2 5.4 14 7.4 15.4 8.6 C17 10 19 11.4 19 14.4 C19 18 16 20.6 12.4 20.6 Z" fill="none"/><circle cx="10.4" cy="14.6" r="2.4" fill="currentColor" stroke="none" opacity="0.85"/><circle cx="14.6" cy="10.6" r="1.5" fill="currentColor" stroke="none" opacity="0.65"/>'),
+  chladni: svg('<circle cx="12" cy="12" r="8.4" fill="none"/><path d="M3.9 9.6 C7.2 6.2 10.8 9.2 12 12 C13.2 14.8 16.8 17.8 20.1 14.4" fill="none"/><path d="M6.4 17.4 C7.8 13.4 10.4 13.2 12 12 C13.6 10.8 16.2 10.6 17.6 6.6" fill="none" opacity="0.75"/><circle cx="12" cy="12" r="1.15" fill="currentColor" stroke="none"/>'),
 };
 
 export function setIcon(el, name) {

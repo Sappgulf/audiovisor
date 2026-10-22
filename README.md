@@ -1,6 +1,6 @@
-# AUDIOVISOR — v8.17.5
+# AUDIOVISOR — v8.18.0
 
-A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-three stage modes and thirty-two themes. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
+A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes and thirty-two themes. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
 
@@ -27,8 +27,9 @@ A hifi, real-time music visualizer for the browser. Drop in a track or use a per
 > **Streaming accounts:** MusicKit and Spotify do not expose decoded song audio to this app. Their published terms also restrict synchronizing their recordings with other visual content. The account player therefore shows a still playback view. Local files, analyzable direct URLs, and permitted live inputs provide real audio analysis for the visualizer.
 
 ### Raytraced stage (v8.8)
-Every one of the 23 stage modes is now a **live raytraced scene** rendered on a WebGL2 ray-marcher — the Canvas2D engine remains as a fallback and can be toggled back on at any time (Look tab → **Raytrace**).
+Every one of the 24 stage modes is now a **live raytraced scene** rendered on a WebGL2 ray-marcher — the Canvas2D engine remains as a fallback and can be toggled back on at any time (Look tab → **Raytrace**).
 
+- **v8.18 Chladni Plate** — a 24th mode in both renderers. A resonant metal disc, viewed in perspective, carries the nodal set of two crossed standing waves; scattered sand burns along the zero crossings, the integer pair steps with bass and treble when a beat lands, and the plate gets a powered rim, centre pin and grounded stem in the raytraced scene. The Canvas2D fallback caches the nodal mask, tints it through the active palette and lets only the pattern's own state (pair, theme, quality) trigger a rebuild, so the mode stays cheap without losing its identity.
 - **Path** — per-frame: SDF/volumetric ray march into a linear HDR buffer → temporal accumulation with neighbourhood clamping → bright-pass + separable gaussian bloom at quarter res → ACES tonemap with chromatic aberration, vignette and grain
 - **Shading** — Cook-Torrance GGX with metallic/roughness materials, penumbra soft shadows, 4-tap AO, one reflection bounce for polished metals, and a theme-tinted procedural environment used as both key light and reflection probe
 - **Glass** — true two-interface refraction (into the solid, march to the far wall, refract back out); Prism Ray splits R/G/B at 1.38/1.45/1.53 for real dispersion
@@ -49,7 +50,7 @@ Every one of the 23 stage modes is now a **live raytraced scene** rendered on a 
 - **Resilient** — a lost GPU context (driver reset, sleep, another tab hogging the GPU) drops the stage to Canvas2D with a toast, and a watchdog rebuilds the renderer and resumes raytracing when the context comes back; the on/off preference records what you asked for, not what the GPU happened to support at boot
 
 ### Stage
-- **23 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Pulse Orb, Fluid Metal, Tensor Grid, Prism Ray, Void Core, Bloom Field, Fractal Bloom, Beat Radar (beat-dropped contacts + spectrum blips), Lava Lamp (bass-heated metaball drift), GPU Core (rotating voxel compute stack), Vinyl Groove (spectrum-burned turntable)
+- **24 stage modes** — Spectrum Bars, Linear Wave, Vectorscope, Particle Field, Kaleidoscope, Spectrogram, Radial Tunnel, Plasma Rings, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Pulse Orb, Fluid Metal, Tensor Grid, Prism Ray, Void Core, Bloom Field, Fractal Bloom, Beat Radar (beat-dropped contacts + spectrum blips), Lava Lamp (bass-heated metaball drift), GPU Core (rotating voxel compute stack), Vinyl Groove (spectrum-burned turntable), Chladni Plate (resonant nodal sand)
 - **32 themes** — Iridescent, Aurora, Bioluminescence, Cosmic Bloom, Lagoon Dusk, Holographic, Molten Gold, Lime, Neon Cyber, Psychedelic, Hi-Fi Amber, Candy, Vaporwave, Ember, Arctic, Monolith, Sunset, Matrix, Ultraviolet, Warm Brass, AutoTune Pop, Laser Tag, Chop N Screwed, Jade, Crimson Silk, Desert Mirage, Ocean Depth, Fractal Dawn, Solar Flare, Toxic Sludge, Cotton Candy, Midnight Ink
 - **Look presets** — right-click P1–P3 to save mode+theme+FX, click to recall (also in Cmd+K palette)
 - **Memory-bounded queue** — decoded audio is uncompressed (~100MB per 5-minute stereo track), so buffers beyond ~1500s are released while the queue entry keeps its name, position and File handle; the track decodes again the moment you select it
@@ -89,7 +90,7 @@ Every one of the 23 stage modes is now a **live raytraced scene** rendered on a 
 - **Genre/Mood detector** — tempo + spectral centroid → Ambient/Lo-Fi/House/EDM/Trap/Drill/DnB tag chip
 - **Procedural album art** — deterministic cover per track (arcs + diamond + grain)
 - **Tabbed settings drawer** — Source / Look / Audio / Studio tabs (animated ink underline, arrow-key navigation, remembered between sessions) replace the single endless-scroll panel; every section now fits on one screen
-- **Mode filter** — type to narrow the 23 stage modes, Enter selects the first match, Esc clears
+- **Mode filter** — type to narrow the 24 stage modes, Enter selects the first match, Esc clears
 - **Keyboard shortcuts overlay** — press `?` (or the topbar key icon) for the full grouped shortcut sheet; also in the Cmd+K palette along with direct tab jumps
 - **Focus rings + live-region toasts** — visible keyboard focus across all controls, toasts announced to screen readers
 - **Onboarding tour** — first-run hint chain, replayable
@@ -264,7 +265,7 @@ apart anyway.
 
 They are committed artifacts, so **re-run it after changing how a mode
 looks** — nothing detects a stale thumbnail automatically, since that would
-mean re-rendering all 23 on every test run. `tests/mode-thumbs.test.js`
+mean re-rendering all 24 on every test run. `tests/mode-thumbs.test.js`
 covers the failures that can be caught cheaply: a mode with no thumbnail, a
 thumbnail left behind by a removed mode, and files that are empty or large
 enough to hurt the mobile sheet's first paint.
@@ -277,7 +278,7 @@ bug that shipped as v8.8.3 (`atan(0,0)` → NaN whiting out flat surfaces)
 turns it red.
 
 `npm run analyze` answers "does this look blown out?" with numbers rather
-than by squinting at 23 screenshots. Clipped pixels throw away colour and
+than by squinting at 24 screenshots. Clipped pixels throw away colour and
 detail exactly where the signal is loudest, so it is worth watching: the
 suite currently averages ~4.3% clipped on the Canvas2D renderer and ~0% on
 the raytraced stage, which tonemaps properly.

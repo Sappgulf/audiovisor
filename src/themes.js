@@ -22,6 +22,7 @@ export const MODES = [
   { id: 'lava', name: 'Lava Lamp', icon: 'lava' },
   { id: 'gpu', name: 'GPU Core', icon: 'chip' },
   { id: 'vinyl', name: 'Vinyl Groove', icon: 'vinyl' },
+  { id: 'chladni', name: 'Chladni Plate', icon: 'chladni' },
 ];
 
 export const THEMES = [

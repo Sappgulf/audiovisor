@@ -8,7 +8,7 @@ import { getPluginMode, isPluginMode } from './plugins.js';
 
 /* modes whose scenes are broad bright plates rather than thin bright
    marks; full-strength bloom clips them (see _bloom) */
-const MODE_BLOOM = { spectro: 0.28, gpu: 0.34, terrain: 0.62 };
+const MODE_BLOOM = { spectro: 0.28, gpu: 0.34, terrain: 0.62, chladni: 0.72 };
 
 /* The four modes that ship in the entry bundle. Everything else lives in
    modes-extra.js and is fetched the first time it is selected; until it
@@ -211,6 +211,14 @@ export class Renderer {
     this._tensorWaves = [];
     this.fluidDrops = [];
     this.nebula = null;
+    /* the Chladni plate caches its nodal mask per mode pair; clear it so a
+       return visit rebuilds against the current theme instead of reusing a
+       pattern baked in the old palette */
+    this._chladniPat = null;
+    this._chladniDots = null;
+    this._chladniKey = '';
+    this._chladniPair = null;
+    this._chladniAt = 0;
   }
   setTheme(t) {
     this.theme = t;
@@ -631,6 +639,7 @@ export class Renderer {
       case 'lava': this._lava(freq, dt, dt60); break;
       case 'gpu': this._gpu(freq); break;
       case 'vinyl': this._vinyl(freq, dt); break;
+      case 'chladni': this._chladni(freq, dt); break;
     }
   }
 

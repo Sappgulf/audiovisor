@@ -1837,6 +1837,149 @@ class ExtraModes {
     ctx.restore();
     ctx.globalAlpha = 1;
   }
+
+  /* ---------------- CHLADNI PLATE ---------------- */
+
+  /* A standing-wave mode is a pair of integers, and the picture only changes
+     when the pair does. Quantising the smoothed bands every frame made the
+     mask rebuild whenever a band sat on a threshold, which strobed; advance
+     the pair on a landed beat with a short cooldown instead, so the pattern
+     changes musically. */
+  _chladniPairFor(levels) {
+    const seq = [[3, 4], [5, 4], [4, 5], [5, 6], [3, 5], [4, 3], [6, 5], [2, 5]];
+    const mix = clamp(levels.bass * 0.5 + levels.mid * 0.3 + levels.high * 0.2, 0, 1);
+    return seq[Math.floor(mix * (seq.length - 1) + 0.5)];
+  }
+
+  _buildChladni(levels) {
+    const [n, m] = this._chladniPair || this._chladniPairFor(levels);
+    const res = this.quality === 'low' ? 96 : 144;
+    const mask = document.createElement('canvas');
+    mask.width = mask.height = res;
+    const mc = mask.getContext('2d');
+    const img = mc.createImageData(res, res);
+    const d = img.data;
+    let seed = ((n * 73856093) ^ (m * 19349663) ^ 0x9e3779b9) >>> 0;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    const dots = [];
+    for (let y = 0; y < res; y++) {
+      for (let x = 0; x < res; x++) {
+        const u = ((x + 0.5) / res) * 2 - 1;
+        const v = ((y + 0.5) / res) * 2 - 1;
+        let a = 0;
+        if (u * u + v * v <= 1) {
+          /* classic Chladni: the nodal set of two crossed standing waves */
+          const c = Math.cos(n * Math.PI * u) * Math.cos(m * Math.PI * v)
+                  - Math.cos(m * Math.PI * u) * Math.cos(n * Math.PI * v);
+          const line = Math.max(0, 1 - Math.abs(c) / 0.085);
+          a = Math.pow(line, 1.35);
+          /* grains collect on the nodes; a deterministic sparse speckle
+             reads as sand rather than as a printed contour map */
+          const h = Math.sin(x * 127.1 + y * 311.7 + n * 7.3) * 43758.5453;
+          if (line > 0.08 && (h - Math.floor(h)) > 0.90) a = Math.min(1, a + line * 0.6);
+          if (a > 0.32) dots.push([u, v, Math.min(1, a), rnd()]);
+        }
+        const i = (y * res + x) * 4;
+        d[i] = d[i + 1] = d[i + 2] = 255;
+        d[i + 3] = Math.round(a * 255);
+      }
+    }
+    mc.putImageData(img, 0, 0);
+
+    /* Tint the mask with a radial palette ramp: bright in the middle, deep
+       at the rim, so the plate reads as lit before the bloom pass lands. */
+    const tint = document.createElement('canvas');
+    tint.width = tint.height = res;
+    const tc = tint.getContext('2d');
+    const cols = this.theme.colors;
+    const g = tc.createRadialGradient(res / 2, res / 2, 0, res / 2, res / 2, res / 2);
+    for (let i = 0; i < cols.length; i++) {
+      g.addColorStop(i / Math.max(1, cols.length - 1), cols[cols.length - 1 - i]);
+    }
+    tc.fillStyle = g;
+    tc.fillRect(0, 0, res, res);
+    tc.globalCompositeOperation = 'source-in';
+    tc.drawImage(mask, 0, 0);
+
+    this._chladniPat = tint;
+    this._chladniDots = dots.slice(0, this.quality === 'low' ? 48 : 90);
+    this._chladniKey = `${n},${m},${this.theme.id},${this.quality}`;
+  }
+
+  _chladni(_freq, _dt) {
+    const { ctx, w, h } = this;
+    const cx = w / 2, cy = h / 2;
+    const R = Math.min(w, h) * 0.43;
+    const drop = this.beatInfo?.drop || 0;
+
+    if (!this._chladniPair) this._chladniPair = this._chladniPairFor(this.sm);
+    if (this.beat > 0.55 && this.t - this._chladniAt > 0.75) {
+      this._chladniAt = this.t;
+      this._chladniPair = this._chladniPairFor(this.sm);
+    }
+    const key = `${this._chladniPair[0]},${this._chladniPair[1]},${this.theme.id},${this.quality}`;
+    if (this._chladniKey !== key || !this._chladniPat) this._buildChladni(this.sm);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(this.t * 0.055 + this.beat * 0.018);
+    ctx.scale(1, 0.62);
+
+    /* plate body: dark brushed metal with a lit rim */
+    const body = ctx.createRadialGradient(0, 0, R * 0.1, 0, 0, R);
+    body.addColorStop(0, this._shadow(this._color(2), 0.20, 9));
+    body.addColorStop(0.76, '#08080a');
+    body.addColorStop(1, '#111116');
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = hexRgba(this._color(0), 0.24 + this.sm.level * 0.22 + this.beat * 0.2);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.stroke();
+
+    /* nodal sand, plus a wider dim copy that reads as halo until the shared
+       bloom pass adds its own — no per-element shadowBlur in this renderer */
+    ctx.globalCompositeOperation = 'lighter';
+    const zoom = 1 + this.beat * 0.008 + drop * 0.012;
+    ctx.globalAlpha = clamp(0.42 + this.sm.level * 0.34 + this.beat * 0.2 + drop * 0.15, 0, 1);
+    ctx.drawImage(this._chladniPat, -R * zoom, -R * zoom, R * 2 * zoom, R * 2 * zoom);
+    ctx.globalAlpha = clamp(0.14 + this.beat * 0.16, 0, 0.4);
+    ctx.drawImage(this._chladniPat, -R * 1.018, -R * 1.018, R * 2.036, R * 2.036);
+
+    /* grains hop on the beat */
+    const cols = this.theme.colors;
+    for (const [u, v, a, phase] of this._chladniDots || []) {
+      const j = Math.sin(this.t * (5 + phase * 9) + phase * 20) * (0.6 + this.beat * 1.5);
+      const s = 0.7 + a * 1.5 + this.beat * 0.9;
+      ctx.globalAlpha = clamp(0.28 + a * 0.62, 0, 1);
+      ctx.fillStyle = this._tint(cols[Math.floor(phase * cols.length) % cols.length], 0.45);
+      ctx.beginPath();
+      ctx.arc(u * R * zoom + j, v * R * zoom + j * 0.55, s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+
+    /* centre pin and rim ticks so the plate reads as an instrument */
+    ctx.fillStyle = this._tint(this._color(0), 0.35);
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 0.022 + this.beat * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = hexRgba(this._color(1), 0.5);
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * R * 0.955, Math.sin(a) * R * 0.955);
+      ctx.lineTo(Math.cos(a) * R * 0.978, Math.sin(a) * R * 0.978);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
 }
 
 /** Copy every extra mode method onto the Renderer prototype. Idempotent. */

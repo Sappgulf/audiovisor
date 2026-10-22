@@ -29,9 +29,12 @@ const BUDGETS = {
   /* v8.17: the responsive auto-hiding transport and honest audio-only player
      add ~0.2kB gzip of CSS. Keep the JS ceilings fixed. */
   /* v8.17.5: the first-run "Try a sample" row adds ~0.2kB gzip of CSS and
-     its fetch/decode handler adds ~0.2kB to the entry. Raise both ceilings by
-     that amount only; the 101kB total is unchanged. */
-  entry: 58.5 * 1024, // initial JS chunk, gzipped
+     its fetch/decode handler adds ~0.2kB to the entry. */
+  /* v8.18.0: the Chladni Plate mode adds its registration, icon and dispatch
+     to the entry (~0.2kB), the Canvas2D scene to modes-extra and the
+     raytraced scene to raystage — ~1.6kB gzip across the total. Raise the
+     entry by 0.25kB and the total by 2kB, deliberately. */
+  entry: 58.75 * 1024, // initial JS chunk, gzipped
   css: 13.3 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is
@@ -42,7 +45,7 @@ const BUDGETS = {
      module-wrapper overhead to the entry, and the offline tempo analysis
      worker adds a lazy dsp-worker chunk. Worth it: the boot payload is
      still small and main.js went from 3096 to under 900 lines. */
-  total: 101 * 1024,   // all JS chunks, gzipped
+  total: 103 * 1024,   // all JS chunks, gzipped
 };
 
 const DIST = 'dist/assets';

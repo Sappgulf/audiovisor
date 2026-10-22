@@ -119,6 +119,11 @@ export const MODE_ART = Object.freeze({
     title: 'Stay in the loop',
     story: 'The record remembers every turn, carrying the last note back to the first.',
   },
+  chladni: {
+    chapter: '24 / STANDING WAVES',
+    title: 'Read the sand',
+    story: 'A resonant plate finds its shape, and the scattered grains draw the music.',
+  },
 });
 
 export function modeArt(id) {

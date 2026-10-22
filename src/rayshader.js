@@ -782,6 +782,33 @@ float scLavaGlass(vec3 p) {
   return d;
 }
 
+/* 23 chladni — a resonant metal plate, nodal sand burning through the dark.
+   The nodal set is the classic Chladni figure: the zero crossings of two
+   crossed standing waves. The integer pair is chosen from the bass and
+   treble bands, so the figure changes when the mix does. */
+float scChladni(vec3 p) {
+  vec3 q = p;
+  q.xz *= rot(0.08);
+  float plate = sdCyl(q, 0.075, 3.1);
+  g_id = 28.0; g_aux = length(q.xz) / 3.1;
+  float rim = sdTorus(q - vec3(0.0, 0.075, 0.0), vec2(3.11, 0.045));
+  if (rim < plate) { plate = rim; g_id = 6.0; g_aux = 0.62; }
+  /* a thin powered ring around the rim frames the plate and catches the
+     bloom, so the instrument reads at thumbnail scale */
+  float glowRing = abs(sdTorus(q - vec3(0.0, 0.095, 0.0), vec2(3.13, 0.010))) - 0.002;
+  if (glowRing < plate) { plate = glowRing; g_id = 4.0; g_aux = 0.86; }
+  float pin = sdCyl(q - vec3(0.0, 0.13, 0.0), 0.055, 0.09 + uBeat * 0.01);
+  if (pin < plate) { plate = pin; g_id = 6.0; g_aux = 0.35; }
+  /* a stem grounds the plate so it is an instrument in a room, not a disc
+     floating in the void */
+  float stem = sdCyl(p - vec3(0.0, -0.7, 0.0), 0.7, 0.10);
+  if (stem < plate) { plate = stem; g_id = 6.0; g_aux = 0.25; }
+  float floorD = p.y + 1.45;
+  float d = plate;
+  if (floorD < d) { d = floorD; g_id = 0.0; }
+  return d;
+}
+
 /* dispatcher */
 float map(vec3 p) {
   if (uMode == 0)  return scBars(p);
@@ -805,6 +832,7 @@ float map(vec3 p) {
   if (uMode == 20) return scLavaGlass(p);
   if (uMode == 21) return scGpu(p);
   if (uMode == 22) return scVinyl(p);
+  if (uMode == 23) return scChladni(p);
   return sdSphere(p, 1.0);
 }
 
@@ -986,6 +1014,27 @@ Mat matOf(float id, float aux, vec3 p) {
        grew one (kaleido went ~2.5x with a full-id mirror). */
     m.alb = vec3(0.010); m.rough = 0.37; m.metal = 0.90;
     m.emis = palf(0.60) * 0.010 * (0.35 + uLevel);
+  } else if (id < 28.5) {               // chladni plate — nodal sand on metal
+    float rr = clamp(length(p.xz) / 3.1, 0.0, 1.0);
+    /* the pair is read from the bands: bass thickens one axis, highs the
+       other. When they land on the same integer, step one so the figure
+       never collapses to the degenerate n == m case. */
+    float nn = 2.0 + floor(clamp(uBass, 0.0, 1.0) * 4.0);
+    float mm = 2.0 + floor(clamp(uHigh, 0.0, 1.0) * 4.0 + 0.35);
+    if (abs(nn - mm) < 0.5) mm += 1.0;
+    vec2 q = p.xz * 0.62;
+    float ph = uTime * 0.16;
+    float nodes = cos(nn * PI * q.x + ph) * cos(mm * PI * q.y - ph)
+                - cos(mm * PI * q.x - ph) * cos(nn * PI * q.y + ph);
+    float line = 1.0 - smoothstep(0.0, 0.075, abs(nodes));
+    float top = smoothstep(0.02, 0.07, p.y);
+    float sand = step(0.985, hash13(floor(p.xz * 150.0).xyy));
+    vec3 cc = palf(fract(rr * 0.85 + 0.05));
+    m.alb = vec3(0.010) + cc * 0.035;
+    m.rough = 0.24; m.metal = 0.88;
+    m.emis = cc * (0.014 + top * (pow(line, 1.6) * (2.0 + uBeat * 1.8) + sand * line * 2.6))
+           + palf(0.9) * top * pow(line, 4.0) * (0.5 + uHigh * 0.7)
+           + palf(0.6) * smoothstep(0.94, 1.0, rr) * (0.14 + uBeat * 0.26);
   } else {                              // accretion disc
     vec3 cc = mix(vec3(1.0, 0.93, 0.85), palf(0.85), clamp(aux * 1.4, 0.0, 1.0));
     m.alb = vec3(0.0); m.rough = 1.0;
@@ -1007,6 +1056,7 @@ Mat matOf(float id, float aux, vec3 p) {
   if (uMode == 21) gain = 0.8;    // gpu
   if (uMode == 22) gain = 2.4;    // vinyl — dark deck, the groove burn carries it
   if (uMode == 13) gain = 2.1;    // fluid — chrome in a dark room needs the lift
+  if (uMode == 23) gain = 0.95;   // chladni — thin emissive nodes, not a plate of light
   m.emis *= 0.42 * gain * mix(0.75, 1.35, uPop);
   return m;
 }
@@ -1320,6 +1370,13 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 20) { ro = vec3(0.0, 0.0, 4.65); ap = 0.0; }
   else if (uMode == 21) { ro = vec3(sin(t * 0.12) * 2.9, 1.95, cos(t * 0.12) * 2.9); ta = vec3(0.0, -0.1, 0.0); ap = 0.015; }
   else if (uMode == 22) { ro = vec3(0.0, 3.3 + sin(t * 0.2) * 0.12, 2.9); ta = vec3(0.0, -0.05, 0.0); ap = 0.028; }
+  else if (uMode == 23) {
+    /* portrait stages step back and rise so the whole plate stays in frame */
+    float aspect = uRes.x / max(uRes.y, 1.0);
+    float portrait = 1.0 - smoothstep(0.55, 0.9, aspect);
+    ro = vec3(sin(t * 0.07) * 0.35, 2.9 + portrait * 1.8 + sin(t * 0.11) * 0.08, 4.6 + portrait * 2.4);
+    ta = vec3(0.0, 0.05, 0.0); ap = 0.010; fov = 1.28;
+  }
   else                  { ro = vec3(sin(t * 0.12) * 4.0, 2.0, cos(t * 0.12) * 4.0); ap = 0.03; }
   /* cinematic pass layered over every rig, applied BEFORE the basis is
      built from ro→ta: a second, slower drift breaks the lone-sinusoid sway
