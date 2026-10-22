@@ -16,6 +16,8 @@
  * @param {() => void} deps.closeMore
  * @param {Document} [deps.doc]
  */
+import { esc } from './utils.js';
+
 export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, closeMore, doc = document }) {
   const $ = (id) => doc.getElementById(id);
   const fileInput = $('file-input');
@@ -50,7 +52,7 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
       }
       toast(errors.length
         ? `Loaded <b>${loaded}</b> · skipped <b>${errors.length}</b> corrupt`
-        : (loaded > 1 ? `Loaded <b>${loaded} tracks</b> — queue playing` : `Loaded <b>${engine.track.name}</b>`));
+        : (loaded > 1 ? `Loaded <b>${loaded} tracks</b> — queue playing` : `Loaded <b>${esc(engine.track.name)}</b>`));
     } catch (err) {
       console.error(err);
       $('status-text').textContent = 'Decode failed';

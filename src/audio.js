@@ -442,21 +442,21 @@ export class AudioEngine {
     return item.buffer;
   }
 
-  _applyQueueItem(i) {
+  _applyQueueItem(i, resume = this.playing) {
     this.queueIndex = i;
     const item = this.queue[i];
     this.buffer = item.buffer;
     this.track = item.meta;
     this.offset = 0;
     this.beat.reset();
+    this.dropDetector.reset();
     this._setMode('file');
     // buffer was released to save memory — decode it again, then resume
     if (!item.buffer && item.file) {
-      const wasPlaying = this.playing;
       this._rehydrate(i).then((buf) => {
         if (this.queueIndex !== i || !buf) return;
         this.buffer = buf;
-        if (wasPlaying) { this.playing = false; this.play(); }
+        if (resume) { this.playing = false; this.play(); }
         this._emit();
       }).catch(() => {});
     }
@@ -471,7 +471,7 @@ export class AudioEngine {
   playTrack(i) {
     if (!this.queue.length) return;
     if (this.playing) this._retireSource();
-    this._applyQueueItem(i);
+    this._applyQueueItem(i, true);
     this.playing = false;
     this.play();
   }
@@ -543,7 +543,9 @@ export class AudioEngine {
     if (this.playing) return;
     this._connectSource();
     this.source.start(0, this.offset % this.buffer.duration);
-    this.startedAt = this.ctx.currentTime - this.offset;
+    /* startedAt is in context time; divide the offset by the rate so the
+       elapsed-time math stays correct at speeds other than 1x */
+    this.startedAt = this.ctx.currentTime - this.offset / this.speed;
     this.playing = true;
     this._emit();
   }
@@ -576,6 +578,7 @@ export class AudioEngine {
   seek(t) {
     /* onsets are timestamped in song time — a jump invalidates the grid */
     this.beat.reset();
+    this.dropDetector.reset();
     if (this.isExternal()) {
       if (this.external?.seek) this.external.seek(Math.max(0, t));
       return;
@@ -594,7 +597,9 @@ export class AudioEngine {
       this._retireSource();
       this._connectSource();
       this.source.start(0, this.offset);
-      this.startedAt = this.ctx.currentTime - this.offset;
+      /* startedAt is in context time; divide the offset by the rate so the
+       elapsed-time math stays correct at speeds other than 1x */
+    this.startedAt = this.ctx.currentTime - this.offset / this.speed;
     }
     this._emit();
   }
@@ -634,8 +639,16 @@ export class AudioEngine {
   /** Empty the file queue and return transport/UI state to idle file mode. */
   clearQueue() {
     if (!this.queue.length) {
-      if (this.mode === 'file' && this.track) this._setMode('none');
       if (this.mode === 'file') this._retireSource();
+      this.buffer = null;
+      this.track = null;
+      this.offset = 0;
+      this.playing = false;
+      this.queueIndex = -1;
+      this.beat.reset();
+      this.dropDetector.reset();
+      if (this.mode === 'file') this._setMode('none');
+      this._emit();
       return;
     }
 
@@ -720,7 +733,18 @@ export class AudioEngine {
     if (this.external?.setVolume) this.external.setVolume(v);
   }
 
+  setLoop(on) {
+    this.loop = !!on;
+    if (this.source) this.source.loop = this.loop || !!this.track?.demo;
+  }
+
   setSpeed(mult) {
+    /* rebase the clock before the rate changes, or the elapsed time is
+       reinterpreted at the new speed and the seek bar/beat clock jump */
+    if (this.playing && this.mode === 'file' && this.buffer) {
+      const pos = this.getTime();
+      this.startedAt = this.ctx.currentTime - pos / mult;
+    }
     this.speed = mult;
     if (this.source) this.source.playbackRate.value = mult;
   }
@@ -812,6 +836,12 @@ export class AudioEngine {
 
   crossfadeTo(i, fadeSec = 4) {
     if (!this.queue[i] || i === this.queueIndex) return;
+    /* auto-DJ can reach an entry whose buffer was released under memory
+       pressure; crossfading into it started a null buffer and threw */
+    if (!this.queue[i].buffer) {
+      if (this.queue[i].file) this._rehydrate(i).then((buf) => { if (buf) this.crossfadeTo(i, fadeSec); });
+      return;
+    }
     const oldSrc = this.source;
     const oldGain = this.sourceGain;
     // beat-match: start next track at same beat phase
@@ -835,7 +865,7 @@ export class AudioEngine {
       setTimeout(() => { try { oldSrc?.stop(); } catch {} try { oldGain?.disconnect(); } catch {} }, fadeSec * 1000 + 100);
     }
     this.source.start(0, offset);
-    this.startedAt = t - offset;
+    this.startedAt = t - offset / this.speed;
     this.playing = true;
     this._emit();
   }
@@ -846,6 +876,7 @@ export class AudioEngine {
     this._ensureCtx();
     this._ensureTap();
     if (this.micActive) return;
+    if (this.captureActive) this.disableCapture();
     this.micStream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false },
     });
@@ -1101,8 +1132,14 @@ export class AudioEngine {
     }
     if (!this.buffer) return 0;
     if (!this.playing) return this.offset;
-    const t = this.ctx.currentTime - this.startedAt;
+    const t = Math.max(0, (this.ctx.currentTime - this.startedAt) * this.speed);
     return this.loop ? t % this.buffer.duration : Math.min(t, this.buffer.duration);
+  }
+
+  /** Song-position clock without the loop wrap, for the beat/drop trackers. */
+  getTimeUnwrapped() {
+    if (!this.buffer || !this.playing) return this.offset;
+    return Math.max(0, (this.ctx.currentTime - this.startedAt) * this.speed);
   }
 
   getDuration() {
@@ -1209,7 +1246,7 @@ export class AudioEngine {
        live inputs have no song clock so use the audio context clock */
     const beatTime = (this.micActive || this.captureActive)
       ? (this.ctx?.currentTime || 0)
-      : (timeSec ?? this.getTime());
+      : (this.mode === 'file' && this.loop ? this.getTimeUnwrapped() : (timeSec ?? this.getTime()));
     this.beat.process(this._beatSpectrum(freq), beatTime, this.outputLatency());
     const bi = this.beat;
     this._levels.bass = bass;
@@ -1224,9 +1261,9 @@ export class AudioEngine {
     this._levels.chop = !!this.fx.chop;
     /* stereo width from the goniometer tap buffers the scope already pulls;
        synth and tapless sources carry no L/R pair and read mono (0) */
-    this._levels.width = d.stereoL && d.stereoR
-      ? stereoWidth(d.stereoL, d.stereoR)
-      : 0;
+    this._levels.width = (this.micActive || this.captureActive)
+      ? null
+      : (d.stereoL && d.stereoR ? stereoWidth(d.stereoL, d.stereoR) : 0);
     return this._levels;
   }
 

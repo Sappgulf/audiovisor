@@ -4,7 +4,7 @@
 /* Bump on every release. The old name was pinned at v6.3 across many
    deploys, so returning visitors kept being served whatever assets their
    cache already held. */
-const CACHE = 'audiovisor-v8.19.0';
+const CACHE = 'audiovisor-v8.19.1';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
@@ -24,14 +24,23 @@ self.addEventListener('fetch', (e) => {
 
   const url = new URL(request.url);
   if (url.origin !== location.origin) return;
+  /* never touch the token API, and never cache a partial (Range/206) audio
+     response under the full URL — it breaks offline playback */
+  if (url.pathname.startsWith('/api/')) return;
+  if (request.headers.has('range')) return;
 
   // navigations: network-first so users always get fresh HTML
   if (request.mode === 'navigate') {
     e.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(request, copy));
+          /* OAuth callbacks carry a one-use code/state in the query; caching
+             that URL retains it and grows the cache without bound */
+          const oauth = url.search.includes('code=') || url.search.includes('state=');
+          if (res.status === 200 && !oauth) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => {});
+          }
           return res;
         })
         .catch(() => caches.match(request).then((r) => r || caches.match('/')))
@@ -55,9 +64,9 @@ self.addEventListener('fetch', (e) => {
         (hit) =>
           hit ||
           fetch(request).then((res) => {
-            if (res.ok) {
+            if (res.status === 200) {
               const copy = res.clone();
-              caches.open(CACHE).then((c) => c.put(request, copy));
+              caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => {});
             }
             return res;
           })
@@ -69,9 +78,9 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     fetch(request)
       .then((res) => {
-        if (res.ok) {
+        if (res.status === 200) {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(request, copy));
+          caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => {});
         }
         return res;
       })

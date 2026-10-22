@@ -18,10 +18,14 @@ import * as Library from './library.js';
  */
 export function createRecorder({ engine, getLiveCanvas, download, toast, doc = document }) {
   let recorder = null;
-  let chunks = [];
+  let recStream = null;
 
   function setRecBtn(on) {
-    doc.getElementById('record-btn').classList.toggle('is-rec', on);
+    const btn = doc.getElementById('record-btn');
+    if (!btn) return;
+    btn.classList.toggle('is-rec', on);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.setAttribute('aria-label', on ? 'Stop recording' : 'Record session');
   }
 
   function startRecording() {
@@ -31,22 +35,39 @@ export function createRecorder({ engine, getLiveCanvas, download, toast, doc = d
     }
     try {
       const stream = getLiveCanvas().captureStream(60);
+      recStream = stream;
       try {
         const audio = engine.getRecordStream();
         if (audio) audio.getAudioTracks().forEach((t) => stream.addTrack(t));
       } catch {}
       const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
         .find((m) => MediaRecorder.isTypeSupported(m)) || '';
-      chunks = [];
+      /* chunks belong to this recording; a quick stop->start used to let the
+         previous onstop consume the new recording's data */
+      const recChunks = [];
       recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8000000 } : undefined);
-      recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      recorder._chunks = recChunks;
+      recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+      recorder.onerror = () => {
+        toast('<b>Recording failed</b>', { duration: 2600 });
+        cleanup();
+      };
       recorder.start(1000);
       setRecBtn(true);
       toast('RECORDING <b>LIVE</b> — press again to save', { duration: 2200 });
     } catch (err) {
       console.error(err);
-      recorder = null;
+      cleanup();
       toast('<b>Recording failed to start</b>', { duration: 2600 });
+    }
+  }
+
+  function cleanup() {
+    recorder = null;
+    setRecBtn(false);
+    if (recStream) {
+      recStream.getTracks().forEach((t) => { try { t.stop(); } catch { /* already ended */ } });
+      recStream = null;
     }
   }
 
@@ -54,10 +75,11 @@ export function createRecorder({ engine, getLiveCanvas, download, toast, doc = d
     const r = recorder;
     if (!r) return;
     recorder = null;
+    const recChunks = r._chunks || [];
     setRecBtn(false);
     r.onstop = () => {
-      const blob = new Blob(chunks, { type: r.mimeType || 'video/webm' });
-      chunks = [];
+      const blob = new Blob(recChunks, { type: r.mimeType || 'video/webm' });
+      cleanup();
       if (!blob.size) return;
       download(blob, `audiovisor-session-${fmtStamp()}.webm`);
       toast('SESSION <b>SAVED</b> — WebM downloaded', { duration: 2800 });

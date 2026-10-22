@@ -11,8 +11,8 @@ export function detectMood({ bpm = 0, bass = 0, mid = 0, high = 0, width } = {})
      tags. Where it is known, a narrow image separates bedroom mono (Lo-Fi,
      House) from spacious stage-wide mixes (Downtempo, EDM) at the same
      tempo and spectral balance. */
-  const narrow = width !== undefined && width < 0.2;
-  const spacious = width !== undefined && width >= 0.35;
+  const narrow = width != null && width < 0.2;
+  const spacious = width != null && width >= 0.35;
   const centroid = high - bass; // >0 treble-heavy, <0 bassy
   if (bpm < 65) return { tag: 'Ambient', icon: 'cloud' };
   if (bpm < 88) {

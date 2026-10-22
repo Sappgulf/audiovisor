@@ -4,7 +4,7 @@ import { MODES, THEMES } from './themes.js';
 import { modeArt } from './mode-art.js';
 import { AudioEngine } from './audio.js';
 import { Renderer, loadExtraModes } from './visualizers.js';
-import { fmtTime, pickRandom } from './utils.js';
+import { esc, fmtTime, pickRandom } from './utils.js';
 import { createToasts } from './toast.js';
 import { createFavicon } from './favicon.js';
 import { createShareCard } from './share-card.js';
@@ -486,18 +486,20 @@ function applySettings(s, { eq = false } = {}) {
   if (typeof s.volume === 'number') {
     engine.setVolume(s.volume);
     $('volume-fill').style.width = `${s.volume * 100}%`;
+    $('volume-track')?.setAttribute('aria-valuenow', String(Math.round(s.volume * 100)));
+    $('volume-track')?.setAttribute('aria-valuetext', `${Math.round(s.volume * 100)} percent`);
   }
-  if (s.loop) {
-    engine.loop = true;
-    setToggle($('loop-btn'), true);
+  if (typeof s.loop === 'boolean') {
+    engine.setLoop(s.loop);
+    setToggle($('loop-btn'), s.loop);
   }
-  if (s.autopilot) setAutopilot(true, { silent: true });
-  if (s.autoDj) { autoDj = true; setToggle(document.getElementById('autodj-chip'), true, 'is-active'); }
+  if (typeof s.autopilot === 'boolean') setAutopilot(s.autopilot, { silent: true });
+  if (typeof s.autoDj === 'boolean') { autoDj = s.autoDj; setToggle(document.getElementById('autodj-chip'), autoDj, 'is-active'); }
 }
 
 function loadSettings() {
   try {
-    applySettings(readSettings(localStorage, SETTINGS_VOCAB));
+    applySettings(readSettings(localStorage, SETTINGS_VOCAB), { eq: true });
   } catch (err) {
     console.warn('settings restore failed:', err);
   }
@@ -669,7 +671,7 @@ $('capture-btn').addEventListener('click', async () => {
       : 'Capture <b>OFF</b>', { duration: 2000 });
   } catch (err) {
     console.error(err);
-    toast(`<b>Capture blocked</b> — ${err.message || 'permission denied'}`, { duration: 3600 });
+    toast(`<b>Capture blocked</b> — ${esc(err.message || 'permission denied')}`, { duration: 3600 });
   }
 });
 
@@ -694,9 +696,12 @@ const { openFilePicker, dropzone } = createFileLoader({
 $('play-demo')?.addEventListener('click', async () => {
   const { renderDemoTrack, DEMO_META } = await import('./demo-track.js');
   if (engine.captureActive) await engine.toggleCapture();
+  if (engine.micActive) engine.disableMic();
   if (engine.isExternal()) engine.pause();
   engine.stopStream();
   engine._ensureCtx();
+  /* Play Demo means play the demo, not append it behind the current track */
+  if (engine.queue.length) engine.clearQueue();
   const buffer = renderDemoTrack(engine.ctx);
   engine.enqueueBuffer(buffer, DEMO_META);
   dropzone.classList.add('is-hidden');
@@ -733,6 +738,12 @@ function downloadBlob(blob, name) {
 }
 
 function liveCanvas() {
+  /* GPU Core draws on its own canvas; snapshots/recording used to fall back
+     to the hidden 2D canvas and capture a stale frame */
+  if (state.modeId === 'gpu') {
+    const gpu = document.getElementById('webgpu-canvas');
+    if (gpu && gpu.style.display !== 'none') return gpu;
+  }
   return state.raytraceWanted && ray.ok && !renderLoop.isSuspended() && !isPluginMode(state.modeId)
     ? ray.canvas
     : renderer.canvas;
@@ -830,7 +841,7 @@ const renderLoop = createRenderLoop({
   getRay: () => ray,
   state,
   toast,
-  getGpu: () => ({ webgpuState: gpu.getWebgpu(), webgl2State: gpu.getWebgl2(), webgpuCanvas: gpu.canvas, startGpu: gpu.start }),
+  getGpu: () => ({ webgpuState: gpu.getWebgpu(), webgl2State: gpu.getWebgl2(), webgpuCanvas: gpu.canvas, startGpu: gpu.start, gpuDead: gpu.isDead() }),
   drawVu,
   drawWaveform,
   seekTrack,

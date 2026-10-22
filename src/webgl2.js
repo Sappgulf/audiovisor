@@ -31,25 +31,43 @@ export function initWebGL2(canvas) {
       const s = gl.createShader(type);
       gl.shaderSource(s, src);
       gl.compileShader(s);
+      /* headless/fake contexts may not implement the status query */
+      if (gl.getShaderParameter && !gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        console.warn('webgl2 shader failed:', gl.getShaderInfoLog?.(s));
+        gl.deleteShader?.(s);
+        return null;
+      }
       return s;
     };
+    const vsh = compile(gl.VERTEX_SHADER, vs);
+    const fsh = compile(gl.FRAGMENT_SHADER, fs);
+    if (!vsh || !fsh) return null;
     const prog = gl.createProgram();
-    gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
-    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+    gl.attachShader(prog, vsh);
+    gl.attachShader(prog, fsh);
     gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null;
+    gl.deleteShader?.(vsh);
+    gl.deleteShader?.(fsh);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      console.warn('webgl2 link failed:', gl.getProgramInfoLog?.(prog));
+      gl.deleteProgram?.(prog);
+      return null;
+    }
     gl.useProgram(prog);
-    return {
-      gl, prog,
+    const state = {
+      gl, prog, lost: false,
       uTime: gl.getUniformLocation(prog, 'u_time'),
       uLevel: gl.getUniformLocation(prog, 'u_level'),
       uRes: gl.getUniformLocation(prog, 'u_res'),
     };
+    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); state.lost = true; });
+    canvas.addEventListener('webglcontextrestored', () => { state.lost = true; });
+    return state;
   } catch { return null; }
 }
 
 export function renderWebGL2(state, t, level, w, h) {
-  if (!state) return;
+  if (!state || state.lost) return;
   const { gl, prog, uTime, uLevel, uRes } = state;
   gl.useProgram(prog);
   gl.uniform1f(uTime, t);

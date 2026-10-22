@@ -151,6 +151,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
 
   queuePanel.addEventListener('keydown', (e) => {
     const rows = getQueueRows();
+    if (e.target.closest('button') && e.key !== 'Escape') return;
     if (e.target.closest('.queue-remove')) return;
     if (!rows.length) {
       if (e.key === 'Escape' && !queuePanel.classList.contains('is-hidden')) {
@@ -253,6 +254,7 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
 
   libraryPanel.addEventListener('keydown', (e) => {
     const rows = getLibraryRows();
+    if (e.target.closest('button') && e.key !== 'Escape') return;
     if (e.target.closest('#lib-search')) return;
     if (e.target.closest('.lib-play, .lib-export, .lib-del')) return;
     if (!rows.length) {

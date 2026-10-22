@@ -29,8 +29,13 @@ export function createGpuStage(doc = document) {
     if (started) return;
     started = true;
     if (!canvas) { resolveReady(null); return; }
-    initWebGPU(canvas)
-      .catch(() => null)
+    /* a hung adapter/device request must not leave the stage blank forever */
+    const TIMEOUT = 4000;
+    const timed = Promise.race([
+      initWebGPU(canvas).catch(() => null),
+      new Promise((resolve) => setTimeout(() => resolve(null), TIMEOUT)),
+    ]);
+    timed
       .then((s) => {
         if (s) {
           webgpuState = s;
@@ -49,6 +54,7 @@ export function createGpuStage(doc = document) {
     getWebgpu: () => webgpuState,
     getWebgl2: () => webgl2State,
     getBackend: () => backend,
+    isDead: () => !!(webgpuState?.dead || webgl2State?.lost),
     whenReady: () => ready,
   };
 }

@@ -66,22 +66,35 @@ export async function initWebGPU(canvas) {
     const context = canvas.getContext('webgpu');
     if (!context) return null;
     context.configure({ device, format, alphaMode: 'opaque' });
-    return { device, context, pipeline, bindGroup, timeBuf, levelBuf, format };
+    const state = {
+      device, context, pipeline, bindGroup, timeBuf, levelBuf, format,
+      /* reused every frame; the old path allocated two Float32Arrays per frame */
+      timeU: new Float32Array(1), levelU: new Float32Array(1),
+      dead: false,
+    };
+    device.lost?.then(() => { state.dead = true; });
+    return state;
   } catch { return null; }
 }
 
 export function renderWebGPU(state, t, level) {
-  if (!state) return;
-  const { device, context, pipeline, bindGroup, timeBuf, levelBuf } = state;
-  device.queue.writeBuffer(timeBuf, 0, new Float32Array([t]));
-  device.queue.writeBuffer(levelBuf, 0, new Float32Array([level]));
-  const enc = device.createCommandEncoder();
-  const pass = enc.beginRenderPass({
-    colorAttachments: [{ view: context.getCurrentTexture().createView(), clearValue: [0.06,0.05,0.045,1], loadOp: 'clear', storeOp: 'store' }]
-  });
-  pass.setPipeline(pipeline);
-  pass.setBindGroup(0, bindGroup);
-  pass.draw(3);
-  pass.end();
-  device.queue.submit([enc.finish()]);
+  if (!state || state.dead) return;
+  const { device, context, pipeline, bindGroup, timeBuf, levelBuf, timeU, levelU } = state;
+  try {
+    timeU[0] = t;
+    levelU[0] = level;
+    device.queue.writeBuffer(timeBuf, 0, timeU);
+    device.queue.writeBuffer(levelBuf, 0, levelU);
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginRenderPass({
+      colorAttachments: [{ view: context.getCurrentTexture().createView(), clearValue: [0.06,0.05,0.045,1], loadOp: 'clear', storeOp: 'store' }]
+    });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(3);
+    pass.end();
+    device.queue.submit([enc.finish()]);
+  } catch {
+    state.dead = true;
+  }
 }

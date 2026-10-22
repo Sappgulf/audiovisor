@@ -2,6 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { detectMood } from '../src/mood.js';
 
 describe('detectMood', () => {
+  it('treats an unknown stereo width as unknown, not narrow', () => {
+    /* Mic/capture sources have no L/R pair and report width null. Coercing
+       that to 0 made every captured track look like a narrow bedroom mix. */
+    const unknown = detectMood({ bpm: 120, bass: 0.2, mid: 0.4, high: 0.4, width: null });
+    const mono = detectMood({ bpm: 120, bass: 0.2, mid: 0.4, high: 0.4, width: 0 });
+    expect(unknown.tag).toBe('EDM');
+    expect(mono.tag).toBe('House');
+  });
+
   it('returns null without bpm', () => {
     expect(detectMood({ bpm: 0, bass: 0.5, mid: 0.3, high: 0.2 })).toBeNull();
   });

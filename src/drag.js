@@ -42,6 +42,7 @@ export function keyStep(key, value, step = 0.05) {
 export function bindDragTrack(el, onRatio) {
   if (!el) return () => {};
   let active = null;
+  let lastX = null;
 
   const emit = (e, phase) => onRatio(ratioAt(e.clientX, el.getBoundingClientRect()), phase);
 
@@ -49,12 +50,13 @@ export function bindDragTrack(el, onRatio) {
     // ignore right/middle click, but never ignore touch (button is 0 there)
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     active = e.pointerId;
+    lastX = e.clientX;
     // keeps the drag attached to this element once the finger leaves it
     try { el.setPointerCapture(e.pointerId); } catch { /* not captured; move still works */ }
     e.preventDefault();
     emit(e, 'start');
   };
-  const move = (e) => { if (active === e.pointerId) emit(e, 'move'); };
+  const move = (e) => { if (active === e.pointerId) { lastX = e.clientX; emit(e, 'move'); } };
   const up = (e) => {
     if (active !== e.pointerId) return;
     active = null;
@@ -64,13 +66,23 @@ export function bindDragTrack(el, onRatio) {
 
   el.addEventListener('pointerdown', down);
   el.addEventListener('pointermove', move);
+  const cancel = (e) => {
+    if (active !== e.pointerId) return;
+    active = null;
+    try { el.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    /* a cancelled pointer often reports clientX 0; finish at the last known
+       position instead of seeking/muting to the start */
+    if (lastX != null) onRatio(ratioAt(lastX, el.getBoundingClientRect()), 'end');
+    lastX = null;
+  };
+
   el.addEventListener('pointerup', up);
-  el.addEventListener('pointercancel', up);
+  el.addEventListener('pointercancel', cancel);
   return () => {
     el.removeEventListener('pointerdown', down);
     el.removeEventListener('pointermove', move);
     el.removeEventListener('pointerup', up);
-    el.removeEventListener('pointercancel', up);
+    el.removeEventListener('pointercancel', cancel);
   };
 }
 

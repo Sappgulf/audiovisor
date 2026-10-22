@@ -1,5 +1,5 @@
 // @ts-check
-import { SETTINGS_KEY, serializeSettings, validateSettings } from './settings.js';
+import { LEGACY_SETTINGS_KEY, SETTINGS_KEY, serializeSettings, validateSettings } from './settings.js';
 import { remove as removeStored } from './storage.js';
 
 /**
@@ -45,6 +45,7 @@ export function createSettingsUI({
 
   doc.getElementById('settings-reset')?.addEventListener('click', () => {
     removeStored(SETTINGS_KEY);
+    removeStored(LEGACY_SETTINGS_KEY);
     removeStored('audiovisor.tour');
     location.reload();
   });
@@ -59,15 +60,14 @@ export function createSettingsUI({
     const input = /** @type {HTMLInputElement} */ (e.target);
     const f = input.files[0];
     if (!f) return;
+    if (f.size > 128 * 1024) { toast('<b>Import failed</b> — file too large'); input.value = ''; return; }
     f.text().then(txt => {
-      try {
-        const s = validateSettings(JSON.parse(txt), vocab);
-        if (!Object.keys(s).length) { toast('<b>Import failed</b> — nothing usable in that file'); return; }
-        applySettings(s, { eq: true });
-        saveSettings();
-        toast('Settings <b>imported</b>');
-      } catch { toast('<b>Import failed</b>'); }
-    });
+      const s = validateSettings(JSON.parse(txt), vocab);
+      if (!Object.keys(s).length) { toast('<b>Import failed</b> — nothing usable in that file'); return; }
+      applySettings(s, { eq: true });
+      saveSettings();
+      toast('Settings <b>imported</b>');
+    }).catch(() => toast('<b>Import failed</b>')).finally(() => { input.value = ''; });
     input.value = '';
   });
 

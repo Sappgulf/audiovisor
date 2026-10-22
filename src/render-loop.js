@@ -24,7 +24,7 @@ import {
  * @param {() => any} deps.getRay
  * @param {any} deps.state
  * @param {(msg: string, opts?: object) => void} deps.toast
- * @param {() => { webgpuState: object|null, webgl2State: object|null, webgpuCanvas: HTMLCanvasElement|null, startGpu?: () => void }} deps.getGpu
+ * @param {() => { webgpuState: object|null, webgl2State: object|null, webgpuCanvas: HTMLCanvasElement|null, startGpu?: () => void, gpuDead?: boolean }} deps.getGpu
  * @param {() => void} deps.drawVu
  * @param {(buffer: object) => void} deps.drawWaveform
  * @param {HTMLElement} deps.seekTrack
@@ -130,7 +130,7 @@ export function createRenderLoop({
       return;
     }
     const ray = getRay();
-    const { webgpuState, webgl2State, webgpuCanvas, startGpu } = getGpu();
+    const { webgpuState, webgl2State, webgpuCanvas, startGpu, gpuDead } = getGpu();
     /* The gap since the last frame is what a viewer experiences, and the only
        figure that reflects GPU cost — the CPU time this function takes is
        ~0.1ms whatever the scene, because WebGL work is queued rather than
@@ -227,17 +227,24 @@ export function createRenderLoop({
     } else {
       rayCanvasEl.classList.remove('is-live');
       if (state.modeId === 'gpu') startGpu?.();
-      const gpuReady = !!(webgpuState || webgl2State);
+      const gpuReady = !!(webgpuState || webgl2State) && !gpuDead;
       const gpuMode = state.modeId === 'gpu' && gpuReady;
-      if (webgpuCanvas && gpuReady && (webgpuCanvas.width !== Math.round(renderer.w * renderer.dpr) || webgpuCanvas.height !== Math.round(renderer.h * renderer.dpr))) {
-        webgpuCanvas.width = Math.round(renderer.w * renderer.dpr);
-        webgpuCanvas.height = Math.round(renderer.h * renderer.dpr);
+      /* cap the fallback backing store the same way the ray stage does; at a
+         4K panel and dpr 2 an uncapped canvas is ~33M pixels a frame */
+      const gpuDpr = Math.min(renderer.dpr, 1.5);
+      const gpuPx = renderer.w * renderer.h * gpuDpr * gpuDpr;
+      const gpuScale = gpuPx > 2.1e6 ? gpuDpr * Math.sqrt(2.1e6 / gpuPx) : gpuDpr;
+      const gpuW = Math.max(2, Math.round(renderer.w * gpuScale));
+      const gpuH = Math.max(2, Math.round(renderer.h * gpuScale));
+      if (webgpuCanvas && gpuReady && (webgpuCanvas.width !== gpuW || webgpuCanvas.height !== gpuH)) {
+        webgpuCanvas.width = gpuW;
+        webgpuCanvas.height = gpuH;
       }
       if (webgpuCanvas) webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
       vizCanvasEl.classList.toggle('is-off', gpuMode);
       if (gpuMode && !idle && levels) {
         if (webgpuState) renderWebGPU(webgpuState, renderer.t, levels.level);
-        else renderWebGL2(webgl2State, renderer.t, levels.level, webgpuCanvas.width, webgpuCanvas.height);
+        else renderWebGL2(webgl2State, renderer.t, levels.level, gpuW, gpuH);
       } else {
         if (state.modeId !== 'gpu') gpuFallbackActive = false;
         const effMode = state.modeId === 'gpu' && !gpuMode;

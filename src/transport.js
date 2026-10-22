@@ -87,7 +87,7 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
   $('prev-btn').addEventListener('click', () => engine.prevTrack());
   $('next-btn').addEventListener('click', () => engine.nextTrack());
   $('loop-btn').addEventListener('click', () => {
-    engine.loop = !engine.loop;
+    engine.setLoop(!engine.loop);
     setToggle($('loop-btn'), engine.loop);
     saveSettings();
     toast(engine.loop ? 'LOOP <b>ON</b>' : 'LOOP <b>OFF</b>', { duration: 1200 });

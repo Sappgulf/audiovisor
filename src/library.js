@@ -157,9 +157,12 @@ function audioBufferToWavBlob(buffer) {
   writeStr('RIFF'); write32(36 + len); writeStr('WAVE');
   writeStr('fmt '); write32(16); write16(1); write16(numCh); write32(buffer.sampleRate); write32(buffer.sampleRate * numCh * 2); write16(numCh * 2); write16(16);
   writeStr('data'); write32(len);
+  /* cache the channel views: calling getChannelData inside the per-sample
+     loop made long exports take seconds of main-thread work */
+  const channels = Array.from({ length: numCh }, (_, ch) => buffer.getChannelData(ch));
   for (let i = 0; i < buffer.length; i++) {
     for (let ch = 0; ch < numCh; ch++) {
-      let s = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+      let s = Math.max(-1, Math.min(1, channels[ch][i]));
       view.setInt16(pos, s < 0 ? s * 0x8000 : s * 0x7FFF, true); pos += 2;
     }
   }

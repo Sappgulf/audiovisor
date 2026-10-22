@@ -221,6 +221,27 @@ describe('AudioEngine', () => {
     expect(engine.track.name).toBe('b');
   });
 
+  it('getTime follows playback speed and rebases on a rate change', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.play();
+    engine.setSpeed(2);
+    engine.ctx.currentTime = 5;
+    expect(engine.getTime()).toBeCloseTo(10, 5);
+    engine.setSpeed(1);
+    engine.ctx.currentTime = 8;
+    expect(engine.getTime()).toBeCloseTo(13, 5);
+  });
+
+  it('setLoop applies to the source already playing', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
+    engine.play();
+    engine.setLoop(true);
+    expect(engine.source.loop).toBe(true);
+    engine.setLoop(false);
+    expect(engine.source.loop).toBe(false);
+    expect(engine.loop).toBe(false);
+  });
+
   it('loop mode repeats instead of advancing', async () => {
     await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
     engine.loop = true;

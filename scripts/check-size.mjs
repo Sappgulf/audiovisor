@@ -35,10 +35,12 @@ const BUDGETS = {
      raytraced scene to raystage — ~1.6kB gzip across the total. Raise the
      entry by 0.25kB and the total by 2kB, deliberately. */
   /* v8.19.0: the all-mode visual/perf pass adds a little render-loop glue
-     (adaptive 2D streak, cached canvas refs, GPU fallback transition). The
-     entry lands at 58.6kB; reserve 0.25kB of headroom without changing the
-     103kB total ceiling. */
-  entry: 59 * 1024, // initial JS chunk, gzipped
+     (adaptive 2D streak, cached canvas refs, GPU fallback transition). */
+  /* v8.19.1: the audio/UI/platform fix round adds rate-aware transport,
+     loop/source handling, safer recorder/settings paths, GPU loss handling
+     and capped fallback sizing. The entry lands at 59.3kB; reserve 0.7kB
+     without changing the 103kB total ceiling. */
+  entry: 60 * 1024, // initial JS chunk, gzipped
   css: 13.3 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is

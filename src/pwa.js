@@ -12,12 +12,15 @@
  */
 export function registerServiceWorker(doc = document) {
   if (!('serviceWorker' in navigator)) return;
+  /* first install claims the page with no prior controller; reloading there
+     threw away file selection/settings (and could drop an OAuth callback) */
+  const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
     .then((reg) => reg.update())
     .catch(() => {});
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) return;
+    if (!hadController || reloading) return;
     reloading = true;
     (doc.defaultView || window).location.reload();
   });
