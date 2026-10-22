@@ -45,8 +45,8 @@ class ExtraModes {
       for (const [px, py] of pts) ctx.lineTo(px, py);
       ctx.closePath();
       const fg = ctx.createRadialGradient(0, 0, inner, 0, 0, inner + maxR);
-      fg.addColorStop(0, hexRgba(c, 0.02));
-      fg.addColorStop(1, hexRgba(c, 0.13));
+      fg.addColorStop(0, hexRgba(c, 0.035));
+      fg.addColorStop(1, hexRgba(c, 0.20));
       ctx.fillStyle = fg;
       ctx.fill();
       ctx.beginPath();
@@ -110,7 +110,7 @@ class ExtraModes {
     const lut = this.specLut = new Uint8Array(256 * 3);
     for (let i = 0; i < 256; i++) {
       /* steep gamma: low+mid values stay near-black, only peaks climb */
-      const v = Math.pow(i / 255, 2.8);
+      const v = Math.pow(i / 255, 2.5);
       const f = v * (stops.length - 1);
       const s = Math.min(stops.length - 2, Math.floor(f));
       const u = f - s;
@@ -218,7 +218,7 @@ class ExtraModes {
       const baseR = maxR * Math.pow((i + 1) / rings, 1.15);
       const pulse = this.history[this.history.length - 1 - i] * maxR * 0.3 * this.sensitivity;
       const alpha = 0.8 - (i / rings) * 0.62;
-      const c = this._color(Math.floor(i / 2.5) + Math.floor(this.t * 0.06));
+      const c = this._color(Math.floor(i / 4.0) + Math.floor(this.t * 0.06));
       ctx.strokeStyle = hexRgba(c, alpha);
       const tilt = Math.sin(i * 0.9 + this.t * 0.9) * 0.05;
       ctx.lineWidth = Math.max(0.6, 2.4 - (i / rings) * 1.6);
@@ -250,10 +250,15 @@ class ExtraModes {
       ctx.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
       ctx.stroke();
     }
-    const vig = ctx.createRadialGradient(cx, cy, maxR * 0.7, cx, cy, maxR * 1.25);
-    vig.addColorStop(0, 'rgba(0,0,0,0)');
-    vig.addColorStop(1, 'rgba(0,0,0,0.32)');
-    ctx.fillStyle = vig;
+    const vigKey = `${w}x${h}`;
+    if (!this._tunnelVig || this._tunnelVigKey !== vigKey) {
+      this._tunnelVigKey = vigKey;
+      const vig = ctx.createRadialGradient(cx, cy, maxR * 0.7, cx, cy, maxR * 1.25);
+      vig.addColorStop(0, 'rgba(0,0,0,0)');
+      vig.addColorStop(1, 'rgba(0,0,0,0.32)');
+      this._tunnelVig = vig;
+    }
+    ctx.fillStyle = this._tunnelVig;
     ctx.fillRect(0, 0, w, h);
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -430,8 +435,8 @@ class ExtraModes {
       /* front rows get the beat light */
       const isFront = r < 3;
       ctx.strokeStyle = hexRgba(isFront ? this._color(0) : c,
-        (isFront ? 0.55 + this.beat * 0.45 : 0.42 + persp * 0.5));
-      ctx.lineWidth = isFront ? 1.6 : 1.1;
+        (isFront ? 0.55 + this.beat * 0.45 : 0.28 + u * 0.42));
+      ctx.lineWidth = isFront ? 1.6 : 0.7 + u * 0.6;
       ctx.stroke();
       if (isFront && this.beat > 0.4) {
         /* peak glints along the lit ridge */
@@ -608,7 +613,8 @@ class ExtraModes {
       }));
     }
     ctx.globalCompositeOperation = 'lighter';
-    const bands = [this.sm.bass, this.sm.mid, this.sm.high];
+    const bands = this._nebulaBands || (this._nebulaBands = [0, 0, 0]);
+    bands[0] = this.sm.bass; bands[1] = this.sm.mid; bands[2] = this.sm.high;
     const swirl = this.t * (0.05 + this.sm.level * 0.35);
 
     /* galactic disc — a stretched, tilted swirl of soft pools */
@@ -636,7 +642,7 @@ class ExtraModes {
       const ci = Math.floor(this.t * 0.05 + i * 0.8);
       const sprite = this._soft(this._color(ci));
       /* soft gas */
-      ctx.globalAlpha = clamp(0.06 + bandV * 0.20 * this.sensitivity, 0.03, 0.22);
+      ctx.globalAlpha = clamp(0.08 + bandV * 0.22 * this.sensitivity, 0.04, 0.26);
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(swirl * (i % 2 ? 1 : -1));
@@ -765,7 +771,10 @@ class ExtraModes {
       if (s.life <= 0 || s.dist > minDim * 0.48) this.orbSat.splice(i, 1);
     }
     ctx.globalCompositeOperation = 'lighter';
-    if (this.beat > 0.55) {
+    /* one ring per hit, not one per frame: at 144Hz the old check pushed a
+       new shockwave every 7ms, so the rings read as a solid glowing blob */
+    if (this.beat > 0.55 && this.t - (this._orbWaveAt || 0) > 0.22) {
+      this._orbWaveAt = this.t;
       if (!this._orbWaves) this._orbWaves = [];
       this._orbWaves.push({ r: baseR * 1.05, a: 0.5 });
     }
@@ -976,7 +985,8 @@ class ExtraModes {
     void dt;
 
     /* beat shockwaves ripple outward through the mesh */
-    if (this.beat > 0.6) {
+    if (this.beat > 0.6 && this.t - (this._tensorWaveAt || 0) > 0.28) {
+      this._tensorWaveAt = this.t;
       if (!this._tensorWaves) this._tensorWaves = [];
       this._tensorWaves.push({ r: 0, a: 0.45 });
     }
@@ -1032,8 +1042,8 @@ class ExtraModes {
         if (y === 0) ctx.moveTo(px + pull, py + off);
         else ctx.lineTo(px + pull, py + off);
       }
-      ctx.strokeStyle = hexRgba(this._color(x % this.theme.colors.length), 0.07);
-      ctx.lineWidth = 0.7;
+      ctx.strokeStyle = hexRgba(this._color(x % this.theme.colors.length), 0.12);
+      ctx.lineWidth = 1.0;
       ctx.stroke();
     }
     /* node lattice — always on, amplitude-lit */
@@ -1186,7 +1196,7 @@ class ExtraModes {
          burned out the centre. Fade the alpha in toward the middle, where
          the crowding is, instead of paying it flat across every ring. */
       const crowd = 0.45 + 0.55 * Math.min(1, t * 2.2);
-      ctx.strokeStyle = hexRgba(this._color(Math.floor(t * 4)), (0.18 + v * 0.32) * crowd);
+      ctx.strokeStyle = hexRgba(this._color(Math.floor(t * 4)), (0.22 + v * 0.34) * crowd);
       ctx.lineWidth = 1.1 + v * 1.4;
       ctx.beginPath();
       // wobble can exceed the radius on the innermost ring — a negative
@@ -1221,7 +1231,7 @@ class ExtraModes {
     const rh = h / rows;
     if (this.quality !== 'low') {
       ctx.globalCompositeOperation = 'lighter';
-      const meshA = 0.03 + this.sm.level * 0.05 + drop * 0.03;
+      const meshA = 0.05 + this.sm.level * 0.06 + drop * 0.03;
       /* Spread the grid across the whole spectrum instead of cycling the
          same 64 positions every few cells: the field then shows real
          spectral structure rather than 144 cells all lit the same. */
@@ -1284,7 +1294,10 @@ class ExtraModes {
            the whole field erupts instead of waiting for a loud bin */
         if (amp > 0.6 - this.beat * 0.15) {
           const hr = s * 0.3;
-          ctx.globalAlpha = (amp - 0.6) * 1.2;
+          /* the beat lowers the threshold below 0.6, so (amp-0.6)*1.2 went
+             negative for quiet cells; canvas ignored the alpha and drew the
+             popper at whatever alpha the previous cell left behind */
+          ctx.globalAlpha = Math.max(0.06, (amp - 0.6) * 1.2);
           ctx.drawImage(this._soft(this._color((x + y + 1) % this.theme.colors.length)), px - hr, py - hr, hr * 2, hr * 2);
           ctx.globalAlpha = 1;
         }
@@ -1353,11 +1366,11 @@ class ExtraModes {
     ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
     ctx.stroke();
     /* outer bezel + tick marks every 15deg */
-    ctx.strokeStyle = hexRgba(this._color(2), 0.10);
+    ctx.strokeStyle = hexRgba(this._color(2), 0.16);
     ctx.beginPath();
     ctx.arc(cx, cy, R + 6, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.strokeStyle = hexRgba(this._color(2), 0.22);
+    ctx.strokeStyle = hexRgba(this._color(2), 0.38);
     for (let i = 0; i < 24; i++) {
       const ang = (i / 24) * Math.PI * 2;
       ctx.beginPath();
@@ -1414,7 +1427,8 @@ class ExtraModes {
     /* blips: beat drops a heavy contact, spectrum seeds lighter ones.
        The ambient spawn chance is per-second, not per-frame, so high
        refresh rates do not fill the scope faster. */
-    if (this.beat > 0.55 && this.radarBlips.length < 48) {
+    if (this.beat > 0.55 && this.radarBlips.length < 48 && this.t - (this._radarBeatAt || 0) > 0.18) {
+      this._radarBeatAt = this.t;
       this.radarBlips.push({
         ang: this._sweepAng,
         dist: R * (0.25 + this.sm.bass * 0.6),
@@ -1785,6 +1799,9 @@ class ExtraModes {
         ctx.globalAlpha = band * 0.5;
         ctx.strokeStyle = hexRgba(c0, 1);
         ctx.lineWidth = 2;
+        /* no beginPath here appended the emphasised groove to the path that
+           had just been stroked, so it was drawn twice and grew a tail */
+        ctx.beginPath();
         ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.stroke();
         ctx.lineWidth = 1;
@@ -1894,7 +1911,7 @@ class ExtraModes {
     const cols = this.theme.colors;
     const g = tc.createRadialGradient(res / 2, res / 2, 0, res / 2, res / 2, res / 2);
     for (let i = 0; i < cols.length; i++) {
-      g.addColorStop(i / Math.max(1, cols.length - 1), cols[cols.length - 1 - i]);
+      g.addColorStop(i / Math.max(1, cols.length - 1), cols[Math.max(0, cols.length - 2 - i)]);
     }
     tc.fillStyle = g;
     tc.fillRect(0, 0, res, res);
@@ -1926,11 +1943,16 @@ class ExtraModes {
     ctx.scale(1, 0.62);
 
     /* plate body: dark brushed metal with a lit rim */
-    const body = ctx.createRadialGradient(0, 0, R * 0.1, 0, 0, R);
-    body.addColorStop(0, this._shadow(this._color(2), 0.20, 9));
-    body.addColorStop(0.76, '#08080a');
-    body.addColorStop(1, '#111116');
-    ctx.fillStyle = body;
+    const bodyKey = `${this.theme.id}|${R}`;
+    if (!this._chladniBody || this._chladniBodyKey !== bodyKey) {
+      const body = ctx.createRadialGradient(0, 0, R * 0.1, 0, 0, R);
+      body.addColorStop(0, this._shadow(this._color(2), 0.20, 9));
+      body.addColorStop(0.76, '#08080a');
+      body.addColorStop(1, '#111116');
+      this._chladniBody = body;
+      this._chladniBodyKey = bodyKey;
+    }
+    ctx.fillStyle = this._chladniBody;
     ctx.beginPath();
     ctx.arc(0, 0, R, 0, Math.PI * 2);
     ctx.fill();

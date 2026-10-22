@@ -52,6 +52,16 @@ export function createRaytraceControls({
     renderQualityLabel();
   }
 
+  /** The stage loads asynchronously behind an ok:false stub, so the initial
+      availability check can only see "not ready". Re-run it once the real
+      stage lands (and after any recovery) instead of leaving both chips
+      looking disabled for the whole session. */
+  function refreshAvailability() {
+    const ready = !!getRay().ok;
+    $('rt-chip')?.classList.toggle('is-disabled', !ready);
+    $('rt-quality')?.classList.toggle('is-disabled', !ready);
+  }
+
   function setRaytrace(on, { quiet = false } = {}) {
     state.raytraceWanted = on;
     if (on) resume();
@@ -99,14 +109,11 @@ export function createRaytraceControls({
     const i = (rayQualities.indexOf(state.rayQuality) + 1) % rayQualities.length;
     setRayQuality(rayQualities[i]);
   });
-  if (!getRay().ok) {
-    $('rt-chip')?.classList.add('is-disabled');
-    $('rt-quality')?.classList.add('is-disabled');
-  }
+  refreshAvailability();
   // re-apply whatever loadSettings() restored (or the defaults) now that the
   // chips exist in the DOM
   setRaytrace(state.raytraceWanted, { quiet: true });
   setRayQuality(state.rayQuality, { quiet: true });
 
-  return { setRaytrace, setRayQuality, showEffectiveTier };
+  return { setRaytrace, setRayQuality, showEffectiveTier, refreshAvailability };
 }

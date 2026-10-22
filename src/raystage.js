@@ -735,12 +735,13 @@ export class RayStage {
     /* ---- 2. temporal accumulation (linear HDR, pre-bloom) ---- */
     const prev = this.frames % 2 === 0 ? histA : histB;
     const next = this.frames % 2 === 0 ? histB : histA;
-    // a look change or resize invalidates history; the beat also cuts it so
-    // hits stay crisp instead of ghosting. Three field compares instead of
-    // the template string this used to build every frame.
-    const stable = this._lastKeyMode === this.mode && this._lastKeyQ === this.quality
+    /* Compare against the mode that actually drew this frame, not the one
+       requested: during a deferred hand-off the old scene is still on screen,
+       and keying stability on the new mode let the first real frame of that
+       mode blend the old scene into its history. */
+    const stable = this._lastKeyMode === drawMode && this._lastKeyQ === this.quality
       && this._lastKeyW === this.rw && this._lastKeyH === this.rh && this.frames > 1;
-    this._lastKeyMode = this.mode;
+    this._lastKeyMode = drawMode;
     this._lastKeyQ = this.quality;
     this._lastKeyW = this.rw;
     this._lastKeyH = this.rh;
@@ -748,9 +749,12 @@ export class RayStage {
     // left every beat frame full of sampling noise
     const blend = stable ? q.blend * (1 - Math.min(this.beat, 0.6) * 0.5) : 0;
 
-    // when blend is 0 the accumulation pass is a straight copy — skip it and
-    // let the rest of the chain read the scene buffer directly
-    const accumulated = blend > 0.001;
+    /* Always write the accumulation target. With blend 0 the pass is a
+       straight copy, and that copy is what primes history for the first
+       blended frame after every mode/theme/quality/resize change. Skipping
+       it (the old `blend > 0.001` guard) left the next frame blending a
+       zeroed or stale buffer — a dark flash on every look change. */
+    const accumulated = true;
     if (accumulated) {
       gl.useProgram(this.pAccum);
       gl.bindFramebuffer(gl.FRAMEBUFFER, next.fbo);

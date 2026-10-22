@@ -212,7 +212,8 @@ float scBars(vec3 p) {
   float depth = 0.1 + hash11(slot + 4.0) * 0.18;
   vec3 b = vec3(0.12, h, depth);
   float d = sdRBox(q - vec3(cx, h, 0.0), b, 0.04);
-  float cap = sdRBox(q - vec3(cx, h * 2.0 + 0.03, 0.0), vec3(b.x * 1.05, 0.02, b.z * 1.05), 0.01);
+  float sparkle = uHigh * (0.035 + 0.035 * sin(uTime * 6.0 + slot));
+  float cap = sdRBox(q - vec3(cx, h * 2.0 + 0.03 + sparkle, 0.0), vec3(b.x * 1.05, 0.02 + sparkle * 0.5, b.z * 1.05), 0.01);
   if (cap < d) { d = cap; g_id = 4.0; g_aux = u; }
   else { g_id = 1.0; g_aux = u; }
   d = max(d, abs(q.x) - 6.1);
@@ -235,7 +236,7 @@ float scWaves(vec3 p) {
     float w = wav(q.x * 0.055 + fi * 0.21 + uTime * 0.06) * (1.0 + uLevel * 1.6);
     float y = w * (1.1 - fi * 0.14) * (1.0 + uBeat * 0.24)
             + sin(q.x * 0.7 + uTime * 1.1 + fi) * (0.12 + uMid * 0.14);
-    float s = abs(q.y - y) - 0.045 - uBeat * 0.02;
+    float s = abs(q.y - y) - (0.065 + uHigh * 0.015) - uBeat * 0.02;
     s = max(s, abs(q.z - z) - 0.12);
     s = max(s, abs(q.x) - 6.2);
     if (s < d) { d = s; g_id = 2.0; g_aux = fi / 5.0; }
@@ -310,7 +311,7 @@ float scParticles(vec3 p) {
     vec3 q = p - (id * c + off);
     // shrink toward the edge of the cloud: an unbounded field fills the
     // frame with speckle and reads as noise
-    float fade = smoothstep(5.4, 1.6, length(id * c));
+    float fade = 1.0 - smoothstep(1.6, 5.4, length(id * c));
     /* Broader, brighter particles read as intentional drifting embers instead
        of sensor noise. The outer falloff still protects the starfield edge. */
     float r = (0.075 + 0.20 * band * uSens + uBeat * 0.055 * h.z) * fade;
@@ -330,7 +331,7 @@ float scKaleido(vec3 p) {
   float d = 1e9;
   for (int i = 0; i < 3; i++) {
     float fi = float(i);
-    float e = spec(0.08 + fi * 0.21) * uSens;
+    float e = min(spec(0.08 + fi * 0.21) * uSens, 1.6);
     float center = 0.58 + fi * 0.61 + e * 0.12 + uBeat * 0.04;
     float span = 0.43 + fi * 0.025;
     float along = abs(q.x - center);
@@ -354,7 +355,7 @@ float scKaleido(vec3 p) {
      The shallow face stays behind each raised facet, so it reads as a
      continuous kaleidoscope tile instead of floating mechanical pieces. */
   float plate = sdCyl(p.xzy, 0.055, 1.94);
-  if (plate < d) { d = plate; g_id = 11.0; g_aux = 0.52; }
+  if (plate < d) { d = plate; g_id = 27.0; g_aux = 0.52; }
   float core = sdEllipsoid(p, vec3(0.34 + uBeat * 0.08, 0.34 + uBass * 0.06, 0.20));
   if (core < d) { d = core; g_id = 11.0; g_aux = 0.94; }
   return d;
@@ -371,7 +372,7 @@ float scSpectro(vec3 p) {
   float e2 = pow(e, 1.2) * uSens;
   float h = 0.12 + 2.8 * e2 / (1.0 + 0.5 * e2);
   h = floor(h * 22.0) / 22.0;
-  float bin = sdBox(vec3(local.x, p.y - h * 0.5, local.y), vec3(0.074, h * 0.5, 0.15));
+  float bin = sdRBox(vec3(local.x, p.y - h * 0.5, local.y), vec3(0.074, h * 0.5, 0.15), 0.012);
   float bounds = max(abs(p.x) - 5.0, abs(p.z) - 4.8);
   float d = max(bin, bounds);
   g_id = 5.0; g_aux = e;
@@ -384,14 +385,15 @@ float scTunnel(vec3 p) {
   float cell = floor(z / 1.1);
   float lz = mod(z, 1.1) - 0.55;
   float band = spec(fract(cell * 0.083));
-  float r = 2.3 - band * 0.7 * uSens - uBeat * 0.12 - uDrop * 0.2;
-  float wob = sin(atan2s(p.y, p.x) * 6.0 + cell * 0.7 + uTime) * 0.09 * (0.3 + uMid);
+  float r = max(2.3 - band * 0.7 * uSens - uBeat * 0.12 - uDrop * 0.2, 0.9);
+  float ang = atan2s(p.y, p.x);
+  float wob = sin(ang * 6.0 + cell * 0.7 + uTime) * 0.09 * (0.3 + uMid);
   float ring = length(vec2(length(p.xy) - r + wob, lz)) - (0.03 + band * 0.05);
   float d = ring;
   g_id = 4.0; g_aux = fract(cell * 0.083);
   float wall = -(length(p.xy) - (r + 0.85));
   if (wall < d) { d = wall; g_id = 6.0; g_aux = 0.2; }
-  float sector = floor(atan2s(p.y, p.x) / (TAU / 4.0) + 0.5) * (TAU / 4.0);
+  float sector = floor(ang / (TAU / 4.0) + 0.5) * (TAU / 4.0);
   vec2 railC = vec2(cos(sector), sin(sector)) * (r - 0.45);
   float rail = length(p.xy - railC) - 0.018;
   if (rail < d) { d = rail; g_id = 4.0; g_aux = 0.85; }
@@ -401,11 +403,11 @@ float scTunnel(vec3 p) {
 /* 7 plasma — a magnetic bottle holding a bright, bass-driven plasma torus */
 float scPlasma(vec3 p) {
   float d = 1e9;
-  float energy = spec(0.14) * uSens;
+  float energy = spec(0.14) * (1.0 + uHigh * 0.5) * uSens;
   /* Face the plasma ring toward the camera; a horizontal torus read as a
      featureless pink saucer from the previous rig. */
   float torus = sdTorus(p.xzy, vec2(1.18 + uBass * 0.10, 0.34 + energy * 0.10 + uBeat * 0.04));
-  if (torus < d) { d = torus; g_id = 4.0; g_aux = 0.35 + uMid * 0.3; }
+  if (torus < d) { d = torus; g_id = 4.0; g_aux = fract(0.35 + uMid * 0.3 + 0.35 * sin(atan2s(p.z, p.y) * 7.0 + uTime * 1.6)); }
   for (int i = 0; i < 5; i++) {
     float fi = float(i);
     float e = spec(0.08 + fi * 0.18) * uSens;
@@ -425,7 +427,7 @@ float scPlasma(vec3 p) {
 /* 8 terrain — scrolling ridge heightfield */
 float scTerrain(vec3 p) {
   float u = clamp((p.x + 9.0) / 18.0, 0.0, 1.0);
-  float age = clamp((p.z + 2.0) / 16.0, 0.0, 1.0);
+  float age = clamp((p.z + 9.0) / 18.0, 0.0, 1.0);
   float e = hist(u, age);
   float e2 = pow(e, 1.4) * uSens;
   float ridge = 3.0 * e2 / (1.0 + 0.7 * e2);       // knee: peaks flatten, never wall off
@@ -451,13 +453,13 @@ float scCity(vec3 p) {
   vec2 cell = floor(p.xz / 2.2);
   vec2 lp = mod(p.xz, 2.2) - 1.1;
   float h = hash11(dot(cell, vec2(17.3, 41.7)));
-  float e = spec(fract(h * 3.7));
+  float e = clamp(spec(fract(h * 3.7)), 0.0, 1.2);
   float bh = 0.4 + h * 3.2 + e * 2.2 * uSens + uBeat * 0.2 * h;
   float bw = 0.32 + h * 0.28;
   float d = sdBox(vec3(lp.x, p.y - bh * 0.5, lp.y), vec3(bw, bh * 0.5, bw));
   g_id = 8.0; g_aux = e;
   float crown = sdBox(vec3(lp.x, p.y - bh - 0.12, lp.y), vec3(bw * 0.45, 0.14, bw * 0.45));
-  if (crown < d) { d = crown; g_id = 4.0; g_aux = e; }
+  if (crown < d) { d = crown; g_id = 6.0; g_aux = e; }
   if (fl < d) { d = fl; g_id = 9.0; }
   return d;
 }
@@ -468,9 +470,9 @@ float scOrb(vec3 p) {
   vec3 n = p / max(r, 1e-4);
   float band = spec(fract(atan2s(n.z, n.x) / TAU + 0.5) * 0.7 + 0.05);
   float disp = band * 0.22 * uSens
-    + 0.06 * sin(n.y * 7.0 + uTime * 1.6) * sin(atan2s(n.z, n.x) * 5.0)
-    + uHigh * 0.07 * sin(n.x * 13.0 + uTime * 2.0);
-  float shell = abs(r - (1.15 + disp + uBeat * 0.09)) - 0.035;   // hollow glass
+    + 0.05 * sin(n.y * 3.0 + uTime * 1.6)
+    + uHigh * 0.05 * sin(n.x * 6.0 + uTime * 1.2);
+  float shell = abs(r - (1.15 + disp + uBeat * 0.14)) - 0.035;   // hollow glass
   float core = r - (0.5 + uBass * 0.16 + uBeat * 0.08);
   float d = shell;
   g_id = 3.0; g_aux = band;
@@ -494,7 +496,7 @@ float scFluid(vec3 p) {
               + 0.08 * sin(a * 5.0 + uTime * 0.45 + uHigh * 2.5);
   float major = 1.42 + pulse + band * 0.15 * uSens;
   float centreY = 0.28 * sin(a * 2.0 + uTime * 0.42) + 0.12 * sin(a * 4.0 - uTime * 0.3);
-  float minor = 0.17 + band * 0.10 * uSens + uBeat * 0.045 + uBass * 0.035;
+  float minor = 0.22 + band * 0.10 * uSens + uBeat * 0.05 + uBass * 0.035;
   float ribbon = length(vec2(r - major, p.y - centreY)) - minor;
   g_id = 10.0; g_aux = band;
   float innerLoop = abs(sdTorus(p.yxz, vec2(0.92 + uMid * 0.08, 0.024 + uHigh * 0.018))) - 0.008;
@@ -516,9 +518,10 @@ float scTensor(vec3 p) {
      rods, mids another, highs the third — so the lattice visibly leans
      toward whatever the song is doing instead of staying uniform. The
      radii are position-independent, so the SDF gradient stays Lipschitz-1. */
-  float rx = length(lp.yz) - (0.012 + uBass * 0.026);
-  float ry = length(lp.xz) - (0.012 + uMid * 0.022);
-  float rz = length(lp.xy) - (0.012 + uHigh * 0.018);
+  float lean = uBass * uBass * 0.020 + uMid * uMid * 0.016 + uHigh * uHigh * 0.012;
+  float rx = length(lp.yz) - (0.012 + uBass * 0.026 + lean * 0.5);
+  float ry = length(lp.xz) - (0.012 + uMid * 0.022 + lean * 0.4);
+  float rz = length(lp.xy) - (0.012 + uHigh * 0.018 + lean * 0.3);
   float d = min(rx, min(ry, rz));
   g_id = 6.0; g_aux = 0.3;
   float node = sdSphere(lp, 0.03 + e * 0.06 * uSens + uBeat * 0.018);
@@ -552,12 +555,12 @@ float scPrism(vec3 p) {
   float beam = sdCapsule(v, vec3(-4.2, 0.0, 0.0), vec3(-1.58, 0.0, 0.0), 0.055 + uLevel * 0.025);
   if (beam < d) { d = beam; g_id = 17.0; g_aux = 0.15; }
 
-  for (int i = 0; i < 11; i++) {
-    float t = (float(i) - 5.0) / 5.0;
+  for (int i = 0; i < 8; i++) {
+    float t = (float(i) - 3.5) / 3.5;
     float e = spec(abs(t));
     vec3 tip = vec3(4.2, t * (2.18 + uHigh * 0.72 + uBeat * 0.38), t * 0.58);
     vec3 start = vec3(1.58, t * 0.13, 0.0);
-    float ray = sdCapsule(v, start, tip, 0.055 + e * 0.035);
+    float ray = sdCapsule(v, start, tip, 0.075 + e * 0.05);
     if (ray < d) { d = ray; g_id = 17.0; g_aux = t * 0.5 + 0.5; }
   }
   return d * fit;
@@ -581,7 +584,7 @@ float scVoid(vec3 p) {
   float inner = horizon + 0.16;
   float outer = 2.50 + uBeat * 0.12;
   float warp = 0.036 * sin(az * 2.0 - uTime * 0.55) + 0.014 * sin(az * 5.0 + uTime * 0.8);
-  float disc = max(abs(q.y - warp) - (0.036 + uBass * 0.02), max(inner - radius, radius - outer));
+  float disc = max(abs(q.y - warp) - (0.055 + uBass * 0.03), max(inner - radius, radius - outer));
   if (disc < d) { d = disc; g_id = 19.0; g_aux = clamp((radius - inner) / (outer - inner), 0.0, 1.0); }
   float jet = sdCapsule(p, vec3(0.0, 1.24, 0.0), vec3(0.0, 2.25 + uDrop * 0.18, 0.0), 0.025 + uBeat * 0.009);
   float lowerJet = sdCapsule(p, vec3(0.0, -1.24, 0.0), vec3(0.0, -2.25 - uDrop * 0.18, 0.0), 0.025 + uBeat * 0.009);
@@ -617,7 +620,7 @@ float scBloom(vec3 p) {
         float angle = float(k) * TAU / 5.0 + phase;
         vec3 petal = flower;
         petal.xy *= rot(-angle);
-        petal -= vec3(0.39 * size + bloom * 0.12 + uBeat * 0.05, 0.0, 0.0);
+        petal -= vec3(0.39 * size + bloom * 0.12 + uBeat * 0.12, 0.0, 0.0);
         petal.yz *= rot(0.18 + uHigh * 0.24);
         float petalD = sdEllipsoid(petal, vec3(0.40 * size + bloom * 0.11, 0.25 * size, 0.13 * size));
         if (petalD < d) { d = petalD; g_id = 4.0; g_aux = fract(float(k) / 5.0 + fi * 0.28 + 0.1); }
@@ -626,6 +629,8 @@ float scBloom(vec3 p) {
       if (heart < d) { d = heart; g_id = 4.0; g_aux = 0.94; }
     }
   }
+  float ground = p.y + 1.8;
+  if (ground < d) { d = ground; g_id = 0.0; }
   return d;
 }
 
@@ -637,8 +642,8 @@ float scFractal(vec3 p) {
   vec3 z = seed;
   float dr = 1.0, r = 0.0;
   float trap = 1e9;
-  float power = 7.3 + uBass * 3.5 + uMid * 1.2 + uDrop * 2.0 + sin(uTime * 0.2) * 1.5;
-  for (int i = 0; i < 11; i++) {
+  float power = 6.5 + uBass * 2.5 + uMid * 1.0 + uDrop * 1.5 + sin(uTime * 0.2) * 1.0;
+  for (int i = 0; i < 8; i++) {
     r = length(z);
     trap = min(trap, r);
     if (r > 2.2) break;
@@ -687,7 +692,7 @@ float scRadar(vec3 p) {
     float swc = fract(a / TAU - uTime * 0.22);
     float sq = clamp(1.0 - swc * 7.0, 0.0, 1.0);
     float fresh = sq * sq;
-    float ht = 0.025 + e * 0.035 + fresh * 0.025;
+    float ht = 0.03 + e * 0.09 + fresh * 0.06;
     float ax = cos(a) * rr;
     float az = sin(a) * rr;
     vec3 c = vec3(ax, 0.085 + ht * 0.5, az);
@@ -702,12 +707,12 @@ float scRadar(vec3 p) {
    The band tap lives outside the field so the march loop never pays for it
    (see scRadar). */
 float scGpu(vec3 p) {
-  float ne = spec(0.43);
+  float ne = 0.3 + uBass * 0.45;
   vec3 q = p;
   q.xz *= rot(uTime * 0.35);
   vec3 cell = clamp(floor(q / 0.62 + 2.0), vec3(0.0), vec3(3.0));
   vec3 lp = q - (cell - 2.0 + 0.5) * 0.62;
-  float e = spec(fract(dot(cell, vec3(0.11, 0.29, 0.07))));
+  float e = 0.2 + 0.55 * hash11(dot(cell, vec3(1.7, 3.1, 0.9))) + 0.25 * uLevel;
   /* quiet cells stay small so the stack reads as a lattice, not one red mass */
   float halfExtent = 0.07 + e * 0.11 + min(uBeat, 0.5) * 0.02;
   float d = sdRBox(lp, vec3(halfExtent), 0.03);
@@ -862,7 +867,7 @@ Mat matOf(float id, float aux, vec3 p) {
     m.emis = palf(0.74) * (0.34 + uBeat * 0.35 + uDrop * 0.45);
   } else if (id < 2.5) {                // silk ribbon
     m.alb = c * 0.5; m.rough = 0.22; m.metal = 0.6;
-    m.emis = c * (1.0 + uLevel * 1.7 + uBeat * 0.5);
+    m.emis = c * (0.72 + uLevel * 1.25 + uBeat * 0.4 + uHigh * 0.25);
   } else if (id < 3.5) {                // glass
     m.alb = vec3(0.92); m.rough = 0.06; m.metal = 0.0; m.trans = 1.0;
     m.emis = c * (0.06 + uLevel * 0.16);
@@ -874,7 +879,7 @@ Mat matOf(float id, float aux, vec3 p) {
     m.alb = cc * 0.5; m.rough = 0.5; m.metal = 0.15;
     /* the newest edge answers treble: a hat lands and the waterfall's front
        lip lights up even where that bin's column isn't tall yet */
-    float age = clamp((p.z + 5.0) / 10.0, 0.0, 1.0);
+    float age = clamp((p.z + 4.8) / 9.6, 0.0, 1.0);
     /* the terrace answers the kick and the drop, not just the waterfall:
        beat lifts the whole relief, the drop surges it harder */
     m.emis = cc * (0.18 + pow(aux, 2.1) * 1.15) * (1.0 + uBeat * 0.35 + uDrop * 0.5)
@@ -890,8 +895,8 @@ Mat matOf(float id, float aux, vec3 p) {
        used to freeze on hits — every other mode pulsed while the mountains
        sat still — so the crest line now lifts with the beat and shimmers
        with treble. */
-    m.emis = (palf(aux) * crest * 1.15 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06)
-           * (1.0 + uBeat * 0.45 + uHigh * crest * 0.35);
+    m.emis = (palf(aux) * crest * 0.62 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06)
+           * (1.0 + uBeat * 0.35 + uHigh * crest * 0.25);
   } else if (id < 8.5) {                // city block + windows
     // anti-aliased window grid: hard step() speckles badly at distance
     vec3 wp = p * vec3(2.6, 3.4, 2.6);
@@ -899,7 +904,7 @@ Mat matOf(float id, float aux, vec3 p) {
     float wy = smoothstep(0.42, 0.5, fw.y) * (1.0 - smoothstep(0.82, 0.9, fw.y));
     float wx = smoothstep(0.42, 0.5, fw.x) * (1.0 - smoothstep(0.82, 0.9, fw.x));
     float wz = smoothstep(0.42, 0.5, fw.z) * (1.0 - smoothstep(0.82, 0.9, fw.z));
-    float lit = step(0.28, hash13(floor(wp)));   // some windows are dark
+    float lit = step(0.28, hash13(floor(wp) + floor(uTime * 0.15)));   // some windows are dark
     float win = wy * max(wx, wz) * lit;
     m.alb = vec3(0.02); m.rough = 0.22; m.metal = 0.5;
     m.emis = palf(aux) * win * (0.5 + aux * 0.9 + uBeat * 0.35 + uDrop * 0.4);
@@ -976,7 +981,8 @@ Mat matOf(float id, float aux, vec3 p) {
   } else if (id < 23.5) {               // vinyl grooves — glossy black + spectrum burn
     float r = aux;
     float rr = clamp(r / 3.4, 0.0, 1.0);
-    float grooves = 0.5 + 0.5 * sin(r * 64.0);
+    float gf = mix(64.0, 20.0, clamp(r / 3.4, 0.0, 1.0));
+    float grooves = 0.5 + 0.5 * sin(r * gf);
     float band = spec(pow(rr, 0.92));
     float ang = atan2s(p.z, p.x);
     float sweep = smoothstep(-0.55, 0.55, sin(ang - uTime * (1.2 + uLevel * 1.6) + uBeat * 0.3));
@@ -1019,16 +1025,17 @@ Mat matOf(float id, float aux, vec3 p) {
     /* the pair is read from the bands: bass thickens one axis, highs the
        other. When they land on the same integer, step one so the figure
        never collapses to the degenerate n == m case. */
-    float nn = 2.0 + floor(clamp(uBass, 0.0, 1.0) * 4.0);
-    float mm = 2.0 + floor(clamp(uHigh, 0.0, 1.0) * 4.0 + 0.35);
-    if (abs(nn - mm) < 0.5) mm += 1.0;
-    vec2 q = p.xz * 0.62;
+    float nn = 2.0 + clamp(uBass, 0.0, 1.0) * 3.2;
+    float mm = 2.0 + clamp(uHigh, 0.0, 1.0) * 3.2;
+    if (abs(nn - mm) < 0.35) mm += 0.7;
+    vec2 sp = p.xz * rot(0.08);
+    vec2 q = sp * 0.62;
     float ph = uTime * 0.16;
     float nodes = cos(nn * PI * q.x + ph) * cos(mm * PI * q.y - ph)
                 - cos(mm * PI * q.x - ph) * cos(nn * PI * q.y + ph);
     float line = 1.0 - smoothstep(0.0, 0.075, abs(nodes));
     float top = smoothstep(0.02, 0.07, p.y);
-    float sand = step(0.985, hash13(floor(p.xz * 150.0).xyy));
+    float sand = step(0.985, hash13(floor(sp * 150.0).xyy));
     vec3 cc = palf(fract(rr * 0.85 + 0.05));
     m.alb = vec3(0.010) + cc * 0.035;
     m.rough = 0.24; m.metal = 0.88;
@@ -1069,7 +1076,7 @@ vec3 starField(vec3 rd) {
   vec3 id = floor(d);
   vec3 f = fract(d) - 0.5;
   float h = hash13(id);
-  float s = smoothstep(0.16, 0.0, length(f)) * step(0.9885, h);
+  float s = (1.0 - smoothstep(0.0, 0.16, length(f))) * step(0.9885, h);
   float tw = 0.6 + 0.4 * sin(uTime * (1.0 + h * 6.0) + h * 40.0);
   return mix(vec3(1.0), palf(fract(h * 7.0)), 0.45) * s * tw * 1.6;
 }
@@ -1195,7 +1202,7 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, Mat m, float shadows) {
   vec3 key = normalize(vec3(0.55, 0.75, -0.4));
   /* Glow used to be the whole pixel, so a box was one flat colour. Wrapping
      it with the key gives every face a lit side and a dark side. */
-  float wrap = clamp(dot(n, key) * 0.65 + 0.35, 0.18, 1.0);
+  float wrap = (uMode == 3) ? 1.0 : clamp(dot(n, key) * 0.65 + 0.35, 0.18, 1.0);
   vec3 hot = mix(m.emis, vec3(dot(m.emis, vec3(0.2126, 0.7152, 0.0722))) * 1.35, 0.28);
   float hit = pow(clamp(uBeat, 0.0, 1.0), 0.55);
   vec3 col = hot * wrap * (1.0 + hit * 0.55);
@@ -1229,11 +1236,11 @@ float volDensity(vec3 p) {
     float filaments = pow(max(0.0, cos(angle * 7.0 - radius * 2.7 + f * 3.2 + uTime * 0.12)), 9.0);
     float d = disc * f * (0.20 + arms * 0.58) + disc * filaments * (0.18 + f * 0.34);
     d += 0.32 * exp(-length(q) * 1.1) * (1.0 + uBass + uDrop * 0.55);   // hot core
-    d *= smoothstep(6.4, 1.4, length(q));                // a wider cloud, not a ball
+    d *= 1.0 - smoothstep(1.4, 6.4, length(q));          // a wider cloud, not a ball
     d *= mix(0.58, 1.0, smoothstep(0.5, 1.8, radius));  // open a soft cavity around the starbirth core
     /* mids thicken the wisps, highs burn off the outer veil, so the cloud
        answers the whole mix instead of only the kick; the drop slams it all */
-    return max(0.0, d - 0.07) * (2.4 + uLevel * 2.0 + uMid * 0.8 - uHigh * 0.35 + uDrop * 0.7);
+    return max(0.0, d - 0.07) * (2.4 + uLevel * 2.0 + uMid * 0.8 + uHigh * 0.25 + uDrop * 0.7);
   }
   if (uMode == 11) {                        // spiral galaxy
     vec3 q = p;
@@ -1251,11 +1258,12 @@ float volDensity(vec3 p) {
   // lava
   vec3 q = p;
   float d = 1e9;
+  float le = spec(0.14);
   for (int i = 0; i < 5; i++) {
     float fi = float(i);
     float ph = uTime * (0.25 + fi * 0.07) + fi * 2.1;
     vec3 c = vec3(sin(ph * 0.7) * 0.42, sin(ph) * 1.45, cos(ph * 0.6) * 0.42);
-    float rr = 0.46 + spec(fi / 5.0) * 0.3 * uSens + uBass * 0.14 + uDrop * 0.1;
+    float rr = 0.46 + le * (0.18 + fi * 0.035) * uSens + uBass * 0.14 + uDrop * 0.1;
     float s = length(q - c) - rr;
     d = (i == 0) ? s : smin(d, s, 0.3);
   }
@@ -1272,9 +1280,9 @@ vec3 volColor(float dens, vec3 p) {
      (0.12 -> 0.8) washed five-colour palettes out to their pale end */
   float rr = clamp(r * 0.2, 0.0, 1.0);
   vec3 c = mix(palf(0.55 - rr * 0.4), palf(0.08 + rr * 0.15), smoothstep(0.2, 0.9, rr));
-  float paleMix = (uMode == 20) ? 0.24 : 0.55;
+  float paleMix = (uMode == 20) ? 0.10 : 0.38;
   c = mix(c, palf(0.78), smoothstep(0.35, 0.9, t) * paleMix);
-  float whiteCore = (uMode == 20) ? 0.025 : 0.25;
+  float whiteCore = (uMode == 20) ? 0.025 : 0.12;
   c = mix(c, vec3(1.0, 0.95, 0.9), pow(t, 4.0) * whiteCore);   // keep hue in the dense core
   /* the lamp wax sits behind glass and loses half its light to the wall
      march — it measured a third of the nebula's brightness. Base it hotter
@@ -1297,7 +1305,7 @@ vec3 marchVolume(vec3 ro, vec3 rd, float tmax) {
   float stepSize = 0.16;
   /* the wax is enclosed in glass and read as murk against the bright
      vessel highlights — the lamp gets a gain the open volumes don't need */
-  float gain = (uMode == 20) ? 0.88 : 1.0;
+  float gain = (uMode == 20) ? 1.15 : 1.0;
   /* Clip the march to where the medium can be non-zero, so the step budget
      is spent inside the cloud rather than on empty sky: the nebula is faded
      to nothing past r 6.4, the galaxy disc is gone beyond |y| 1.2. */
@@ -1344,8 +1352,8 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   float fov = 1.5;
   float ap = 0.012;
   float sway = sin(t * 0.21) * 0.22;
-  if (uMode == 0)       { ro = vec3(sway * 2.0, 2.4 + uBeat * 0.1, 8.4); ta = vec3(0.0, 1.3, 0.0); ap = 0.035; }
-  else if (uMode == 1)  { ro = vec3(sway * 1.4, 1.1, 6.6); ta = vec3(0.0, 0.0, -1.2); ap = 0.03; }
+  if (uMode == 0)       { float por = 1.0 - smoothstep(0.5, 0.85, uRes.x / max(uRes.y, 1.0)); ro = vec3(sway * 2.0, 2.4 + uBeat * 0.1 + por * 0.6, 8.4 + por * 10.0); ta = vec3(0.0, 1.3, 0.0); ap = 0.035; }
+  else if (uMode == 1)  { float por = 1.0 - smoothstep(0.5, 0.85, uRes.x / max(uRes.y, 1.0)); ro = vec3(sway * 1.4, 1.1, 6.6 + por * 1.8); ta = vec3(0.0, 0.0, -1.2); ap = 0.03; }
   else if (uMode == 2)  { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(0.0, 0.0, 5.2 + sin(t * 0.3) * 0.3); ta = vec3(0.0); ap = 0.02; fov = min(1.65, 1.6 * aspect); }
   else if (uMode == 3)  { ro = vec3(sin(t * 0.13) * 1.6, cos(t * 0.11) * 0.9, 4.25); ap = 0.022; }
   else if (uMode == 4)  { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(0.0, 0.0, 3.9); ap = 0.008; fov = 1.35 * min(1.0, aspect); }

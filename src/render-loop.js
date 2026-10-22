@@ -5,7 +5,7 @@ import { renderWebGPU } from './webgpu.js';
 import { renderWebGL2 } from './webgl2.js';
 import { isPluginMode } from './plugins.js';
 import {
-  shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, relaxBaseline,
+  shouldEvaluate, nextTier, next2dQualityState, estimateBaseline, baselineOr, relaxBaseline,
   TIERS, SEVERE, climbCeiling, windowCost,
 } from './adaptive.js';
 
@@ -41,6 +41,11 @@ export function createRenderLoop({
 }) {
   let rayDropped = false;
   let raySuspended = false;   // runtime-only kill switch, never persisted
+  /* GPU Core's Canvas2D stand-in used to be installed and removed around
+     every frame. If WebGPU/WebGL2 never become ready the fallback is the
+     permanent renderer, and that churn cleared scene state and re-allocated
+     its arrays 60 times a second. Track the transition instead. */
+  let gpuFallbackActive = false;
   let _lastSecs = -1;
   let _vuAcc = 0;
   let _lastBeatWritten = -1;
@@ -48,6 +53,9 @@ export function createRenderLoop({
   let _audioOnly = null;
   let _uiAcc = 0;
   const seekFillEl = doc.getElementById('seek-fill');
+  /* looked up once; these two are read several times every frame */
+  const rayCanvasEl = doc.getElementById('ray-canvas');
+  const vizCanvasEl = doc.getElementById('viz-canvas');
   const timeCurrentEl = doc.getElementById('time-current');
   const bpmValueEl = doc.getElementById('bpm-value');
   const bassChipEl = doc.getElementById('bass-chip');
@@ -61,6 +69,8 @@ export function createRenderLoop({
   /* consecutive healthy windows; vsync hides headroom, so climbing back up is
      earned by a run of clean windows rather than measured directly */
   let healthyStreak = 0;
+  /* the 2D renderer's equivalent: clean windows before restoring bloom/trail */
+  let healthy2d = 0;
   /* the highest tier this mode may climb back to: set just under a tier the
      sampler had to step down from, so a mode does not oscillate between a
      tier it cannot hold and the one below. Cleared on a mode change. */
@@ -197,15 +207,15 @@ export function createRenderLoop({
     }
 
     if (audioOnly) {
-      doc.getElementById('ray-canvas').classList.remove('is-live');
-      doc.getElementById('viz-canvas').classList.add('is-off');
+      rayCanvasEl.classList.remove('is-live');
+      vizCanvasEl.classList.add('is-off');
       if (webgpuCanvas) webgpuCanvas.style.display = 'none';
     } else if (rtOn) {
       // raytraced stage owns every mode; the 2D renderer still advances its
       // beat envelope so chrome (VU, chips, favicon) keeps working
       if (ray.w !== renderer.w || ray.h !== renderer.h) ray.resize(renderer.w, renderer.h);
-      doc.getElementById('ray-canvas').classList.add('is-live');
-      doc.getElementById('viz-canvas').classList.add('is-off');
+      rayCanvasEl.classList.add('is-live');
+      vizCanvasEl.classList.add('is-off');
       if (webgpuCanvas) webgpuCanvas.style.display = 'none';
       renderer.updateAnalysis(levels, dtMs);
       /* drop slow-mo: scene time stretches (up to ~45%) while the drop
@@ -215,7 +225,7 @@ export function createRenderLoop({
       const dtMotion = dtMs * (1 - 0.45 * drop);
       ray.render(idle, freq, wave, levels, dtMotion, null, stereoL, stereoR);
     } else {
-      doc.getElementById('ray-canvas').classList.remove('is-live');
+      rayCanvasEl.classList.remove('is-live');
       if (state.modeId === 'gpu') startGpu?.();
       const gpuReady = !!(webgpuState || webgl2State);
       const gpuMode = state.modeId === 'gpu' && gpuReady;
@@ -224,15 +234,21 @@ export function createRenderLoop({
         webgpuCanvas.height = Math.round(renderer.h * renderer.dpr);
       }
       if (webgpuCanvas) webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
-      doc.getElementById('viz-canvas').classList.toggle('is-off', gpuMode);
+      vizCanvasEl.classList.toggle('is-off', gpuMode);
       if (gpuMode && !idle && levels) {
         if (webgpuState) renderWebGPU(webgpuState, renderer.t, levels.level);
         else renderWebGL2(webgl2State, renderer.t, levels.level, webgpuCanvas.width, webgpuCanvas.height);
       } else {
-        const effMode = state.modeId === 'gpu' ? 'void' : null;
-        if (effMode) renderer.setMode(effMode);
+        if (state.modeId !== 'gpu') gpuFallbackActive = false;
+        const effMode = state.modeId === 'gpu' && !gpuMode;
+        if (effMode && !gpuFallbackActive) {
+          renderer.setMode('void');
+          gpuFallbackActive = true;
+        } else if (gpuMode && gpuFallbackActive) {
+          renderer.setMode('gpu');
+          gpuFallbackActive = false;
+        }
         renderer.render(idle, freq, wave, levels, dtMs * (1 - 0.45 * (levels?.drop || 0)), stereoL, stereoR);
-        if (effMode) renderer.setMode('gpu');
       }
     }
 
@@ -343,7 +359,9 @@ export function createRenderLoop({
         }
         applyTier(ray, tier);
       } else {
-        renderer.setQuality(next2dQuality(renderer.quality, avg, relaxed));
+        const d2 = next2dQualityState(renderer.quality, avg, relaxed, healthy2d);
+        healthy2d = d2.streak;
+        renderer.setQuality(d2.quality);
       }
     }
   }
@@ -373,6 +391,7 @@ export function createRenderLoop({
     /** @param {string} [modeId] the mode being switched to */
     resetAdaptation: (modeId = state.modeId) => {
       healthyStreak = 0;
+      healthy2d = 0;
       climbCap = climbCaps.get(modeId) ?? null;
       severeRun = 0;
       settleFrames = SETTLE_AFTER_MODE_CHANGE;

@@ -34,7 +34,11 @@ const BUDGETS = {
      to the entry (~0.2kB), the Canvas2D scene to modes-extra and the
      raytraced scene to raystage — ~1.6kB gzip across the total. Raise the
      entry by 0.25kB and the total by 2kB, deliberately. */
-  entry: 58.75 * 1024, // initial JS chunk, gzipped
+  /* v8.19.0: the all-mode visual/perf pass adds a little render-loop glue
+     (adaptive 2D streak, cached canvas refs, GPU fallback transition). The
+     entry lands at 58.6kB; reserve 0.25kB of headroom without changing the
+     103kB total ceiling. */
+  entry: 59 * 1024, // initial JS chunk, gzipped
   css: 13.3 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is

@@ -202,6 +202,11 @@ export class Renderer {
     this._scopePts = null;
     this.radarBlips = [];
     this.lavaBlobs = null;
+    this._meteor = null;
+    /* The phosphor trail is a full-frame accumulation buffer; leaving it
+       intact across a look change blended the previous scene under the new
+       one for ~15 frames. Clear it with the rest of the per-mode state. */
+    this._clearTrail();
     /* transient effect state from the extra modes: shockwave rings, fluid
        droplets and nebula blobs all decay on their own, but switching away
        and back within their lifetime popped stale effects into the new
@@ -226,6 +231,28 @@ export class Renderer {
     this._bgTheme = null;
     /* the spectro buffer bakes palette-tinted pixels; force a rebuild */
     this.specCv = null;
+    /* the vectorscope keeps an offscreen phosphor buffer and the trail keeps
+       the whole previous frame — both would otherwise hold old-palette colour
+       under the new theme */
+    this.scopeCv = null;
+    this.scopeCtx = null;
+    this._scopeW = 0;
+    /* Chladni's mask and plate gradient are keyed by theme.id, and the Auto
+       palette changes colours without changing that id — clear them so the
+       new palette is actually used. */
+    this._chladniPat = null;
+    this._chladniDots = null;
+    this._chladniKey = '';
+    this._chladniBody = null;
+    this._chladniBodyKey = '';
+    this._clearTrail();
+  }
+
+  _clearTrail() {
+    if (!this.trailCtx || !this.trailCv) return;
+    this.trailCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.trailCtx.globalCompositeOperation = 'source-over';
+    this.trailCtx.clearRect(0, 0, this.trailCv.width, this.trailCv.height);
   }
   setSensitivity(v) { this.sensitivity = v; }
   setBassFocus(v) { this.bassFocus = v; }
@@ -276,8 +303,8 @@ export class Renderer {
       const bc = b.getContext('2d');
       const bg = bc.createLinearGradient(0, 0, 0, 256);
       bg.addColorStop(0, hexRgba(c, 1));
-      bg.addColorStop(0.10, 'rgba(255,255,255,0.42)');
-      bg.addColorStop(0.14, hexRgba(c, 1));
+      bg.addColorStop(0.10, 'rgba(255,255,255,0.30)');
+      bg.addColorStop(0.14, hexRgba(c, 0.94));
       bg.addColorStop(0.78, hexRgba(c, 0.62));
       bg.addColorStop(1, hexRgba(c, 0.18));
       bc.fillStyle = bg;
@@ -763,9 +790,16 @@ export class Renderer {
   }
 
   _ensureNoise() {
-    if (this._noiseTiles && this._noiseW === Math.round(this.w / 2) && this._noiseH === Math.round(this.h / 2)) return;
-    this._noiseW = Math.round(this.w / 2);
-    this._noiseH = Math.round(this.h / 2);
+    /* Cap the grain tile. At a 1440x900 stage the old half-resolution tiles
+       were 720x450 each and cost ~650k Math.random() calls plus two
+       createImageData/putImageData operations inside the resize callback —
+       a visible hitch on every resize. 480x270 looks the same once scaled
+       and is ~3.5x cheaper to build. */
+    const nw = Math.min(480, Math.max(2, Math.round(this.w / 2)));
+    const nh = Math.min(270, Math.max(2, Math.round(this.h / 2)));
+    if (this._noiseTiles && this._noiseW === nw && this._noiseH === nh) return;
+    this._noiseW = nw;
+    this._noiseH = nh;
     this._noiseTiles = [];
     for (let n = 0; n < 2; n++) {
       const c = document.createElement('canvas');
@@ -845,11 +879,17 @@ export class Renderer {
        a third of each slot given back to the background. */
     const N = Math.min(56, Math.max(28, Math.round(w / (this.quality === 'low' ? 38 : 24))));
     const gap = Math.max(3, w / N / 3);
-    const bw = (w - gap * (N - 1) - 24) / N;
+    /* on a very narrow stage the old expression went negative and _rr drew
+       inverted rectangles; clamp to a sliver so the mode degrades instead */
+    const bw = Math.max(1, (w - gap * (N - 1) - 24) / N);
 
     if (this.peaks.length !== N) {
       this.peaks = new Array(N).fill(0);
       this.peakVels = new Array(N).fill(0);
+      /* reused per frame: this is the default mode and the arrays were the
+         largest steady allocation in the Canvas2D path */
+      this._barAmps = new Float32Array(N);
+      this._barColors = new Array(N);
     }
     const maxH = horizon - h * 0.05;
     const c0 = this._color(0);
@@ -873,8 +913,8 @@ export class Renderer {
     ctx.lineTo(w - 8, horizon + 0.5);
     ctx.stroke();
 
-    const colors = [];
-    const amps = new Array(N);
+    const colors = this._barColors;
+    const amps = this._barAmps;
     const hueFlow = Math.floor(this.t * 0.5);
     for (let i = 0; i < N; i++) {
       /* A linear index spends most columns on the bass, and the bass weight
@@ -909,22 +949,15 @@ export class Renderer {
     ctx.restore();
     ctx.globalAlpha = 1;
 
-    /* glass slab body */
+    /* glass slab body — the theme-colour sprite is already a polished metal
+       gradient with a top highlight and inner sheen, built once in
+       _buildCache; scaling it avoids 28-56 createLinearGradient objects per
+       frame while keeping the look identical */
     for (let i = 0; i < N; i++) {
       const bh = amps[i] * maxH;
       if (bh < 1.5) continue;
       const x = barX(i);
-      const col = colors[i];
-      const g = ctx.createLinearGradient(0, horizon - bh, 0, horizon);
-      g.addColorStop(0, hexRgba(col, 0.95));
-      g.addColorStop(0.12, 'rgba(255,255,255,0.28)');
-      g.addColorStop(0.2, hexRgba(col, 0.9));
-      g.addColorStop(1, hexRgba(col, 0.35));
-      ctx.fillStyle = g;
-      this._rr(ctx, x, horizon - bh, bw, bh, Math.min(4, bw / 2));
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.16)';
-      ctx.fillRect(x + bw * 0.28, horizon - bh + 2, Math.max(1, bw * 0.1), Math.max(1, bh - 3));
+      ctx.drawImage(this._barS(colors[i]), x, horizon - bh, bw, bh);
     }
 
     /* reflections under horizon */
@@ -1063,10 +1096,13 @@ export class Renderer {
     strokeSmooth(pts, hexRgba(this._color(2), 0.6), 1.4);
     ctx.restore();
 
-    this.echo = this.echo || new Uint8Array(wave.length);
+    /* a new FFT size (or the first frame) needs a fresh buffer, and it must
+       start at silence-centre: a zero-filled echo dragged the first second
+       of the wave toward black */
+    if (!this.echo || this.echo.length !== wave.length) this.echo = new Uint8Array(wave.length).fill(128);
     const k = 1 - Math.pow(0.85, dt60);
     for (let i = 0; i < wave.length; i++) {
-      this.echo[i] = Math.round(lerp(this.echo[i] || 128, wave[i], k));
+      this.echo[i] = Math.round(lerp(this.echo[i], wave[i], k));
     }
   }
 
@@ -1265,7 +1301,7 @@ export class Renderer {
     /* inter-particle lines via spatial grid */
     if (this.quality !== 'low') {
       const lineAlpha = 0.1 + this.sm.level * 0.22;
-      if (lineAlpha > 0.12) {
+      if (lineAlpha > 0.06) {
         ctx.lineWidth = 0.7;
         const pts = this.particles;
         const cell = 85;

@@ -80,13 +80,20 @@ import('./raystage.js')
     // replay everything the stub swallowed while the chunk was in flight
     stage.setTheme(activeTheme());
     stage.setMode(state.modeId);
-    stage.setQuality(initialTier(state.rayQuality));
+    /* A tier picked by hand while the chunk was in flight is a choice, not a
+       ceiling to re-derive: apply it exactly. Only a restored/default tier
+       starts at the safer device tier and climbs. */
+    const startTier = state.rayQualityExplicit ? state.rayQuality : initialTier(state.rayQuality);
+    stage.setQuality(startTier);
+    showEffectiveTier(startTier);
+    refreshRayControls();
     for (const [id, el] of Object.entries(sliderEls)) applySlider(id, parseFloat(el.value));
     if (renderer.w) stage.resize(renderer.w, renderer.h);
   })
   .catch((err) => {
     ray.loading = false;
     ray.error = err;
+    refreshRayControls();
     console.warn('raytrace stage failed to load:', err);
   });
 /* the colourway a first visit opens on */
@@ -833,7 +840,9 @@ const renderLoop = createRenderLoop({
   onQualityChange: (tier) => showEffectiveTier(tier),
 });
 
-const { setRaytrace, setRayQuality, showEffectiveTier } = createRaytraceControls({
+const {
+  setRaytrace, setRayQuality, showEffectiveTier, refreshAvailability: refreshRayControls,
+} = createRaytraceControls({
   state,
   getRay: () => ray,
   getTheme: activeTheme,

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  shouldEvaluate, nextTier, next2dQuality, estimateBaseline, baselineOr, relaxBaseline, initialTier, isLowPowerDevice,
+  shouldEvaluate, nextTier, next2dQuality, next2dQualityState, estimateBaseline, baselineOr, relaxBaseline, initialTier, isLowPowerDevice,
   TIERS, WINDOW, FAST_WINDOW, DEFAULT_BASELINE_MS, SEVERE, CLIMB_STREAK, climbCeiling, windowCost, OVER_BUDGET,
 } from '../src/adaptive.js';
 
@@ -233,6 +233,19 @@ describe('next2dQuality', () => {
 
   it('returns the current quality for nonsense input', () => {
     expect(next2dQuality('high', NaN, B)).toBe('high');
+  });
+
+  it('climbs out of low after a run of clean vsync windows', () => {
+    /* Under vsync, low quality returns 16.7ms — the old strict <14.2ms
+       climb condition could never be met again, so one transient pinned the
+       stage to low for the session. Clean windows earn the climb. */
+    let state = { quality: 'low', streak: 0 };
+    for (let i = 0; i < CLIMB_STREAK - 1; i++) {
+      state = next2dQualityState(state.quality, B, B, state.streak);
+      expect(state.quality).toBe('low');
+    }
+    state = next2dQualityState(state.quality, B, B, state.streak);
+    expect(state.quality).toBe('high');
   });
 });
 

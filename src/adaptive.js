@@ -79,17 +79,22 @@ export const CLIMB_STREAK = 6;
  *
  * Returns null while still unknown; callers substitute the default.
  */
+/* Scratch for the percentile sort. This runs every frame; rebuilding the
+   array 60-144 times a second was steady GC pressure for a 20-sample sort. */
+const _valid = [];
+
 export function estimateBaseline(samples, previous = null) {
   /* The window's 25th percentile, not its minimum. A frame that lands early
      to catch up after a stall (8ms on a 60Hz panel) is not the display's
      pace, and taking the minimum let one such frame pin the baseline to
      120Hz: every on-time frame then read 2x over budget and a real M1 at a
      steady 60fps was stepped down to low on every mode. */
-  const valid = [];
+  _valid.length = 0;
   for (const ms of samples) {
     // discard sub-millisecond noise and absurd gaps like a tab restore
-    if (Number.isFinite(ms) && ms > 4 && ms < 200) valid.push(ms);
+    if (Number.isFinite(ms) && ms > 4 && ms < 200) _valid.push(ms);
   }
+  const valid = _valid;
   const prev = Number.isFinite(previous) ? previous : null;
   if (valid.length < 8) return prev;
   valid.sort((x, y) => x - y);
@@ -203,12 +208,29 @@ export function nextTier(current, avgMs, ceiling, baseline = DEFAULT_BASELINE_MS
   return { tier: current, streak: 0 };
 }
 
-/** Canvas2D has one step rather than four tiers. */
+/**
+ * Canvas2D has one step rather than four tiers.
+ *
+ * The old climb condition (`avgMs < baseline * 0.85`) is unreachable under
+ * vsync: once a transient dropped to low, the low path returned 16.7ms and
+ * the strict 14.2ms test never passed again. Use the same earned-streak
+ * model as the raytraced tiers, so a few clean windows restore bloom/trail/
+ * vignette instead of pinning the stage to low for the session.
+ */
+export function next2dQualityState(current, avgMs, baseline = DEFAULT_BASELINE_MS, healthyStreak = 0) {
+  if (!Number.isFinite(avgMs)) return { quality: current, streak: 0 };
+  if (avgMs > baseline * 1.3) return { quality: 'low', streak: 0 };
+  if (avgMs < baseline * 0.85) return { quality: 'high', streak: 0 };
+  if (current === 'low' && avgMs <= baseline * 1.05) {
+    const streak = healthyStreak + 1;
+    if (streak >= CLIMB_STREAK) return { quality: 'high', streak: 0 };
+    return { quality: 'low', streak };
+  }
+  return { quality: current, streak: 0 };
+}
+
 export function next2dQuality(current, avgMs, baseline = DEFAULT_BASELINE_MS) {
-  if (!Number.isFinite(avgMs)) return current;
-  if (avgMs > baseline * 1.3) return 'low';
-  if (avgMs < baseline * 0.85) return 'high';
-  return current;
+  return next2dQualityState(current, avgMs, baseline).quality;
 }
 
 /**
