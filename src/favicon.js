@@ -19,10 +19,10 @@ const DEFAULT_COLORS = ['#d9b089', '#8a6a4a'];
  */
 export function createFavicon(getColors, doc = document) {
   let linkEl = null;
+  let cv = null;
   return function updateFavicon() {
     const colors = getColors() || DEFAULT_COLORS;
-    const cv = doc.createElement('canvas');
-    cv.width = cv.height = 64;
+    if (!cv) { cv = doc.createElement('canvas'); cv.width = cv.height = 64; }
     const c2 = cv.getContext('2d');
     if (!c2) return;
     c2.fillStyle = '#14110f';

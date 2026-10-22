@@ -55,7 +55,7 @@ export function initWebGL2(canvas) {
     }
     gl.useProgram(prog);
     const state = {
-      gl, prog, lost: false,
+      gl, prog, lost: false, w: 0, h: 0,
       uTime: gl.getUniformLocation(prog, 'u_time'),
       uLevel: gl.getUniformLocation(prog, 'u_level'),
       uRes: gl.getUniformLocation(prog, 'u_res'),
@@ -72,7 +72,10 @@ export function renderWebGL2(state, t, level, w, h) {
   gl.useProgram(prog);
   gl.uniform1f(uTime, t);
   gl.uniform1f(uLevel, level);
-  gl.uniform2f(uRes, w, h);
-  gl.viewport(0, 0, w, h);
+  if (state.w !== w || state.h !== h) {
+    state.w = w; state.h = h;
+    gl.uniform2f(uRes, w, h);
+    gl.viewport(0, 0, w, h);
+  }
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }

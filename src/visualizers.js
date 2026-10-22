@@ -531,8 +531,6 @@ export class Renderer {
     }
     this._scene(freq, wave, dt, dt60);
     if (chopGlitch && motion > 0) ctx.restore();
-    if (punched) ctx.restore();
-
     // ray-trace SSR floor (subtle reflection of the scene)
     if (this.quality !== 'low' && this.mode !== 'bars' && this.mode !== 'spectro' && this.mode !== 'scope') {
       const fh = Math.round(h * 0.28);
@@ -563,6 +561,8 @@ export class Renderer {
       ctx.fillStyle = fade;
       ctx.fillRect(0, sy, w, fh);
     }
+
+    if (punched) ctx.restore();
 
     if (this.beat > 0.45) this._kickFlare();
 
@@ -1329,7 +1329,8 @@ export class Renderer {
                 if (ddy > 85 || ddy < -85) continue;
                 const d2 = ddx * ddx + ddy * ddy;
                 if (d2 < 7225) {
-                  ctx.strokeStyle = hexRgba(this._color(a.c), lineAlpha * (1 - d2 / 7225) * a.life * b.life);
+                  ctx.globalAlpha = Math.max(0, lineAlpha * (1 - d2 / 7225) * a.life * b.life);
+                  ctx.strokeStyle = this._color(a.c);
                   ctx.beginPath();
                   ctx.moveTo(a.x, a.y);
                   ctx.lineTo(b.x, b.y);
@@ -1341,6 +1342,7 @@ export class Renderer {
         }
       }
     }
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
 }

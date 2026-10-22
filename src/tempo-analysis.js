@@ -135,21 +135,38 @@ export function analyzeTempo(samples, sampleRate, opts = {}) {
  * @param {number} sampleRate
  * @returns {Promise<{ bpm: number, confidence: number }>}
  */
+let activeWorker = null;
+let activeDone = null;
+
 export function analyzeTempoAsync(samples, sampleRate) {
-  const sync = () => analyzeTempo(samples, sampleRate);
-  if (typeof Worker === 'undefined') return Promise.resolve(sync());
+  if (typeof Worker === 'undefined') return Promise.resolve(analyzeTempo(samples, sampleRate));
+  /* A new selection supersedes the previous analysis. Spawning a worker per
+     track piled up full-track copies and FFT passes while skipping a queue;
+     cancel the old job and reuse the slot. */
+  if (activeDone) activeDone({ bpm: 0, confidence: 0 });
   try {
     const worker = new Worker(new URL('./dsp-worker.js', import.meta.url), { type: 'module' });
     return new Promise((resolve) => {
       let settled = false;
-      const done = (v) => { if (settled) return; settled = true; worker.terminate(); resolve(v); };
+      const done = (v) => {
+        if (settled) return;
+        settled = true;
+        try { worker.terminate(); } catch { /* already gone */ }
+        if (activeWorker === worker) { activeWorker = null; activeDone = null; }
+        resolve(v);
+      };
+      activeWorker = worker;
+      activeDone = done;
       worker.onmessage = (e) => done(e.data);
-      worker.onerror = () => done(sync());
+      /* Never fall back to a synchronous whole-track FFT on the main thread
+         (a multi-second freeze); report no tempo and let the live tracker
+         provide the readout. */
+      worker.onerror = () => done({ bpm: 0, confidence: 0 });
       // copy so the engine's buffer is never transferred away
       const copy = samples.slice();
       worker.postMessage({ samples: copy, sampleRate }, [copy.buffer]);
     });
   } catch {
-    return Promise.resolve(sync());
+    return Promise.resolve(analyzeTempo(samples, sampleRate));
   }
 }

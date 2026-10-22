@@ -1,15 +1,35 @@
 const DB_NAME = 'audiovisor.library';
-const DB_VER = 1;
+const DB_VER = 2;
 const STORE = 'tracks';
+const META = 'meta';
 
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VER);
     req.onupgradeneeded = () => {
       const db = req.result;
+      const t = req.transaction;
       if (!db.objectStoreNames.contains(STORE)) {
         const s = db.createObjectStore(STORE, { keyPath: 'id' });
         s.createIndex('created', 'created');
+      }
+      /* metadata lives in its own store: listLibraryMeta used to getAll() the
+         full tracks store and throw the multi-megabyte audio away on every
+         search keystroke */
+      if (!db.objectStoreNames.contains(META)) {
+        const m = db.createObjectStore(META, { keyPath: 'id' });
+        m.createIndex('created', 'created');
+        if (db.objectStoreNames.contains(STORE)) {
+          const src = t.objectStore(STORE);
+          src.openCursor().onsuccess = (ev) => {
+            const c = ev.target.result;
+            if (!c) return;
+            const meta = { ...c.value };
+            delete meta.arrayBuffer;
+            m.put(meta);
+            c.continue();
+          };
+        }
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -17,16 +37,17 @@ function openDB() {
   });
 }
 
-function tx(store, mode, fn) {
+function writeBoth(rec) {
   return openDB().then(db => new Promise((resolve, reject) => {
-    const t = db.transaction(store, mode);
-    const o = t.objectStore(store);
-    const req = fn(o);
-    t.oncomplete = () => resolve(req?.result);
-    t.onerror = () => reject(t.error);
-    // for getAll etc, resolve on req success
-    if (req && req.onsuccess) req.onsuccess = () => resolve(req.result);
-    if (req && req.onerror) req.onerror = () => reject(req.error);
+    const t = db.transaction([STORE, META], 'readwrite');
+    t.objectStore(STORE).put(rec);
+    const meta = { ...rec };
+    delete meta.arrayBuffer;
+    t.objectStore(META).put(meta);
+    const finish = (fn) => () => { try { db.close(); } catch { /* already closed */ } fn(); };
+    t.oncomplete = finish(resolve);
+    t.onabort = finish(() => reject(t.error || new Error('transaction aborted')));
+    t.onerror = finish(() => reject(t.error));
   }));
 }
 
@@ -48,7 +69,7 @@ export async function addToLibrary({ name, ext, sampleRate, channels, duration, 
     sourceName: sourceName || null,
     created: Date.now(),
   };
-  await tx(STORE, 'readwrite', o => o.put(rec));
+  await writeBoth(rec);
   return rec;
 }
 
@@ -59,13 +80,21 @@ export async function listLibrary() {
     const o = t.objectStore(STORE);
     const idx = o.index('created');
     const req = idx.getAll();
-    req.onsuccess = () => resolve(req.result.sort((a,b)=>b.created-a.created));
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => { const all = req.result.sort((a,b)=>b.created-a.created); db.close(); resolve(all); };
+    req.onerror = () => { db.close(); reject(req.error); };
   });
 }
 
 export async function removeFromLibrary(id) {
-  await tx(STORE, 'readwrite', o => o.delete(id));
+  await openDB().then(db => new Promise((resolve, reject) => {
+    const t = db.transaction([STORE, META], 'readwrite');
+    t.objectStore(STORE).delete(id);
+    t.objectStore(META).delete(id);
+    const finish = (fn) => () => { try { db.close(); } catch { /* already closed */ } fn(); };
+    t.oncomplete = finish(resolve);
+    t.onabort = finish(() => reject(t.error || new Error('transaction aborted')));
+    t.onerror = finish(() => reject(t.error));
+  }));
 }
 
 export async function getLibraryEntry(id) {
@@ -73,13 +102,21 @@ export async function getLibraryEntry(id) {
   return new Promise((resolve, reject) => {
     const t = db.transaction(STORE, 'readonly');
     const req = t.objectStore(STORE).get(id);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => { const r = req.result; db.close(); resolve(r); };
+    req.onerror = () => { db.close(); reject(req.error); };
   });
 }
 
 export async function clearLibrary() {
-  await tx(STORE, 'readwrite', o => o.clear());
+  await openDB().then(db => new Promise((resolve, reject) => {
+    const t = db.transaction([STORE, META], 'readwrite');
+    t.objectStore(STORE).clear();
+    t.objectStore(META).clear();
+    const finish = (fn) => () => { try { db.close(); } catch { /* already closed */ } fn(); };
+    t.oncomplete = finish(resolve);
+    t.onabort = finish(() => reject(t.error || new Error('transaction aborted')));
+    t.onerror = finish(() => reject(t.error));
+  }));
 }
 
 export async function renderRemixToWav(buffer, edits = {}) {
@@ -169,8 +206,13 @@ function audioBufferToWavBlob(buffer) {
   return new Blob([view.buffer], { type: 'audio/wav' });
 }
 
-// Light metadata list for UI without arrayBuffer (to keep memory low) — we still fetch all but UI can ignore buffer
+// Metadata-only list for the UI; never touches the audio payloads.
 export async function listLibraryMeta() {
-  const all = await listLibrary();
-  return all.map(({ arrayBuffer: _ab, ...m }) => m);
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction(META, 'readonly');
+    const req = t.objectStore(META).index('created').getAll();
+    req.onsuccess = () => { const all = req.result.sort((a, b) => b.created - a.created); db.close(); resolve(all); };
+    req.onerror = () => { db.close(); reject(req.error); };
+  });
 }

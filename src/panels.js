@@ -19,11 +19,12 @@ import * as Library from './library.js';
  * @param {any} deps.engine
  * @param {(msg: string, opts?: object) => void} deps.toast
  * @param {(el: HTMLElement | null, on: boolean, cls?: string) => void} deps.setToggle
+ * @param {(name: string, on: boolean) => void} deps.setFx
  * @param {HTMLElement} deps.triggerQueue
  * @param {HTMLElement} deps.triggerLibrary
  * @param {HTMLElement | null} deps.saveLibraryBtn
  */
-export function createPanels({ shell, engine, toast, setToggle, triggerQueue, triggerLibrary, saveLibraryBtn }) {
+export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQueue, triggerLibrary, saveLibraryBtn }) {
   const queuePanel = document.createElement('div');
   queuePanel.className = 'queue-panel is-hidden';
   queuePanel.setAttribute('role', 'dialog');
@@ -99,16 +100,20 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
     await engine.addToQueue([file]);
     if (rec.edits) {
       for (const [k, v] of Object.entries(rec.edits)) {
-        if (v) engine.setFx(k, true);
+        if (v) setFx(k, true);
       }
     }
     toggleLibrary(false);
     toast(`Loaded <b>${esc(rec.name)}</b> from library`);
   }
 
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let libSearchTimer = null;
   libraryPanel.addEventListener('input', (e) => {
     if ((e.target instanceof HTMLInputElement) && e.target.id === 'lib-search') {
-      renderLibrary();
+      if (e.isComposing) return;
+      if (libSearchTimer) clearTimeout(libSearchTimer);
+      libSearchTimer = setTimeout(() => renderLibrary(), 140);
     }
   });
 
@@ -366,9 +371,12 @@ export function createPanels({ shell, engine, toast, setToggle, triggerQueue, tr
     }
   }
 
+  let libRenderSeq = 0;
   async function renderLibrary() {
+    const seq = ++libRenderSeq;
     const wasSearchFocused = libraryPanel.contains(document.activeElement) && document.activeElement.id === 'lib-search';
     const baseMeta = await Library.listLibraryMeta();
+    if (seq !== libRenderSeq) return;
     const q = (libSearchInput()?.value || '').trim().toLowerCase();
     const filteredMeta = q
       ? baseMeta.filter((m) => m.name.toLowerCase().includes(q) || (m.ext || '').toLowerCase().includes(q))

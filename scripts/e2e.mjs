@@ -167,7 +167,13 @@ await step('account playback stays in a still, audio-only view', async () => {
     engine.pause();
     engine.setExternal({ kind: 'apple', isPlaying: () => true, getTime: () => 37, getDuration: () => 180 });
   });
-  await page.waitForTimeout(250);
+  /* wait for the render loop to observe the external source; a fixed 250ms
+     raced the last mode's shader compile after the 24-mode sweep */
+  await page.waitForFunction(
+    () => document.documentElement.classList.contains('audio-only-playback'),
+    null,
+    { timeout: 5000 },
+  );
   const state = await page.evaluate(() => {
     const av = window.__av;
     const rayRender = av.ray.render;

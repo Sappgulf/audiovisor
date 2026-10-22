@@ -40,7 +40,13 @@ export function createChromeVisibility({ engine, shell, transport, doc }) {
     reveal();
   }
 
-  shell.addEventListener('pointermove', reveal);
+  let lastPointer = 0;
+  shell.addEventListener('pointermove', () => {
+    const now = performance.now();
+    if (now - lastPointer < 80) return;
+    lastPointer = now;
+    reveal();
+  });
   shell.addEventListener('pointerdown', reveal);
   transport.addEventListener('pointerleave', reveal);
   doc.addEventListener('focusin', reveal);

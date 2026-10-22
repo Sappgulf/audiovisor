@@ -514,6 +514,7 @@ const panels = createPanels({
   engine,
   toast,
   setToggle,
+  setFx,
   triggerQueue: $('queue-btn'),
   triggerLibrary: $('library-btn'),
   saveLibraryBtn: $('save-library-btn'),
@@ -566,11 +567,18 @@ function updateTrackUI() {
     $('time-total').textContent = fmtTime(t.duration);
     const icon = t.provider === 'apple' ? 'music2' : 'spotify';
     trackArtEl.replaceChildren();
+    currentArtworkUrl = t.artwork || null;
     if (t.artwork) {
       const img = document.createElement('img');
       img.className = 'track-art-img';
-      img.src = t.artwork;
       img.alt = '';
+      /* set CORS and the handler before src: a cached image can complete
+         synchronously, and a late cover must not paint the old palette */
+      img.crossOrigin = 'anonymous';
+      img.addEventListener('load', () => {
+        if (currentArtworkUrl === t.artwork) onArtworkLoaded(t.artwork, img);
+      }, { once: true });
+      img.src = t.artwork;
       trackArtEl.appendChild(img);
     } else {
       const placeholder = document.createElement('span');
@@ -581,13 +589,6 @@ function updateTrackUI() {
     if (!t.artwork) {
       setIcon(trackArtEl.querySelector('.ic'), icon);
       trackInfoEl.classList.remove('has-art');
-    }
-    /* the cover doubles as palette source for the Auto theme */
-    currentArtworkUrl = t.artwork || null;
-    const artImg = t.artwork && trackArtEl.querySelector('img');
-    if (artImg) {
-      artImg.crossOrigin = 'anonymous';
-      artImg.addEventListener('load', () => onArtworkLoaded(t.artwork, artImg), { once: true });
     }
   } else if (providerOnly) {
     $('track-name').textContent = 'Choose a song';

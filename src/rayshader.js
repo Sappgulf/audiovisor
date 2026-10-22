@@ -717,7 +717,9 @@ float scGpu(vec3 p) {
   float halfExtent = 0.07 + e * 0.11 + min(uBeat, 0.5) * 0.02;
   float d = sdRBox(lp, vec3(halfExtent), 0.03);
   d = max(d, sdBox(q, vec3(1.68)));
-  g_id = 16.0; g_aux = e;
+  /* spread the palette across the stack: hash alone gave every voxel the
+     same pastel hue */
+  g_id = 16.0; g_aux = fract(e + dot(cell, vec3(0.13, 0.29, 0.07)));
   /* four corner pylons anchor the slab so it reads as hardware. These are
      explicit capsules rather than a modulo trick: the wrapped-corner field
      had gradient seams that made sphere tracing crawl (measured 29ms vs
@@ -897,6 +899,10 @@ Mat matOf(float id, float aux, vec3 p) {
        with treble. */
     m.emis = (palf(aux) * crest * 0.62 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06)
            * (1.0 + uBeat * 0.35 + uHigh * crest * 0.25);
+    /* atmospheric perspective: far ridges sink into the theme's deep end */
+    float haze = smoothstep(2.0, 14.0, -p.z) * 0.65;
+    m.alb = mix(m.alb, palf(0.12) * 0.08, haze);
+    m.emis *= 1.0 - haze * 0.55;
   } else if (id < 8.5) {                // city block + windows
     // anti-aliased window grid: hard step() speckles badly at distance
     vec3 wp = p * vec3(2.6, 3.4, 2.6);
@@ -1040,7 +1046,7 @@ Mat matOf(float id, float aux, vec3 p) {
     m.alb = vec3(0.010) + cc * 0.035;
     m.rough = 0.24; m.metal = 0.88;
     m.emis = cc * (0.014 + top * (pow(line, 1.6) * (2.0 + uBeat * 1.8) + sand * line * 2.6))
-           + palf(0.9) * top * pow(line, 4.0) * (0.5 + uHigh * 0.7)
+           + palf(0.75) * top * pow(line, 4.0) * (0.35 + uHigh * 0.5)
            + palf(0.6) * smoothstep(0.94, 1.0, rr) * (0.14 + uBeat * 0.26);
   } else {                              // accretion disc
     vec3 cc = mix(vec3(1.0, 0.93, 0.85), palf(0.85), clamp(aux * 1.4, 0.0, 1.0));
@@ -1051,7 +1057,7 @@ Mat matOf(float id, float aux, vec3 p) {
   // otherwise bloom into a flat white sheet
   float gain = 1.0;
   if (uMode == 3)  gain = 0.45;   // particles
-  if (uMode == 5)  gain = 0.55;   // spectro terrace
+  if (uMode == 5)  gain = 0.42;   // spectro terrace
   if (uMode == 6)  gain = 0.55;   // tunnel
    if (uMode == 14) gain = 0.62;   // tensor — band-coupled rods earn more light
   if (uMode == 17) gain = 0.35;   // bloom field
@@ -1287,7 +1293,7 @@ vec3 volColor(float dens, vec3 p) {
   /* the lamp wax sits behind glass and loses half its light to the wall
      march — it measured a third of the nebula's brightness. Base it hotter
      so the lamp actually glows between beats. */
-  float base = (uMode == 20) ? 0.46 : 0.6;
+  float base = (uMode == 20) ? 0.46 : 0.52;
   if (uMode == 20) {
     float heat = smoothstep(-1.8, 1.8, p.y + 0.35 * sin(uTime * 0.35 + p.x * 2.0));
     vec3 wax = mix(palf(0.10), palf(0.62), heat);

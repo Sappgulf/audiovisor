@@ -38,9 +38,11 @@ const BUDGETS = {
      (adaptive 2D streak, cached canvas refs, GPU fallback transition). */
   /* v8.19.1: the audio/UI/platform fix round adds rate-aware transport,
      loop/source handling, safer recorder/settings paths, GPU loss handling
-     and capped fallback sizing. The entry lands at 59.3kB; reserve 0.7kB
-     without changing the 103kB total ceiling. */
-  entry: 60 * 1024, // initial JS chunk, gzipped
+     and capped fallback sizing. */
+  /* v8.20.0: library metadata/IDB hardening, tempo worker reuse, artwork
+     races, chrome/caching and the visual pass add ~0.4kB to the entry and
+     ~0.4kB to the total. Raise to 60.25kB / 104kB, deliberately. */
+  entry: 60.25 * 1024, // initial JS chunk, gzipped
   css: 13.3 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is
@@ -51,7 +53,7 @@ const BUDGETS = {
      module-wrapper overhead to the entry, and the offline tempo analysis
      worker adds a lazy dsp-worker chunk. Worth it: the boot payload is
      still small and main.js went from 3096 to under 900 lines. */
-  total: 103 * 1024,   // all JS chunks, gzipped
+  total: 104 * 1024,   // all JS chunks, gzipped
 };
 
 const DIST = 'dist/assets';

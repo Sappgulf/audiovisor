@@ -150,7 +150,11 @@ class ExtraModes {
     while (this._specAcc >= COLINT) {
       this._specAcc -= COLINT;
       this.specCtx.drawImage(this.specCv, -colW, 0);
-      const img = this.specCtx.createImageData(colW, H);
+      if (!this._specImg || this._specImgW !== colW || this._specImgH !== H) {
+        this._specImg = this.specCtx.createImageData(colW, H);
+        this._specImgW = colW; this._specImgH = H;
+      }
+      const img = this._specImg;
       const d = img.data;
       for (let y = 0; y < H; y++) {
         const t = 1 - y / H;
@@ -565,7 +569,7 @@ class ExtraModes {
         for (let wx = 0; wx < wxMax; wx++) {
           const hsh = (((Math.sin(col.seed + wx * 37 + wy * 101) + 1) / 2) * 43758.5453) % 1;
           if (hsh < 0.42) continue;
-          const flick = 0.55 + 0.45 * Math.sin(this.t * (0.8 + hsh * 2.2) + col.seed + wx);
+          const flick = 0.78 + 0.22 * Math.sin(this.t * (0.8 + hsh * 2.2) + col.seed + wx);
           const a = (0.14 + 0.6 * col.v) * (0.3 + 0.7 * hsh) * flick;
           if (a < 0.06) continue;
           ctx.fillStyle = hexRgba(c, a);
@@ -700,7 +704,6 @@ class ExtraModes {
     const coreR = minDim * (0.07 + this.sm.bass * 0.09 + this.beat * 0.02);
     ctx.globalAlpha = 0.9;
     ctx.drawImage(this._dot(this._color(1)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
-    const P = 96;
     for (let a = 0; a < arms; a++) {
       const baseAng = (a / arms) * Math.PI * 2;
       const dir = a % 2 ? 1 : -1;
@@ -722,7 +725,7 @@ class ExtraModes {
       ctx.stroke();
       for (let i = 0; i < PTS; i++) {
         const p = pt(i);
-        const idx = logFreqIndex((i * 5 + a * 11) % P, P, freq.length);
+        const idx = logFreqIndex(Math.min(PTS, i + a * 7), PTS, freq.length);
         const v = freq[idx] / 255;
         const jitter = Math.sin(i * 12.9898 + this.t * 2.2 + a) * 0.05;
         const spread = ((Math.sin(i * 7.13 + a * 3.3) + Math.cos(i * 3.71)) / 2) * 0.06 * (0.4 + v);

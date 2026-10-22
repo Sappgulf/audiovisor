@@ -33,14 +33,20 @@ export function createStageChrome({ engine, renderer, getTheme, doc = document }
   }
 
   let vuPeaks = [0, 0, 0];
+  let vuEl = null;
+  let vuCtx = null;
+  let vuIdle = null;
   function drawVu() {
-    const c = /** @type {HTMLCanvasElement | null} */ (doc.getElementById('vu-meter'));
-    if (!c) return;
-    const ctx = c.getContext('2d');
+    if (!vuEl) {
+      vuEl = /** @type {HTMLCanvasElement | null} */ (doc.getElementById('vu-meter'));
+      vuCtx = vuEl?.getContext('2d') || null;
+    }
+    if (!vuEl || !vuCtx) return;
+    const c = vuEl, ctx = vuCtx;
     const W = c.width, H = c.height;
     ctx.clearRect(0, 0, W, H);
     const idle = engine.activeInput === 'none';
-    c.style.opacity = idle ? '0.3' : '1';
+    if (idle !== vuIdle) { vuIdle = idle; c.style.opacity = idle ? '0.3' : '1'; }
     const bands = [renderer.sm.bass, renderer.sm.mid, renderer.sm.high];
     const colors = (getTheme()?.colors) || ['#d9b089', '#c49a6e', '#f5e6d3'];
     const bw = 12, gap = (W - bw * 3) / 2;
