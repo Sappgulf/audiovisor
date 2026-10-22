@@ -82,6 +82,18 @@ describe('ray shaders', () => {
     for (const i of idx) expect(fn.includes(`m == ${i}`)).toBe(true);
   });
 
+  it('compiles a new scene when parallel shader compile is unavailable', () => {
+    /* Without KHR_parallel_shader_compile _sceneReady() is always false for
+       an uncompiled mode, so the old "keep drawing the previous mode" branch
+       could never hand off: the first mode stayed on screen for the whole
+       session. Only defer while a parallel link is genuinely in flight. */
+    const src = readFileSync(new URL('../src/raystage.js', import.meta.url), 'utf8');
+    const at = src.indexOf('let drawMode = this.mode;');
+    const block = src.slice(at, src.indexOf('const sp = this._scene(drawMode);', at));
+    expect(at).toBeGreaterThan(-1);
+    expect(block).toContain('this._parallel &&');
+  });
+
   it('does not shadow the material struct inside matOf', () => {
     /* The GLSL parser used above checks syntax, not semantics: a local
        `float m` in a material branch compiled fine as text but the driver

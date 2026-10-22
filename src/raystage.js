@@ -668,11 +668,15 @@ export class RayStage {
     /* ---- 1. scene ---- */
     gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fbo);
     gl.viewport(0, 0, this.rw, this.rh);
-    /* a mode whose program is still compiling in the background keeps
+    /* A mode whose program is still compiling in the background keeps
        showing the last scene for those few frames rather than freezing the
-       page until the driver finishes */
+       page until the driver finishes. This deferral only makes sense when
+       KHR_parallel_shader_compile is present: without it there is no async
+       completion to wait for, and the old branch queued the new mode forever
+       while the previous one kept drawing — every switch after boot silently
+       stayed on the first scene. */
     let drawMode = this.mode;
-    if (!this._sceneReady(drawMode) && this._drawnMode != null && this._sceneReady(this._drawnMode)) {
+    if (this._parallel && !this._sceneReady(drawMode) && this._drawnMode != null && this._sceneReady(this._drawnMode)) {
       this._startScene(drawMode);
       drawMode = this._drawnMode;
     }

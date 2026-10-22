@@ -1,4 +1,4 @@
-# AUDIOVISOR — v8.18.0
+# AUDIOVISOR — v8.18.1
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes and thirty-two themes. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
@@ -29,6 +29,7 @@ A hifi, real-time music visualizer for the browser. Drop in a track or use a per
 ### Raytraced stage (v8.8)
 Every one of the 24 stage modes is now a **live raytraced scene** rendered on a WebGL2 ray-marcher — the Canvas2D engine remains as a fallback and can be toggled back on at any time (Look tab → **Raytrace**).
 
+- **v8.18.1 shader-compile fix** — on a WebGL2 context without `KHR_parallel_shader_compile`, the “keep the old scene while the new program links” fallback queued the selection forever: every mode switch after boot silently kept drawing the first scene. The deferral now applies only when a parallel link is actually in flight; otherwise the new scene compiles synchronously on the next frame. Caught by driving the new mode on production with a software GL context.
 - **v8.18 Chladni Plate** — a 24th mode in both renderers. A resonant metal disc, viewed in perspective, carries the nodal set of two crossed standing waves; scattered sand burns along the zero crossings, the integer pair steps with bass and treble when a beat lands, and the plate gets a powered rim, centre pin and grounded stem in the raytraced scene. The Canvas2D fallback caches the nodal mask, tints it through the active palette and lets only the pattern's own state (pair, theme, quality) trigger a rebuild, so the mode stays cheap without losing its identity.
 - **Path** — per-frame: SDF/volumetric ray march into a linear HDR buffer → temporal accumulation with neighbourhood clamping → bright-pass + separable gaussian bloom at quarter res → ACES tonemap with chromatic aberration, vignette and grain
 - **Shading** — Cook-Torrance GGX with metallic/roughness materials, penumbra soft shadows, 4-tap AO, one reflection bounce for polished metals, and a theme-tinted procedural environment used as both key light and reflection probe
