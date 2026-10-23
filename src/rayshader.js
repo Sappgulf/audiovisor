@@ -1296,7 +1296,7 @@ vec3 volColor(float dens, vec3 p) {
   float base = (uMode == 20) ? 0.46 : 0.52;
   if (uMode == 20) {
     float heat = smoothstep(-1.8, 1.8, p.y + 0.35 * sin(uTime * 0.35 + p.x * 2.0));
-    vec3 wax = mix(palf(0.10), palf(0.62), heat);
+    vec3 wax = mix(palf(0.10), palf(0.72), heat);
     c = mix(c, wax, 0.82);
   }
   return c * (base + uBeat * 0.5 + uDrop * 0.3);

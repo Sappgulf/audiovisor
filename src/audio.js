@@ -103,6 +103,8 @@ export class AudioEngine {
     this.freqData = null;
     this.waveData = null;
     this._frameData = { freq: null, wave: null, stereoL: null, stereoR: null };
+    this._bandKey = '';
+    this._band = { iBass: 0, iMid: 0, iTOP: 0 };
     this._levels = { bass: 0, mid: 0, high: 0, level: 0, bpm: 0, beatPhase: 0, beatPulse: 0, beatConfidence: 0, drop: 0, chop: false, width: 0 };
 
     this.beat = new BeatTracker();
@@ -1223,15 +1225,24 @@ export class AudioEngine {
     }
     const { freq } = d;
     const n = freq.length;
-    const binHz = (this.ctx?.sampleRate || 44100) / 2 / n;
-    const iBass = Math.floor(120 / binHz);
-    const iMid = Math.floor(2000 / binHz);
+    /* band edges depend only on sample rate + FFT size; nil out the
+       divisions and Math.floor calls that ran 60-144x/s */
+    const bandKey = `${this.ctx?.sampleRate || 44100}|${n}`;
+    if (this._bandKey !== bandKey) {
+      const binHz = (this.ctx?.sampleRate || 44100) / 2 / n;
+      this._band = {
+        iBass: Math.floor(120 / binHz),
+        iMid: Math.floor(2000 / binHz),
+        iTOP: Math.min(n, Math.ceil(16000 / binHz)),
+      };
+      this._bandKey = bandKey;
+    }
+    const { iBass, iMid, iTOP } = this._band;
     /* the content window ends at ~16kHz, not Nyquist: the bins above carry
        nothing musical, and averaging them into `level` diluted perceived
        loudness by a third — quiet-but-full tracks measured as half-alive.
        The high band picks up the same edge so cymbal air is no longer
        thrown away at 8kHz. */
-    const iTOP = Math.min(n, Math.ceil(16000 / binHz));
     const avg = (a, b) => {
       let s = 0;
       for (let i = a; i < b; i++) s += freq[i];

@@ -169,6 +169,7 @@ export class RayStage {
     this.targets = {};
     this.quality = 'high';
     this.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    this._devicePixelRatio = window.devicePixelRatio || 1;
     this.mode = 0;
     this.pal = ['#ffb45c', '#ff8a3d', '#fff1d6'].map(hexToRgb);
     this.sensitivity = 1.4;
@@ -429,6 +430,11 @@ export class RayStage {
 
   resize(w, h) {
     if (!this.ok) return;
+    const actualDpr = window.devicePixelRatio || 1;
+    if (actualDpr !== this._devicePixelRatio) {
+      this._devicePixelRatio = actualDpr;
+      this.dpr = Math.min(actualDpr, 1.5);
+    }
     // a non-finite size builds a zero-size framebuffer; see src/levels.js
     this.w = safeDimension(w);
     this.h = safeDimension(h);

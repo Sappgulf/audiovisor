@@ -173,13 +173,20 @@ export class SpotifyClient {
   async handleRedirect() {
     const r = parseRedirect(window.location.search);
     if (!r) return false;
-    history.replaceState(null, '', window.location.pathname);
+    const clean = new URL(window.location.href);
+    for (const k of ['code', 'state', 'error', 'error_description']) clean.searchParams.delete(k);
+    history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
     const s = loadStore();
     if (r.error) {
+      saveStore({ ...s, verifier: null, state: null });
       if (this.onError) this.onError(r.error === 'access_denied' ? 'Spotify authorization denied' : `Spotify error: ${r.error}`);
       return true;
     }
-    if (!r.code || !s.verifier || r.state !== s.state) return true;
+    if (!r.code || !s.verifier || r.state !== s.state) {
+      saveStore({ ...s, verifier: null, state: null });
+      if (this.onError) this.onError('Spotify sign-in expired — try again');
+      return true;
+    }
 
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
@@ -313,19 +320,40 @@ export class SpotifyClient {
   }
 
   async connectPlayer() {
-    if (this.player) return this.deviceId;
+    if (this.player && this.deviceId) return this.deviceId;
     await this._loadSdk();
 
     return new Promise((resolve, reject) => {
+      let settled = false;
+      let timer = null;
       const player = new window.Spotify.Player({
         name: 'AUDIOVISOR',
         volume: 0.75,
         getOAuthToken: (cb) => this.ensureToken().then((t) => t && cb(t)),
       });
 
+      const finish = (err) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        if (err) {
+          this.player = null;
+          this.deviceId = null;
+          try { player.disconnect?.(); } catch { /* already gone */ }
+          reject(err);
+        } else {
+          this.player = player;
+          resolve(this.deviceId);
+        }
+      };
+
       player.addListener('ready', ({ device_id }) => {
         this.deviceId = device_id;
-        resolve(device_id);
+        finish();
+      });
+      player.addListener('not_ready', () => {
+        this.deviceId = null;
+        if (this.player === player) this.player = null;
       });
       player.addListener('player_state_changed', (state) => {
         if (!state) return;
@@ -351,7 +379,7 @@ export class SpotifyClient {
             ? 'Spotify Premium is required for in-app playback'
             : `${label}: ${message}`;
         if (this.onError) this.onError(friendly);
-        reject(new Error(friendly));
+        finish(new Error(friendly));
       };
       player.addListener('initialization_error', fail('Init failed'));
       player.addListener('authentication_error', fail('Auth failed'));
@@ -360,8 +388,9 @@ export class SpotifyClient {
         if (this.onError) this.onError(`Playback: ${message}`);
       });
 
-      this.player = player;
-      player.connect().catch(reject);
+      /* a stuck SDK must not leave the provider panel awaiting forever */
+      timer = setTimeout(() => finish(new Error('Spotify player timed out')), 12000);
+      Promise.resolve(player.connect()).catch((err) => finish(err));
     });
   }
 

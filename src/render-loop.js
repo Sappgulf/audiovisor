@@ -52,6 +52,8 @@ export function createRenderLoop({
   let _stageLive = null;
   let _audioOnly = null;
   let _uiAcc = 0;
+  let _seekAcc = 0;
+  let _seekPct = -1;
   const seekFillEl = doc.getElementById('seek-fill');
   /* looked up once; these two are read several times every frame */
   const rayCanvasEl = doc.getElementById('ray-canvas');
@@ -262,7 +264,15 @@ export function createRenderLoop({
     if (!idle) {
       const t = audioTime;
       const dur = engine.getDuration();
-      seekFillEl.style.width = `${dur ? (t / dur) * 100 : 0}%`;
+      _seekAcc += dtMs;
+      if (_seekAcc >= 80) {
+        _seekAcc = 0;
+        const pct = dur ? (t / dur) * 100 : 0;
+        if (Math.abs(pct - _seekPct) >= 0.05) {
+          _seekPct = pct;
+          seekFillEl.style.width = `${pct}%`;
+        }
+      }
       _vuAcc += dtMs;
       // the clock only ticks once a second — skip 59 of 60 text writes
       const secs = Math.floor(t);

@@ -70,6 +70,7 @@ export class Renderer {
     const mem = navigator.deviceMemory || 8;
     const dprCap = (mem < 4 || isLowPowerDevice()) ? 1.5 : 2;
     this.dpr = Math.min(window.devicePixelRatio || 1, dprCap);
+    this._devicePixelRatio = window.devicePixelRatio || 1;
     this.w = 0;
     this.h = 0;
     this.t = 0;
@@ -156,6 +157,16 @@ export class Renderer {
 
   resize() {
     if (this._dead) return;
+    /* a window moved to a different-density display changes dpr without
+       necessarily changing the CSS size; refresh only on a real change so a
+       caller/test can still set an explicit dpr */
+    const actualDpr = window.devicePixelRatio || 1;
+    if (actualDpr !== this._devicePixelRatio) {
+      this._devicePixelRatio = actualDpr;
+      const mem = navigator.deviceMemory || 8;
+      const dprCap = (mem < 4 || isLowPowerDevice()) ? 1.5 : 2;
+      this.dpr = Math.min(actualDpr, dprCap);
+    }
     const rect = this.canvas.getBoundingClientRect();
     // Math.max propagates NaN, so a non-finite rect used to produce a
     // NaN width that coerces to a zero-size canvas; see src/levels.js

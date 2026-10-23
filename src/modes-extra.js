@@ -1355,32 +1355,43 @@ class ExtraModes {
     const spd = (0.9 + this.sm.level * 2.2) * (1 + this.beat * 1.4);
     this._sweepAng += spd * dt;
 
-    /* range rings + graticule — read at a glance, brighter than before */
+    /* range rings + graticule + bezel/ticks are static for a given size and
+       theme; cache them instead of restroking ~35 paths every frame */
+    const baseKey = `${w}x${h}|${this.theme.id}|${this.quality}`;
+    if (!this._radarBase || this._radarKey !== baseKey) {
+      this._radarKey = baseKey;
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(2, Math.round(w));
+      cv.height = Math.max(2, Math.round(h));
+      const rc = cv.getContext('2d');
+      rc.globalCompositeOperation = 'lighter';
+      rc.strokeStyle = hexRgba(this._color(0), 0.16);
+      rc.lineWidth = 1;
+      for (let i = 1; i <= 4; i++) {
+        rc.beginPath();
+        rc.arc(cx, cy, (R * i) / 4, 0, Math.PI * 2);
+        rc.stroke();
+      }
+      rc.beginPath();
+      rc.moveTo(cx - R, cy); rc.lineTo(cx + R, cy);
+      rc.moveTo(cx, cy - R); rc.lineTo(cx, cy + R);
+      rc.stroke();
+      rc.strokeStyle = hexRgba(this._color(2), 0.16);
+      rc.beginPath();
+      rc.arc(cx, cy, R + 6, 0, Math.PI * 2);
+      rc.stroke();
+      rc.strokeStyle = hexRgba(this._color(2), 0.38);
+      for (let i = 0; i < 24; i++) {
+        const ang = (i / 24) * Math.PI * 2;
+        rc.beginPath();
+        rc.moveTo(cx + Math.cos(ang) * (R + 2), cy + Math.sin(ang) * (R + 2));
+        rc.lineTo(cx + Math.cos(ang) * (R + 7), cy + Math.sin(ang) * (R + 7));
+        rc.stroke();
+      }
+      this._radarBase = cv;
+    }
     ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = hexRgba(this._color(0), 0.16);
-    ctx.lineWidth = 1;
-    for (let i = 1; i <= 4; i++) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, (R * i) / 4, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.beginPath();
-    ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
-    ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
-    ctx.stroke();
-    /* outer bezel + tick marks every 15deg */
-    ctx.strokeStyle = hexRgba(this._color(2), 0.16);
-    ctx.beginPath();
-    ctx.arc(cx, cy, R + 6, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = hexRgba(this._color(2), 0.38);
-    for (let i = 0; i < 24; i++) {
-      const ang = (i / 24) * Math.PI * 2;
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(ang) * (R + 2), cy + Math.sin(ang) * (R + 2));
-      ctx.lineTo(cx + Math.cos(ang) * (R + 7), cy + Math.sin(ang) * (R + 7));
-      ctx.stroke();
-    }
+    ctx.drawImage(this._radarBase, 0, 0);
     /* rotating crosshair that reads as a hard grid pointer */
     ctx.strokeStyle = hexRgba(this._color(0), 0.12 + this.beat * 0.1);
     ctx.beginPath();
@@ -1657,7 +1668,7 @@ class ExtraModes {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h / 2;
     const minDim = Math.min(w, h);
-    const S = minDim * 0.10;
+    const S = minDim * 0.115;
     const N = 4;
     if (!this.gpuVox || this._gpuSig !== N) {
       this._gpuSig = N;
@@ -1675,8 +1686,13 @@ class ExtraModes {
     const scale = S * beatP;
 
     /* render back-to-front for painter's order */
-    const cells = [];
-    for (const [ix, iy, iz] of this.gpuVox) {
+    if (!this._gpuCells || this._gpuCells.length !== this.gpuVox.length) {
+      this._gpuCells = this.gpuVox.map(() => ({ px: 0, py: 0, d: 0, s: 0 }));
+    }
+    const cells = this._gpuCells;
+    for (let vi = 0; vi < this.gpuVox.length; vi++) {
+      const [ix, iy, iz] = this.gpuVox[vi];
+      const cell = cells[vi];
       const x = (ix - (N - 1) / 2);
       const y = (iy - (N - 1) / 2);
       const z = (iz - (N - 1) / 2);
@@ -1687,12 +1703,10 @@ class ExtraModes {
       const z2 = y * sinB + z1 * cosB;
       /* perspective */
       const persp = 2.6 / (2.6 + z2 * 0.34);
-      cells.push({
-        px: cx + x1 * scale * persp,
-        py: cy + y1 * scale * persp,
-        d: z2,
-        s: Math.max(2.5, S * 0.72 * persp),
-      });
+      cell.px = cx + x1 * scale * persp;
+      cell.py = cy + y1 * scale * persp;
+      cell.d = z2;
+      cell.s = Math.max(2.5, S * 0.72 * persp);
     }
     cells.sort((a, b) => a.d - b.d);
 

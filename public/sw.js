@@ -4,10 +4,16 @@
 /* Bump on every release. The old name was pinned at v6.3 across many
    deploys, so returning visitors kept being served whatever assets their
    cache already held. */
-const CACHE = 'audiovisor-v8.20.0';
+const CACHE = 'audiovisor-v8.21.0';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
+  /* an offline first launch otherwise has no shell at all */
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(['/', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png']))
+      .catch(() => {})
+  );
 });
 
 self.addEventListener('activate', (e) => {
