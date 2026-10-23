@@ -267,7 +267,7 @@
             <section>
               <h3 class="section-title">Theme Mood <span class="section-value mono" id="theme-current">Iridescent</span></h3>
 
-              <div class="theme-row" id="theme-row"></div>
+              <div class="theme-row" id="theme-row" role="group" aria-label="Theme palette"></div>
             </section>
             <div class="divider"></div>
             <section>
@@ -400,16 +400,17 @@
           </button>
           <div class="util-sep"></div>
           <div class="more-wrap">
-            <button class="ghost-btn" id="more-btn" title="More tools" aria-label="More tools" aria-haspopup="true" aria-expanded="false">
+            <button class="ghost-btn" id="more-btn" title="More tools" aria-label="More tools" aria-haspopup="menu" aria-controls="more-menu" aria-expanded="false">
               <span class="ic" data-icon="more"></span>
             </button>
             <div class="more-menu is-hidden" id="more-menu" role="menu" aria-label="More tools">
-              <button class="more-item" id="snapshot-btn" role="menuitem"><span class="ic ic-sm" data-icon="camera"></span><span>Snapshot PNG</span><kbd>P</kbd></button>
-              <button class="more-item rec-btn" id="record-btn" role="menuitem"><span class="ic ic-sm" data-icon="record"></span><span>Record session</span></button>
-              <button class="more-item" id="export-remix-btn" role="menuitem"><span class="ic ic-sm" data-icon="music"></span><span>Export remix WAV</span></button>
-              <button class="more-item" id="shuffle-btn" role="menuitem"><span class="ic ic-sm" data-icon="shuffle"></span><span>Autopilot</span></button>
-              <div class="more-sep"></div>
-              <button class="more-item" id="add-more-btn" role="menuitem"><span class="ic ic-sm" data-icon="plus"></span><span>Add audio files…</span></button>
+              <div class="more-heading mono" role="presentation">SESSION TOOLS</div>
+              <button class="more-item" id="snapshot-btn" role="menuitem"><span class="ic ic-sm" data-icon="camera"></span><span class="tool-copy"><strong class="tool-label">Snapshot PNG</strong><small>Save the current stage</small></span><kbd>P</kbd></button>
+              <button class="more-item rec-btn" id="record-btn" role="menuitem"><span class="ic ic-sm" data-icon="record"></span><span class="tool-copy"><strong class="tool-label">Record session</strong><small class="tool-note">Video with your audio</small></span></button>
+              <button class="more-item" id="export-remix-btn" role="menuitem"><span class="ic ic-sm" data-icon="music"></span><span class="tool-copy"><strong class="tool-label">Export remix WAV</strong><small>Audio with current effects</small></span></button>
+              <button class="more-item" id="shuffle-btn" role="menuitemcheckbox" aria-checked="false"><span class="ic ic-sm" data-icon="shuffle"></span><span class="tool-copy"><strong class="tool-label">Autopilot</strong><small class="tool-note">Cycle modes and themes</small></span></button>
+              <div class="more-sep" role="separator"></div>
+              <button class="more-item" id="add-more-btn" role="menuitem"><span class="ic ic-sm" data-icon="plus"></span><span class="tool-copy"><strong class="tool-label">Add audio files…</strong><small>Build your listening queue</small></span></button>
             </div>
           </div>
           <button class="ghost-btn" id="fullscreen-btn" title="Cinema fullscreen (F)" aria-label="Fullscreen">

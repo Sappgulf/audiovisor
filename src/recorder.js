@@ -24,8 +24,10 @@ export function createRecorder({ engine, getLiveCanvas, download, toast, doc = d
     const btn = doc.getElementById('record-btn');
     if (!btn) return;
     btn.classList.toggle('is-rec', on);
-    btn.setAttribute('aria-pressed', String(on));
-    btn.setAttribute('aria-label', on ? 'Stop recording' : 'Record session');
+    const label = btn.querySelector('.tool-label');
+    const note = btn.querySelector('.tool-note');
+    if (label) label.textContent = on ? 'Stop recording' : 'Record session';
+    if (note) note.textContent = on ? 'Save your video recording' : 'Video with your audio';
   }
 
   function startRecording() {

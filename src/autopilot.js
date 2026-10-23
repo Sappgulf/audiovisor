@@ -16,6 +16,8 @@ export function createAutopilot({ state, chip, shuffleBtn, toast, setToggle, sav
     state.autopilot = on;
     setToggle(chip, on, 'is-active');
     setToggle(shuffleBtn, on);
+    const note = shuffleBtn?.querySelector('.tool-note');
+    if (note) note.textContent = on ? 'On · every 12s' : 'Cycle modes and themes';
     if (on) {
       state.autopilotTimer = setInterval(randomizeLook, 12000);
       randomizeLook();

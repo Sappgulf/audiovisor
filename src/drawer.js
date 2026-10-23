@@ -78,7 +78,10 @@ export function createDrawer({ state, doc = document }) {
   });
   // a sheet dragged part-way and then rotated to a wide layout would keep a
   // stale inline transform
-  win.addEventListener('resize', () => { if (!isSheet()) drawer.style.transform = ''; });
+  win.addEventListener('resize', () => {
+    if (!isSheet()) drawer.style.transform = '';
+    syncDrawer();
+  });
   syncDrawer();
 
   return { setDrawerOpen, toggleDrawer, syncDrawer, isSheet };

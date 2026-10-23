@@ -1657,6 +1657,8 @@ void main() {
   vec3 tone = mix(uTintLo * 1.8, uTintHi, smoothstep(0.05, 0.85, lg));
   col = mix(col, col * (0.7 + tone * 0.55) + uTintLo * 0.02 * (1.0 - lg), 0.08);
   col *= 1.0 - dot(d, d) * 0.38;
-  col += (hash(gl_FragCoord.xy + fract(uTime) * 91.7) - 0.5) * 0.018;
+  // Keep the dark space clean; texture belongs in the lit surfaces.
+  float grain = mix(0.004, 0.014, smoothstep(0.02, 0.45, lg));
+  col += (hash(gl_FragCoord.xy + fract(uTime) * 91.7) - 0.5) * grain;
   fragColor = vec4(col, 1.0);
 }`;

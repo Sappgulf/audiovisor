@@ -22,6 +22,7 @@ export function createDrawerTabs({ onSourceTab, doc = document } = {}) {
   const panels = [...doc.querySelectorAll('.drawer-panel')];
   const ink = doc.getElementById('drawer-tab-ink');
   const scroll = doc.querySelector('.drawer-scroll');
+  const positions = new Map();
 
   function moveInk(btn) {
     if (!ink || !btn) return;
@@ -36,6 +37,8 @@ export function createDrawerTabs({ onSourceTab, doc = document } = {}) {
   function setDrawerTab(id, { persist = true } = {}) {
     const btn = tabs.find((b) => b.dataset.tab === id) || tabs[0];
     if (!btn) return;
+    const previous = selectedTab();
+    if (scroll && previous) positions.set(previous.dataset.tab, scroll.scrollTop);
     tabs.forEach((b) => {
       const on = b === btn;
       b.setAttribute('aria-selected', String(on));
@@ -45,7 +48,7 @@ export function createDrawerTabs({ onSourceTab, doc = document } = {}) {
     const title = doc.getElementById('drawer-title');
     if (title) title.textContent = { source: 'Choose your audio', look: 'Shape the scene', audio: 'Tune the sound', studio: 'Make it yours' }[btn.dataset.tab];
     if (btn.dataset.tab === 'source') onSourceTab?.();
-    if (scroll) scroll.scrollTop = 0;
+    if (scroll) scroll.scrollTop = positions.get(btn.dataset.tab) || 0;
     moveInk(btn);
     if (persist) writeText(TAB_KEY, btn.dataset.tab);
   }
@@ -53,9 +56,10 @@ export function createDrawerTabs({ onSourceTab, doc = document } = {}) {
   tabs.forEach((btn, i) => {
     btn.addEventListener('click', () => setDrawerTab(btn.dataset.tab));
     btn.addEventListener('keydown', (e) => {
-      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-      e.preventDefault();
-      const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+      if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) return;
+      e.preventDefault(); e.stopPropagation();
+      const next = e.key === 'Home' ? tabs[0] : e.key === 'End' ? tabs.at(-1)
+        : tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
       next.focus();
       setDrawerTab(next.dataset.tab);
     });

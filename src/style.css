@@ -1158,6 +1158,7 @@ button:focus-visible, input:focus-visible {
   position: relative;
 }
 .theme-dot:hover { opacity: 1; transform: scale(1.06); }
+.theme-dot.is-active::after { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px rgba(0,0,0,0.6); }
 .theme-dot.is-active {
   opacity: 1;
   border-color: var(--text-strong);
@@ -2254,6 +2255,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 }
 .drawer-empty.is-hidden { display: none; }
 .mode-card.is-filtered { display: none; }
+.mode-card, .theme-dot { scroll-margin-block: 8px; }
 
 /* ---------- Shortcuts overlay ---------- */
 
@@ -2383,8 +2385,9 @@ input:focus-visible,
   position: absolute;
   right: -6px;
   bottom: calc(100% + 12px);
-  min-width: 232px;
-  padding: 6px;
+  width: 270px;
+  max-width: calc(100vw - 32px);
+  padding: 8px;
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -2407,7 +2410,12 @@ input:focus-visible,
   cursor: pointer;
   transition: background 0.14s var(--ease), color 0.14s var(--ease);
 }
-.more-item:hover { background: var(--glass-strong); color: var(--text); }
+.more-heading { padding: 7px 10px 9px; color: var(--accent); font-size: 8px; letter-spacing: 0.16em; }
+.more-item:hover, .more-item:focus-visible { background: var(--accent-dim); color: var(--text); }
+.tool-copy { display: grid; gap: 3px; }
+.tool-copy strong { font-weight: 550; font-size: 12px; }
+.tool-copy small { color: var(--text-60); font-size: 10px; line-height: 1.35; }
+.more-item.is-on .tool-note { color: var(--accent); }
 .more-item .ic { flex-shrink: 0; opacity: 0.8; }
 .more-item kbd {
   margin-left: auto;
@@ -2430,7 +2438,7 @@ input:focus-visible,
 .mode-list { grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .mode-preview { font-size: 13px; }
 .mode-card { padding: 6px 4px; gap: 4px; }
-.mode-name { font-size: 8.5px; line-height: 1.5; letter-spacing: 0.01em; color: var(--text-60); }
+.mode-name { font-size: 9px; line-height: 1.5; letter-spacing: 0.01em; color: var(--text-60); }
 
 @media (max-width: 1024px) {
   .add-label { display: none; }

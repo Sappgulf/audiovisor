@@ -140,4 +140,11 @@ describe('App boot smoke (jsdom)', () => {
     expect(row.children.length).toBe(33);
     expect(row.firstElementChild.dataset.theme).toBe('auto');
   });
+  it('reports Autopilot as a checked menu action after boot', () => {
+    const item = dom.window.document.getElementById('shuffle-btn');
+    expect(item.getAttribute('role')).toBe('menuitemcheckbox');
+    expect(item.getAttribute('aria-checked')).toBe('false');
+    expect(item.hasAttribute('aria-pressed')).toBe(false);
+  });
+
 });

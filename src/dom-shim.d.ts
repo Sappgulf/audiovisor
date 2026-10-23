@@ -10,7 +10,7 @@
  */
 
 interface Element {
-  focus(): void;
+  focus(options?: FocusOptions): void;
   blur(): void;
   dataset: DOMStringMap;
   tabIndex: number;

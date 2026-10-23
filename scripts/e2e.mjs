@@ -113,6 +113,14 @@ await step('open settings drawer', async () => { const closed = await page.evalu
 for (const tab of ['look', 'source', 'audio', 'studio', 'look']) await step('drawer tab ' + tab, async () => { await tap('#tab-' + tab); await page.waitForTimeout(250); if (!await vis('#panel-' + tab)) throw new Error('panel not visible'); });
 await snap('01-drawer-look');
 await step('mode filter "neon"', async () => { await page.fill('#mode-filter', 'neon'); await page.waitForTimeout(200); const n = await page.$$eval('#mode-list [data-mode-id]', (b) => b.filter((x) => x.offsetParent).length); await page.fill('#mode-filter', ''); return n + ' visible'; });
+await step('mode grid keeps keyboard focus visible', async () => {
+  await page.focus('[data-mode-id="bars"]'); await page.keyboard.press('End');
+  await page.waitForFunction(() => {
+    const card = document.activeElement, r = card.getBoundingClientRect(), d = document.querySelector('.drawer-scroll').getBoundingClientRect();
+    return card.dataset.modeId === 'chladni' && card.tabIndex === 0 && r.top >= d.top - 1 && r.bottom <= d.bottom + 1;
+  });
+  await page.keyboard.press('Home');
+});
 await step('pick mode by clicking card (Neon City)', async () => { await tap('[data-mode-id="city"]'); await page.waitForTimeout(800); const m = await page.evaluate(() => window.__av.state.modeId); if (m !== 'city') throw new Error('mode ' + m); if (await page.evaluate(() => document.documentElement.classList.contains('mode-unchosen'))) throw new Error('still blank'); });
 await step('stage mode button opens the named visual picker', async () => {
   await tap('#drawer-close');
@@ -152,6 +160,12 @@ await step('mute and restore the previous volume', async () => {
   return `${Math.round(before * 100)}% restored`;
 });
 await snap('02-playing');
+await step('drawer retains the look tab scroll position', async () => {
+  const before = await page.evaluate(() => { const el = document.querySelector('.drawer-scroll'); el.scrollTop = 260; return el.scrollTop; });
+  await tap('#tab-audio'); await tap('#tab-look');
+  const after = await page.evaluate(() => document.querySelector('.drawer-scroll').scrollTop);
+  if (Math.abs(before - after) > 1) throw new Error(`Scroll ${before} -> ${after}`);
+});
 await step('audio tab sliders (drag sensitivity)', async () => { await tap('#tab-audio'); await page.waitForTimeout(300); const r = await page.$$('#sliders input[type=range]'); if (!r.length) return 'no range inputs'; await r[0].scrollIntoViewIfNeeded(); const box = await r[0].boundingBox(); await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2); return r.length + ' sliders, sens=' + await r[0].inputValue(); });
 await step('keyboard reset restores the live visual control without pausing', async () => {
   const playing = await page.evaluate(() => window.__av.engine.playing);
@@ -182,6 +196,17 @@ await step('volume click 30%', async () => { if (!await vis('#volume-track')) re
 await step('loop toggle', async () => { await tap('#loop-btn'); const a = await page.getAttribute('#loop-btn', 'aria-pressed'); await tap('#loop-btn'); return 'pressed=' + a; });
 await step('queue panel open/close', async () => { await tap('#queue-btn'); await page.waitForTimeout(400); await snap('03-queue'); await page.keyboard.press('Escape'); await page.waitForTimeout(300); });
 await step('save to library + library panel', async () => { await tap('#save-library-btn'); await page.waitForTimeout(500); await tap('#library-btn'); await page.waitForTimeout(500); await snap('04-library'); await page.keyboard.press('Escape'); await page.waitForTimeout(300); });
+await step('More menu keyboard navigation and focus return', async () => {
+  const before = await page.evaluate(() => ({ playing: window.__av.engine.playing, volume: window.__av.engine.volume }));
+  await page.focus('#more-btn'); await page.keyboard.press('ArrowDown');
+  if (await page.evaluate(() => document.activeElement.id) !== 'snapshot-btn') throw new Error('Menu did not take focus');
+  await page.keyboard.press('End');
+  if (await page.evaluate(() => document.activeElement.id) !== 'add-more-btn') throw new Error('End did not find last action');
+  await page.keyboard.press('ArrowDown'); await page.keyboard.press('Escape');
+  const after = await page.evaluate(() => ({ focused: document.activeElement.id,
+    open: document.getElementById('more-btn').getAttribute('aria-expanded'), playing: window.__av.engine.playing, volume: window.__av.engine.volume }));
+  if (after.focused !== 'more-btn' || after.open !== 'false' || before.volume !== after.volume || before.playing !== after.playing) throw new Error(JSON.stringify(after));
+});
 await step('more menu: snapshot', async () => { await tap('#more-btn'); await page.waitForTimeout(300); if (!await vis('#snapshot-btn')) throw new Error('menu item hidden'); const [d] = await Promise.all([page.waitForEvent('download', { timeout: 4000 }).catch(() => null), tap('#snapshot-btn')]); return d ? d.suggestedFilename() : 'no download event'; });
 await step('more menu: shuffle', async () => { await tap('#more-btn'); await page.waitForTimeout(300); await tap('#shuffle-btn'); await page.waitForTimeout(300); });
 await step('more menu: record 2s', async () => { await tap('#more-btn'); await page.waitForTimeout(300); await tap('#record-btn'); await page.waitForTimeout(2000); const [d] = await Promise.all([page.waitForEvent('download', { timeout: 6000 }).catch(() => null), (async () => { await tap('#more-btn'); await page.waitForTimeout(300); await tap('#record-btn'); })()]); return d ? d.suggestedFilename() : 'no download'; });

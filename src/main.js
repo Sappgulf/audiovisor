@@ -172,7 +172,7 @@ const TOGGLE_SELECTOR = [
 function setToggle(el, on, cls = 'is-on') {
   if (!el) return;
   el.classList.toggle(cls, !!on);
-  el.setAttribute('aria-pressed', String(!!on));
+  el.setAttribute(el.hasAttribute('aria-checked') ? 'aria-checked' : 'aria-pressed', String(!!on));
 }
 
 /* Sliders, FX chips and EQ bands are built in src/controls.js. Constructed
@@ -884,7 +884,7 @@ syncStageContext();
    several are only ever touched through paths that set the class directly.
    Runs after loadSettings so restored preferences are reflected. */
 for (const el of document.querySelectorAll(TOGGLE_SELECTOR)) {
-  if (el.hasAttribute('aria-pressed')) continue;
+  if (el.matches('[aria-pressed], [aria-checked]')) continue;
   el.setAttribute('aria-pressed', String(el.classList.contains('is-on') || el.classList.contains('is-active')));
 }
 

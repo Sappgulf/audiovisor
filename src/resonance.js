@@ -33,8 +33,11 @@ export function resonancePhase(profile, x, y, time, bass = 0, mid = 0, high = 0)
   const [family, density, lobes, bend] = profile;
   const t = time * 0.14;
   const warp = bend * (0.7 + bass * 0.3);
-  const r = Math.hypot(x, y);
-  const a = r < 1e-8 ? 0 : Math.atan2(y, x);
+  // Only radial families need polar coordinates; the other grids avoid
+  // thousands of hypot/atan2 calls on each cached geometry update.
+  const radial = family === 1 || family === 3 || family === 5;
+  const r = radial ? Math.hypot(x, y) : 0;
+  const a = radial && r >= 1e-8 ? Math.atan2(y, x) : 0;
   switch (family) {
     case 0: return Math.sin(y * density + Math.sin(x * lobes + t) * warp + t + mid * 0.3);
     case 1: return Math.sin(r * density - t + Math.sin(a * lobes + t) * warp + bass * 0.4);
@@ -87,9 +90,12 @@ vec3 resonanceField(vec2 p) {
   float halo = exp(-abs(phase) * 7.0) * 0.12;
   float radius = length(p);
   float color = 0.12 + 0.70 * (0.5 + 0.5 * sin(radius * 1.8 - uTime * 0.08 + p.x * 0.5));
+  // Light travels along the field instead of illuminating every filament
+  // equally. Treble adds a crest without changing the geometry or its phase.
+  float crest = pow(max(0.0, sin(p.x * 2.7 + p.y * 1.9 - uTime * 0.5)), 8.0);
   // The centre stays quiet so fine geometry remains legible.
   float edge = 0.28 + 0.72 * smoothstep(0.15, 1.3, radius);
-  return palf(color) * (line + halo) * edge * fieldGain()
+  return palf(color + crest * 0.12) * (line * (0.58 + crest * (0.65 + uHigh * 0.35)) + halo) * edge * fieldGain()
     * (0.55 + uLevel * 0.45 + uBeat * 0.18) * mix(0.7, 1.2, uPop);
 }
 `;
@@ -118,8 +124,13 @@ export class ResonanceLayer {
     const tick = Math.floor(t * 12);
     if (this.canvas.width !== cw || this.canvas.height !== ch || this.mode !== mode
       || this.theme !== theme || this.tick !== tick || this.quality !== quality) {
-      this.canvas.width = cw;
-      this.canvas.height = ch;
+      const resized = this.canvas.width !== cw || this.canvas.height !== ch;
+      if (resized) { this.canvas.width = cw; this.canvas.height = ch; }
+      else this.ctx.clearRect(0, 0, cw, ch);
+      if (resized || this.theme !== theme || !this.gradient) {
+        this.gradient = this.ctx.createLinearGradient(0, ch, cw, 0);
+        theme.colors.forEach((color, i) => this.gradient.addColorStop(i / Math.max(1, theme.colors.length - 1), color));
+      }
       this.mode = mode; this.theme = theme; this.tick = tick; this.quality = quality;
       const c = this.ctx;
       const cols = quality === 'low' ? 44 : 72;
@@ -134,9 +145,7 @@ export class ResonanceLayer {
             (x / cols * 2 - 1) * aspect, y / rows * 2 - 1, t, sm.bass, sm.mid, sm.high);
         }
       }
-      const ramp = c.createLinearGradient(0, ch, cw, 0);
-      theme.colors.forEach((color, i) => ramp.addColorStop(i / Math.max(1, theme.colors.length - 1), color));
-      c.strokeStyle = ramp;
+      c.strokeStyle = this.gradient;
       c.lineWidth = 0.8;
       c.beginPath();
       let pending = false;

@@ -55,6 +55,24 @@ describe('Canvas contour layer', () => {
     expect(layer.values).toBe(values);
   });
 
+  it('reuses the backing store and palette gradient across timed refreshes', () => {
+    let w = layer.canvas.width, h = layer.canvas.height;
+    const width = vi.fn((value) => { w = value; });
+    const height = vi.fn((value) => { h = value; });
+    Object.defineProperty(layer.canvas, 'width', { get: () => w, set: width });
+    Object.defineProperty(layer.canvas, 'height', { get: () => h, set: height });
+    const gradients = vi.spyOn(layer.ctx, 'createLinearGradient');
+    layer.draw(renderer);
+    renderer.t += 0.1; layer.draw(renderer);
+    renderer.t += 0.1; layer.draw(renderer);
+    expect(width).toHaveBeenCalledTimes(1);
+    expect(height).toHaveBeenCalledTimes(1);
+    expect(gradients).toHaveBeenCalledTimes(1);
+    renderer.theme = { ...THEMES[0], colors: ['#fff', '#000'] };
+    layer.draw(renderer);
+    expect(gradients).toHaveBeenCalledTimes(2);
+  });
+
   it('refreshes mode and palette changes inside the same sample tick', () => {
     layer.draw(renderer);
     renderer.mode = 'fluid';

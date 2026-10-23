@@ -1,8 +1,14 @@
-# AUDIOVISOR — v8.23.0
+# AUDIOVISOR — v8.24.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes and thirty-two themes. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Stage and navigation polish (v8.24)
+- **Living contour light** — travelling highlights carry treble along the resonant filaments; quieter shadows keep dark space cleaner across the WebGL stage.
+- **Tools with context** — the More menu explains snapshot, recording and remix outputs, supports arrows and Home/End navigation, and returns focus on Escape. Recording and Autopilot show their current action/state.
+- **Browse without losing your place** — mode and theme grids keep keyboard focus visible with a single tab stop; drawer tabs retain individual scroll positions and support Home/End. Rotating an open phone sheet releases the transport on wider screens. Reduced-motion browsing keeps still previews without loading animation strips.
+- **Lighter Canvas contours** — backing stores and palette gradients are reused; non-radial families skip polar math. An interleaved Chromium benchmark of four modes measured 8–40% lower contour-refresh CPU time, with identical phase values. This measures the contour subsystem, not whole-app frame rate.
 
 ### Maintenance (v8.17.1–v8.17.5)
 - **CI tests the real build** — the PWA and service-worker suites assert against `dist/`, but CI ran the tests before the build, so those checks never actually covered a fresh push. The workflow and `npm run ci` now build first.

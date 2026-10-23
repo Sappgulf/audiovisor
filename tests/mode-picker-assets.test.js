@@ -16,8 +16,8 @@ describe('mode picker assets', () => {
       const animated = new URL(modeAssetPath(mode.id, true), 'https://example.com');
       expect(still.pathname).toBe(`/modes/${mode.id}.webp`);
       expect(animated.pathname).toBe(`/modes/${mode.id}-anim.webp`);
-      expect(still.searchParams.get('v')).toBe('8.23');
-      expect(animated.searchParams.get('v')).toBe('8.23');
+      expect(still.searchParams.get('v')).toBe('8.24');
+      expect(animated.searchParams.get('v')).toBe('8.24');
       expect(modeAssetPath(mode.id)).not.toContain('undefined');
     }
   });

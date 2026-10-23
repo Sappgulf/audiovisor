@@ -5,7 +5,7 @@ import { modeArt } from './mode-art.js';
 export function modeAssetPath(id, animated = false) {
   // Public previews have a long HTTP cache. A new artwork revision must
   // change their URLs so returning listeners see the upgraded scenes.
-  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.23`;
+  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.24`;
 }
 
 /**
@@ -70,6 +70,7 @@ export function createModePicker({
       thumb.remove();
     });
     const activateAnimation = () => {
+      if (doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
       if (anim && !btn.dataset.animLoaded) {
         anim.style.backgroundImage = `url("${animation}")`;
         btn.dataset.animLoaded = 'true';
@@ -82,24 +83,6 @@ export function createModePicker({
     btn.addEventListener('focus', activateAnimation);
     btn.addEventListener('blur', deactivateAnimation);
     btn.addEventListener('click', () => onPickMode(m.id));
-    btn.addEventListener('keydown', (e) => {
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
-      e.preventDefault();
-      e.stopPropagation();
-      const cards = getModeFilterCards();
-      if (!cards.length) return;
-      if (e.key === 'Home') {
-        modeFilterIndex = 0;
-        cards[0]?.focus({ preventScroll: true });
-        return;
-      }
-      if (e.key === 'End') {
-        modeFilterIndex = cards.length - 1;
-        cards[modeFilterIndex]?.focus({ preventScroll: true });
-        return;
-      }
-      focusModeFilterCard(e.key === 'ArrowDown' ? 1 : -1);
-    });
     modeCatalog.push({ id: m.id, searchText, button: btn });
     modeList.appendChild(btn);
     setIcon(btn.querySelector('.ic'), m.icon);
@@ -144,8 +127,9 @@ export function createModePicker({
   function syncModeFilterTabStops(cards) {
     const visibleCards = cards || getModeFilterCards();
     const selected = visibleCards.find((card) => card.dataset.modeId === getModeId());
+    const focused = visibleCards.find((card) => card === doc.activeElement);
     visibleCards.forEach((card) => { card.tabIndex = -1; });
-    const primary = selected || visibleCards[0];
+    const primary = focused || selected || visibleCards[0];
     if (primary) primary.tabIndex = 0;
     if (selected) {
       const idx = visibleCards.indexOf(selected);
@@ -175,17 +159,30 @@ export function createModePicker({
     return cards;
   }
 
-  function focusModeFilterCard(step) {
-    const cards = applyModeFilter();
+  function focusChoice(elements, index) {
+    elements.forEach((el, i) => { el.tabIndex = i === index ? 0 : -1; });
+    elements[index].focus({ preventScroll: true });
+    elements[index].scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }
+  function focusModeAt(cards, index) {
     if (!cards.length) return;
-    if (step > 0) {
-      modeFilterIndex = (modeFilterIndex + 1) % cards.length;
-    } else if (step < 0) {
-      modeFilterIndex = (modeFilterIndex - 1 + cards.length) % cards.length;
-    } else {
-      modeFilterIndex = 0;
-    }
-    cards[modeFilterIndex]?.focus({ preventScroll: true });
+    modeFilterIndex = (index + cards.length) % cards.length;
+    focusChoice(cards, modeFilterIndex);
+  }
+  function focusModeFilterCard(step) {
+    focusModeAt(getModeFilterCards(), step ? modeFilterIndex + step : 0);
+  }
+
+  // Match the rendered rows, including filtered grids and wrapped swatches.
+  function navigateGrid(e, elements, focus) {
+    if (!elements.length || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault(); e.stopPropagation();
+    const current = Math.max(0, elements.indexOf(doc.activeElement));
+    const row = elements.findIndex((el) => el.offsetTop > elements[0].offsetTop);
+    const cols = row > 0 ? row : Math.min(3, elements.length);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? elements.length - 1
+      : (current + (e.key === 'ArrowDown' ? cols : e.key === 'ArrowUp' ? -cols : e.key === 'ArrowRight' ? 1 : -1) + elements.length) % elements.length;
+    focus(elements, next);
   }
 
   function setActiveMode(id) {
@@ -193,13 +190,16 @@ export function createModePicker({
       const c = /** @type {HTMLElement} */ (el);
       const on = c.dataset.modeId === id;
       setToggle(c, on, 'is-active');
-      c.setAttribute('aria-pressed', String(on));
     });
     syncModeFilterTabStops();
   }
 
   function setActiveTheme(id) {
-    [...themeRow.children].forEach((el) => setToggle(/** @type {HTMLElement} */ (el), el.dataset.theme === id, 'is-active'));
+    [...themeRow.children].forEach((el) => {
+      const dot = /** @type {HTMLElement} */ (el);
+      setToggle(dot, dot.dataset.theme === id, 'is-active');
+      dot.tabIndex = dot.dataset.theme === id ? 0 : -1;
+    });
     const current = doc.getElementById('theme-current');
     if (current) current.textContent = id === 'auto' ? 'From artwork' : themes.find((theme) => theme.id === id)?.name || '';
   }
@@ -228,17 +228,9 @@ export function createModePicker({
       focusModeFilterCard(e.key === 'ArrowDown' ? 1 : -1);
     }
   });
-  modeList?.addEventListener('keydown', (e) => {
-    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'Home' && e.key !== 'End') return;
-    const cards = getModeFilterCards();
-    if (!cards.length) return;
-    e.preventDefault();
-    if (e.key === 'Home') modeFilterIndex = 0;
-    else if (e.key === 'End') modeFilterIndex = cards.length - 1;
-    else if (e.key === 'ArrowDown') focusModeFilterCard(1);
-    else if (e.key === 'ArrowUp') focusModeFilterCard(-1);
-    if (modeFilterIndex >= 0 && modeFilterIndex < cards.length) cards[modeFilterIndex]?.focus({ preventScroll: true });
-  });
+  modeList?.addEventListener('keydown', (e) => navigateGrid(e, getModeFilterCards(), focusModeAt));
+  themeRow?.addEventListener('keydown', (e) => navigateGrid(e, [...themeRow.children], focusChoice));
+  setActiveTheme(getThemeId());
 
   /** Add a card for a mode registered after boot (plugin API). */
   function addMode(m) {
