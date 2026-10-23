@@ -252,7 +252,7 @@ await step('first-run sample button loads and plays', async () => {
     await samplePage.close();
   }
 });
-await snap('07-end');
+await snap('07-end').catch(() => {});   // cosmetic; a browser close here must not fail the run
 console.log(results.join('\n'));
 const failed = results.filter((r) => !r.startsWith('ok')).length;
 console.log(`\n${results.length - failed}/${results.length} steps passed — screenshots in ${SP}`);

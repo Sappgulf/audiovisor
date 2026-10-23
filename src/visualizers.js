@@ -8,7 +8,7 @@ import { getPluginMode, isPluginMode } from './plugins.js';
 
 /* modes whose scenes are broad bright plates rather than thin bright
    marks; full-strength bloom clips them (see _bloom) */
-const MODE_BLOOM = { spectro: 0.28, gpu: 0.34, terrain: 0.62, chladni: 0.72 };
+const MODE_BLOOM = { spectro: 0.28, gpu: 0.34, terrain: 0.62, chladni: 0.0 };
 
 /* The four modes that ship in the entry bundle. Everything else lives in
    modes-extra.js and is fetched the first time it is selected; until it
@@ -542,39 +542,6 @@ export class Renderer {
     }
     this._scene(freq, wave, dt, dt60);
     if (chopGlitch && motion > 0) ctx.restore();
-    // ray-trace SSR floor (subtle reflection of the scene)
-    if (this.quality !== 'low' && this.mode !== 'bars' && this.mode !== 'spectro' && this.mode !== 'scope') {
-      const fh = Math.round(h * 0.28);
-      const sy = h - fh;
-      ctx.save();
-      ctx.globalAlpha = this.mode === 'terrain' ? 0.07 : 0.09;
-      ctx.globalCompositeOperation = 'source-over';
-      // flip vertically around sy
-      ctx.translate(0, sy * 2 + fh);
-      ctx.scale(1, -1);
-      /* Two bugs lived in this one call. It sampled (0, 0, w, fh) — the top
-         of the frame — and mirrored that into the bottom, so what appeared
-         under the "floor" was never what stood on it. And the source rect is
-         in canvas device pixels while w/h are CSS pixels, so above 1x it
-         also read the wrong sub-rect. Mirror the band directly above the
-         floor line, measured on the backing store. */
-      const px = this.canvas.height / h;
-      ctx.drawImage(
-        this.canvas,
-        0, Math.max(0, sy - fh) * px, this.canvas.width, fh * px,
-        0, 0, w, fh,
-      );
-      ctx.restore();
-      // fade the reflection
-      const fade = ctx.createLinearGradient(0, sy, 0, h);
-      fade.addColorStop(0, 'rgba(15,14,13,0)');
-      fade.addColorStop(1, 'rgba(15,14,13,0.96)');
-      ctx.fillStyle = fade;
-      ctx.fillRect(0, sy, w, fh);
-    }
-
-    if (punched) ctx.restore();
-
     if (this.beat > 0.45) this._kickFlare();
 
     /* phosphor trail: accumulate this frame onto a faded accumulation

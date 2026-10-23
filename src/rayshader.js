@@ -794,26 +794,11 @@ float scLavaGlass(vec3 p) {
    crossed standing waves. The integer pair is chosen from the bass and
    treble bands, so the figure changes when the mix does. */
 float scChladni(vec3 p) {
-  vec3 q = p;
-  q.xz *= rot(0.08);
-  float plate = sdCyl(q, 0.075, 3.1);
-  g_id = 28.0; g_aux = length(q.xz) / 3.1;
-  float rim = sdTorus(q - vec3(0.0, 0.075, 0.0), vec2(3.11, 0.045));
-  if (rim < plate) { plate = rim; g_id = 6.0; g_aux = 0.62; }
-  /* a thin powered ring around the rim frames the plate and catches the
-     bloom, so the instrument reads at thumbnail scale */
-  float glowRing = abs(sdTorus(q - vec3(0.0, 0.095, 0.0), vec2(3.13, 0.010))) - 0.002;
-  if (glowRing < plate) { plate = glowRing; g_id = 4.0; g_aux = 0.86; }
-  float pin = sdCyl(q - vec3(0.0, 0.13, 0.0), 0.055, 0.09 + uBeat * 0.01);
-  if (pin < plate) { plate = pin; g_id = 6.0; g_aux = 0.35; }
-  /* a stem grounds the plate so it is an instrument in a room, not a disc
-     floating in the void */
-  float stem = sdCyl(p - vec3(0.0, -0.7, 0.0), 0.7, 0.10);
-  if (stem < plate) { plate = stem; g_id = 6.0; g_aux = 0.25; }
-  float floorD = p.y + 1.45;
-  float d = plate;
-  if (floorD < d) { d = floorD; g_id = 0.0; }
-  return d;
+  /* An infinite resonant sheet. No rim, stem or floor: the nodal field runs
+     to every edge of the frame instead of sitting inside a disc. */
+  g_id = 28.0;
+  g_aux = length(p.xz) / 8.0;
+  return p.y;
 }
 
 /* dispatcher */
@@ -1027,7 +1012,7 @@ Mat matOf(float id, float aux, vec3 p) {
     m.alb = vec3(0.010); m.rough = 0.37; m.metal = 0.90;
     m.emis = palf(0.60) * 0.010 * (0.35 + uLevel);
   } else if (id < 28.5) {               // chladni plate — nodal sand on metal
-    float rr = clamp(length(p.xz) / 3.1, 0.0, 1.0);
+    float rr = clamp(length(p.xz) / 8.0, 0.0, 1.0);
     /* the pair is read from the bands: bass thickens one axis, highs the
        other. When they land on the same integer, step one so the figure
        never collapses to the degenerate n == m case. */
@@ -1035,19 +1020,19 @@ Mat matOf(float id, float aux, vec3 p) {
     float mm = 2.0 + clamp(uHigh, 0.0, 1.0) * 3.2;
     if (abs(nn - mm) < 0.35) mm += 0.7;
     vec2 sp = p.xz * rot(0.08);
-    vec2 q = sp * 0.62;
+    vec2 q = sp * 0.52;
     float ph = uTime * 0.16;
     float nodes = cos(nn * PI * q.x + ph) * cos(mm * PI * q.y - ph)
                 - cos(mm * PI * q.x - ph) * cos(nn * PI * q.y + ph);
     float line = 1.0 - smoothstep(0.0, 0.075, abs(nodes));
-    float top = smoothstep(0.02, 0.07, p.y);
-    float sand = step(0.985, hash13(floor(sp * 150.0).xyy));
+    /* the sheet is infinite, so every hit is a lit top face */
+    const float top = 1.0;
+    float sand = step(0.985, hash13(floor(sp * 170.0).xyy));
     vec3 cc = palf(fract(rr * 0.85 + 0.05));
-    m.alb = vec3(0.010) + cc * 0.035;
-    m.rough = 0.24; m.metal = 0.88;
-    m.emis = cc * (0.014 + top * (pow(line, 1.6) * (2.0 + uBeat * 1.8) + sand * line * 2.6))
-           + palf(0.75) * top * pow(line, 4.0) * (0.35 + uHigh * 0.5)
-           + palf(0.6) * smoothstep(0.94, 1.0, rr) * (0.14 + uBeat * 0.26);
+    m.alb = vec3(0.008) + cc * 0.03;
+    m.rough = 0.26; m.metal = 0.86;
+    m.emis = cc * (0.014 + pow(line, 1.6) * (2.0 + uBeat * 1.8) + sand * line * 2.6)
+           + palf(0.75) * pow(line, 4.0) * (0.35 + uHigh * 0.5);
   } else {                              // accretion disc
     vec3 cc = mix(vec3(1.0, 0.93, 0.85), palf(0.85), clamp(aux * 1.4, 0.0, 1.0));
     m.alb = vec3(0.0); m.rough = 1.0;
@@ -1385,11 +1370,10 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 21) { ro = vec3(sin(t * 0.12) * 2.9, 1.95, cos(t * 0.12) * 2.9); ta = vec3(0.0, -0.1, 0.0); ap = 0.015; }
   else if (uMode == 22) { ro = vec3(0.0, 3.3 + sin(t * 0.2) * 0.12, 2.9); ta = vec3(0.0, -0.05, 0.0); ap = 0.028; }
   else if (uMode == 23) {
-    /* portrait stages step back and rise so the whole plate stays in frame */
-    float aspect = uRes.x / max(uRes.y, 1.0);
-    float portrait = 1.0 - smoothstep(0.55, 0.9, aspect);
-    ro = vec3(sin(t * 0.07) * 0.35, 2.9 + portrait * 1.8 + sin(t * 0.11) * 0.08, 4.6 + portrait * 2.4);
-    ta = vec3(0.0, 0.05, 0.0); ap = 0.010; fov = 1.28;
+    /* look steeply down at the sheet so its pattern covers every pixel;
+       a small drift gives parallax without ever revealing a horizon */
+    ro = vec3(sin(t * 0.06) * 0.7, 3.8 + sin(t * 0.09) * 0.08, 1.9 + cos(t * 0.06) * 0.4);
+    ta = vec3(0.0, 0.0, -0.8); ap = 0.006; fov = 1.42;
   }
   else                  { ro = vec3(sin(t * 0.12) * 4.0, 2.0, cos(t * 0.12) * 4.0); ap = 0.03; }
   /* cinematic pass layered over every rig, applied BEFORE the basis is
