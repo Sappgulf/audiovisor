@@ -70,6 +70,8 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
   const seekTrack = $('seek-track');
   const volumeTrack = $('volume-track');
   const volumeFill = $('volume-fill');
+  const muteBtn = $('mute-btn');
+  let audibleVolume = engine.volume > 0 ? engine.volume : 0.75;
   const stage = $('stage');
   const shell = $('shell');
   const visibility = createChromeVisibility({ engine, shell, transport: $('transport'), doc });
@@ -107,12 +109,26 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
     engine.seek(next * d);
   });
 
+  function syncVolume(v) {
+    volumeFill.style.width = `${v * 100}%`;
+    volumeTrack?.setAttribute('aria-valuenow', String(Math.round(v * 100)));
+    volumeTrack?.setAttribute('aria-valuetext', `${Math.round(v * 100)} percent`);
+    if (v > 0) audibleVolume = v;
+    muteBtn?.setAttribute('aria-pressed', String(v === 0));
+    muteBtn?.setAttribute('aria-label', v === 0 ? 'Unmute' : 'Mute');
+    muteBtn?.setAttribute('title', v === 0 ? 'Restore volume' : 'Mute');
+  }
   function setVolumeUI(v) {
     v = Math.max(0, Math.min(1, v));
     engine.setVolume(v);
-    volumeFill.style.width = `${v * 100}%`;
-    volumeTrack?.setAttribute('aria-valuenow', String(Math.round(v * 100)));
+    syncVolume(v);
   }
+  muteBtn?.addEventListener('click', () => {
+    setVolumeUI(engine.volume > 0 ? 0 : audibleVolume);
+    saveSettings();
+  });
+  syncVolume(engine.volume);
+  engine.on('state', () => syncVolume(engine.volume));
   bindDragTrack(volumeTrack, (ratio, phase) => {
     setVolumeUI(ratio);
     if (phase === 'end') saveSettings();
@@ -179,9 +195,13 @@ export function createTransport({ engine, getConnect, setToggle, saveSettings, t
      Safari withholds it, and elsewhere it arrives after a 300ms delay — so
      taps are paired here. A second tap only counts if it lands near the first,
      which keeps a quick tap on two different controls from triggering it. */
-  stage.addEventListener('dblclick', () => $('fullscreen-btn').click());
+  stage.addEventListener('dblclick', (e) => {
+    if (e.target.closest('button, label, input, a')) return;
+    $('fullscreen-btn').click();
+  });
   const stageDoubleTap = makeDoubleTap();
   stage.addEventListener('pointerup', (e) => {
+    if (e.target.closest('button, label, input, a')) return;
     if (e.pointerType === 'mouse') return;   // dblclick already covers the mouse
     if (stageDoubleTap(e.clientX, e.clientY, e.timeStamp)) $('fullscreen-btn').click();
   });

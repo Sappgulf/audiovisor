@@ -5,6 +5,7 @@ import { createPlayState } from '../src/play-state.js';
 function setup() {
   const dom = new JSDOM(`<!doctype html><html class="mode-unchosen"><body>
     <span id="play-pause-icon"></span><div id="track-info"></div>
+    <button id="play-pause-btn"></button><button id="prev-btn"></button><button id="next-btn"></button>
     <button id="capture-btn"></button><button id="mic-btn"></button>
     <span id="status-text"></span><div id="status-pill"><span class="status-dot"></span></div>
     <main id="stage" class="is-empty"></main><div id="dropzone"></div>
@@ -31,6 +32,20 @@ function setup() {
 }
 
 describe('first-run stage', () => {
+  it('names the next transport action accurately as source and queue change', () => {
+    const { document, engine, playState } = setup();
+    playState.refreshStatus();
+    expect(document.getElementById('play-pause-btn').getAttribute('aria-label')).toBe('Choose audio to play');
+    engine.activeInput = 'track'; engine.playing = true;
+    playState.refreshStatus();
+    expect(document.getElementById('play-pause-btn').getAttribute('aria-label')).toBe('Pause');
+    expect(document.getElementById('prev-btn').getAttribute('aria-label')).toBe('Restart track');
+    engine.queue = [{}, {}];
+    engine.onQueueChange();
+    expect(document.getElementById('next-btn').getAttribute('aria-label')).toBe('Next track');
+    engine.playing = false; playState.refreshStatus();
+    expect(document.getElementById('play-pause-btn').getAttribute('aria-label')).toBe('Play');
+  });
   it('keeps the renderer waiting while the audio entry point is available', () => {
     const { document, playState } = setup();
     playState.refreshStatus();

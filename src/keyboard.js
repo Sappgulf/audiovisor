@@ -52,6 +52,10 @@ export function createKeyboardShortcuts({
     }
     if (isTypingTarget(e.target)) return;
     if (isModePickerTarget(e.target) || isModePickerTarget(doc.activeElement)) return;
+    // Space/Enter belong to the focused button. Stealing Space here made
+    // keyboard activation of reset, mute and other controls play audio.
+    if ((e.code === 'Space' || e.code === 'Enter') && e.target instanceof HTMLElement
+      && e.target.closest('button, a, [role="button"]')) return;
     switch (e.code) {
       case 'Space':
         e.preventDefault();

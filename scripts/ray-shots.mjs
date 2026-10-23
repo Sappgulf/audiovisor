@@ -35,7 +35,13 @@ const context = await browser.newContext({
   viewport: MOBILE ? { width: 390, height: 844 } : { width: 1280, height: 800 },
 });
 const page = await context.newPage();
+const errors = [];
+page.on('pageerror', (error) => errors.push(error.message));
+page.on('console', (message) => {
+  if (message.type() === 'error') errors.push(message.text());
+});
 await page.goto(base, { waitUntil: 'load', timeout: 30000 });
+await page.waitForFunction(() => window.__av?.ray?.ok, null, { timeout: 30000 });
 await page.waitForTimeout(2500);
 
 const shots = await page.evaluate(async ({ tier, ids }) => {
@@ -44,14 +50,27 @@ const shots = await page.evaluate(async ({ tier, ids }) => {
   const rc = document.getElementById('ray-canvas');
   const out = [];
   for (let m = 0; m < ids.length; m++) {
-    av.pump(m, 60, 3);
+    // Resolve the requested program explicitly: a synchronous pump can
+    // otherwise keep drawing the previous scene while parallel linking runs.
+    av.ray._scene(m);
+    const result = av.pump(m, 60, 3);
+    if (result.glError || av.ray._drawnMode !== m) throw new Error(`${ids[m]} did not render: ${JSON.stringify(result)}`);
     const cv = document.createElement('canvas');
     cv.width = 420;
     cv.height = Math.round(cv.width * rc.height / rc.width);
     const cx = cv.getContext('2d');
     cx.fillStyle = '#000'; cx.fillRect(0, 0, cv.width, cv.height);
     cx.drawImage(rc, 0, 0, cv.width, cv.height);
-    out.push({ id: ids[m], aspect: cv.width / cv.height, png: cv.toDataURL('image/png') });
+    const pixels = cx.getImageData(0, 0, cv.width, cv.height).data;
+    let min = 255, max = 0, white = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const luminance = pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722;
+      min = Math.min(min, luminance); max = Math.max(max, luminance);
+      if (pixels[i] > 245 && pixels[i + 1] > 245 && pixels[i + 2] > 245) white++;
+    }
+    const clipped = white / (pixels.length / 4);
+    if (max - min < 8 || clipped > 0.1) throw new Error(`${ids[m]} is flat or overexposed: ${min}..${max}, clipped ${clipped}`);
+    out.push({ id: ids[m], aspect: cv.width / cv.height, clipped, png: cv.toDataURL('image/png') });
   }
   return out;
 }, { tier: TIER, ids: MODES.map((m) => m.id) });
@@ -83,6 +102,8 @@ const sheet = await page.evaluate(async ({ shots, mobile }) => {
 writeFileSync(`${OUT}/sheet.png`, Buffer.from(sheet.split(',')[1], 'base64'));
 
 console.log(`${shots.length} modes -> ${OUT}/ (sheet.png)`);
+console.log(`All requested programs rendered; worst white clipping ${(Math.max(...shots.map((s) => s.clipped)) * 100).toFixed(2)}%.`);
 await context.close();
 await browser.close();
 await server.close();
+if (errors.length) throw new Error(errors.join('\n'));

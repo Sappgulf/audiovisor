@@ -12,8 +12,12 @@ describe('mode picker assets', () => {
 
   it('resolves a still and hover strip for every built-in mode', () => {
     for (const mode of MODES) {
-      expect(modeAssetPath(mode.id)).toBe(`/modes/${mode.id}.webp`);
-      expect(modeAssetPath(mode.id, true)).toBe(`/modes/${mode.id}-anim.webp`);
+      const still = new URL(modeAssetPath(mode.id), 'https://example.com');
+      const animated = new URL(modeAssetPath(mode.id, true), 'https://example.com');
+      expect(still.pathname).toBe(`/modes/${mode.id}.webp`);
+      expect(animated.pathname).toBe(`/modes/${mode.id}-anim.webp`);
+      expect(still.searchParams.get('v')).toBe('8.23');
+      expect(animated.searchParams.get('v')).toBe('8.23');
       expect(modeAssetPath(mode.id)).not.toContain('undefined');
     }
   });

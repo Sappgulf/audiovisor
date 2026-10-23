@@ -1,3 +1,6 @@
+import { MODES } from './themes.js';
+import { resonanceGLSL } from './resonance.js';
+
 /**
  * GLSL ES 3.0 sources for the raytraced stage (v8.7).
  *
@@ -87,6 +90,8 @@ vec3 palf(float t) {
 float atan2s(float y, float x) {
   return (abs(x) < 1e-8 && abs(y) < 1e-8) ? 0.0 : atan(y, x);
 }
+
+${resonanceGLSL(MODES)}
 
 float hash11(float p) { return fract(sin(p * 127.1) * 43758.5453); }
 float hash13(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
@@ -314,7 +319,7 @@ float scParticles(vec3 p) {
     float fade = 1.0 - smoothstep(1.6, 5.4, length(id * c));
     /* Broader, brighter particles read as intentional drifting embers instead
        of sensor noise. The outer falloff still protects the starfield edge. */
-    float r = (0.075 + 0.20 * band * uSens + uBeat * 0.055 * h.z) * fade;
+    float r = (0.045 + 0.14 * band * uSens + uBeat * 0.035 * h.z) * fade;
     float s = sdSphere(q, max(r, 0.001));
     if (s < d) { d = s; g_id = 4.0; g_aux = fract(h.z * 3.7); }
   }
@@ -395,8 +400,8 @@ float scTunnel(vec3 p) {
   if (wall < d) { d = wall; g_id = 6.0; g_aux = 0.2; }
   float sector = floor(ang / (TAU / 4.0) + 0.5) * (TAU / 4.0);
   vec2 railC = vec2(cos(sector), sin(sector)) * (r - 0.45);
-  float rail = length(p.xy - railC) - 0.018;
-  if (rail < d) { d = rail; g_id = 4.0; g_aux = 0.85; }
+  float rail = length(p.xy - railC) - 0.010;
+  if (rail < d) { d = rail; g_id = 4.0; g_aux = 0.46; }
   return d;
 }
 
@@ -479,11 +484,7 @@ float scOrb(vec3 p) {
   if (core < d) { d = core; g_id = 18.0; g_aux = clamp(band, 0.0, 1.0); }
   float ring = abs(sdTorus(p, vec2(1.75 + uBeat * 0.45, 0.012))) - 0.004;
   if (ring < d) { d = ring; g_id = 4.0; g_aux = 0.5; }
-  /* phosphor arena floor below the orb — reusing the radar deck material
-     means the wedge sweep now plays underneath the pulse, tying the room
-     together; the accent light sells the orb's glow onto it */
-  float arena = sdCyl(p - vec3(0.0, -1.88, 0.0), 0.06, 4.0);
-  if (arena < d) { d = arena; g_id = 15.0; g_aux = 0.0; }
+  // The resonant field carries the space around the shell; no podium seam.
   return d;
 }
 
@@ -502,8 +503,7 @@ float scFluid(vec3 p) {
   float innerLoop = abs(sdTorus(p.yxz, vec2(0.92 + uMid * 0.08, 0.024 + uHigh * 0.018))) - 0.008;
   if (innerLoop < ribbon) { ribbon = innerLoop; g_id = 4.0; g_aux = fract(a / TAU + 0.72); }
   float d = ribbon;
-  float fl = p.y + 1.5;                                // chrome needs something to mirror
-  if (fl < d) { d = fl; g_id = 0.0; }
+  // Structured strip lights in envColor provide the chrome's reflections.
   float ring = abs(sdTorus(p, vec2(2.05, 0.014))) - 0.004;
   if (ring < d) { d = ring; g_id = 4.0; g_aux = 0.4; }
   return d;
@@ -584,7 +584,7 @@ float scVoid(vec3 p) {
   float inner = horizon + 0.16;
   float outer = 2.50 + uBeat * 0.12;
   float warp = 0.036 * sin(az * 2.0 - uTime * 0.55) + 0.014 * sin(az * 5.0 + uTime * 0.8);
-  float disc = max(abs(q.y - warp) - (0.055 + uBass * 0.03), max(inner - radius, radius - outer));
+  float disc = max(abs(q.y - warp) - (0.038 + uBass * 0.022), max(inner - radius, radius - outer));
   if (disc < d) { d = disc; g_id = 19.0; g_aux = clamp((radius - inner) / (outer - inner), 0.0, 1.0); }
   float jet = sdCapsule(p, vec3(0.0, 1.24, 0.0), vec3(0.0, 2.25 + uDrop * 0.18, 0.0), 0.025 + uBeat * 0.009);
   float lowerJet = sdCapsule(p, vec3(0.0, -1.24, 0.0), vec3(0.0, -2.25 - uDrop * 0.18, 0.0), 0.025 + uBeat * 0.009);
@@ -772,7 +772,7 @@ float scVinyl(vec3 p) {
   if (label < disc) { disc = label; g_id = 24.0; }
   float arm = sdCapsule(p, vec3(2.9, 0.5, 2.9), vec3(0.5, 0.18, 0.5), 0.05);
   if (arm < disc) { disc = arm; g_id = 25.0; }
-  float pivot = sdCapsule(p, vec3(2.9, 0.56, 2.9), vec3(2.9, 0.56, 2.9), 0.16);
+  float pivot = sdSphere(p - vec3(2.9, 0.56, 2.9), 0.16);
   if (pivot < disc) { disc = pivot; g_id = 25.0; g_aux = 0.4; }
   return disc;
 }
@@ -871,6 +871,8 @@ Mat matOf(float id, float aux, vec3 p) {
        beat lifts the whole relief, the drop surges it harder */
     m.emis = cc * (0.18 + pow(aux, 2.1) * 1.15) * (1.0 + uBeat * 0.35 + uDrop * 0.5)
            + palf(0.82) * pow(1.0 - age, 5.0) * uHigh * 0.55;
+    float strata = 1.0 - smoothstep(0.03, 0.13, abs(sin(p.y * 18.0)));
+    m.emis += cc * strata * aux * 0.28;
   } else if (id < 6.5) {                // structural strut / bezel
     m.alb = palf(0.3) * 0.25; m.rough = 0.3; m.metal = 0.8;
     m.emis = palf(0.25) * (0.12 + uLevel * 0.25);
@@ -888,6 +890,9 @@ Mat matOf(float id, float aux, vec3 p) {
     float haze = smoothstep(2.0, 14.0, -p.z) * 0.65;
     m.alb = mix(m.alb, palf(0.12) * 0.08, haze);
     m.emis *= 1.0 - haze * 0.55;
+    // Fine topographic isobars echo the standing-wave field over the ridges.
+    float contour = 1.0 - smoothstep(0.025, 0.11, abs(sin(p.y * 19.0)));
+    m.emis += palf(0.20 + aux * 0.52) * contour * (0.16 + uMid * 0.18) * (1.0 - haze);
   } else if (id < 8.5) {                // city block + windows
     // anti-aliased window grid: hard step() speckles badly at distance
     vec3 wp = p * vec3(2.6, 3.4, 2.6);
@@ -895,7 +900,8 @@ Mat matOf(float id, float aux, vec3 p) {
     float wy = smoothstep(0.42, 0.5, fw.y) * (1.0 - smoothstep(0.82, 0.9, fw.y));
     float wx = smoothstep(0.42, 0.5, fw.x) * (1.0 - smoothstep(0.82, 0.9, fw.x));
     float wz = smoothstep(0.42, 0.5, fw.z) * (1.0 - smoothstep(0.82, 0.9, fw.z));
-    float lit = step(0.28, hash13(floor(wp) + floor(uTime * 0.15)));   // some windows are dark
+    float address = hash13(floor(wp));
+    float lit = step(0.28, address) * (0.82 + 0.18 * sin(uTime * 0.4 + address * TAU));
     float win = wy * max(wx, wz) * lit;
     m.alb = vec3(0.02); m.rough = 0.22; m.metal = 0.5;
     m.emis = palf(aux) * win * (0.5 + aux * 0.9 + uBeat * 0.35 + uDrop * 0.4);
@@ -956,7 +962,7 @@ Mat matOf(float id, float aux, vec3 p) {
     cc = mix(vec3(l), cc, 1.6);
     m.emis = max(cc, vec3(0.0)) * (0.5 + spec(aux) * 0.9 + uBeat * 0.25);
   } else if (id < 18.5) {               // orb core — warm, never clipped
-    vec3 cc = palf(0.25 + aux * 0.5);
+    vec3 cc = palf(0.16 + aux * 0.42);
     m.alb = cc * 0.2; m.rough = 0.4;
     m.emis = cc * (0.55 + 1.1 * aux + uBeat * 0.5);
   } else if (id < 20.5 && uMode == 16) { // void accretion disc — dark metal with hot stream bands
@@ -976,7 +982,7 @@ Mat matOf(float id, float aux, vec3 p) {
     float grooves = 0.5 + 0.5 * sin(r * gf);
     float band = spec(pow(rr, 0.92));
     float ang = atan2s(p.z, p.x);
-    float sweep = smoothstep(-0.55, 0.55, sin(ang - uTime * (1.2 + uLevel * 1.6) + uBeat * 0.3));
+    float sweep = smoothstep(-0.55, 0.55, sin(ang - uTime * 1.6 + uBeat * 0.12));
     m.alb = vec3(0.010); m.rough = 0.16; m.metal = 0.88;
     m.emis = palf(pow(rr, 1.15))
       * (grooves * (0.05 + band * 0.10)
@@ -1024,9 +1030,7 @@ Mat matOf(float id, float aux, vec3 p) {
     float ph = uTime * 0.16;
     float nodes = cos(nn * PI * q.x + ph) * cos(mm * PI * q.y - ph)
                 - cos(mm * PI * q.x - ph) * cos(nn * PI * q.y + ph);
-    float line = 1.0 - smoothstep(0.0, 0.075, abs(nodes));
-    /* the sheet is infinite, so every hit is a lit top face */
-    const float top = 1.0;
+    float line = 1.0 - smoothstep(0.0, 0.060, abs(nodes));
     float sand = step(0.985, hash13(floor(sp * 170.0).xyy));
     vec3 cc = palf(fract(rr * 0.85 + 0.05));
     m.alb = vec3(0.008) + cc * 0.03;
@@ -1041,7 +1045,7 @@ Mat matOf(float id, float aux, vec3 p) {
   // per-mode emissive gain: dense scenes (particle/voxel fields) would
   // otherwise bloom into a flat white sheet
   float gain = 1.0;
-  if (uMode == 3)  gain = 0.45;   // particles
+  if (uMode == 3)  gain = 0.65;   // smaller, brighter particles
   if (uMode == 5)  gain = 0.42;   // spectro terrace
   if (uMode == 6)  gain = 0.55;   // tunnel
    if (uMode == 14) gain = 0.62;   // tensor — band-coupled rods earn more light
@@ -1076,10 +1080,6 @@ vec3 envBase(vec3 rd) {
   float up = clamp(rd.y * 0.5 + 0.5, 0.0, 1.0);
   vec3 sky = mix(vec3(0.004, 0.0038, 0.0035), palf(0.15) * 0.035, pow(up, 2.0));
   sky += palf(0.75) * 0.012 * pow(clamp(-rd.y * 0.5 + 0.5, 0.0, 1.0), 3.0);
-  vec3 key = normalize(vec3(0.55, 0.75, -0.4));
-  sky += palf(0.5) * pow(clamp(dot(rd, key), 0.0, 1.0), 96.0) * (1.1 + uLevel * 0.9);
-  vec3 rim = normalize(vec3(-0.7, 0.2, 0.5));
-  sky += palf(0.9) * pow(clamp(dot(rd, rim), 0.0, 1.0), 48.0) * 0.25;
   if (uMode == 10 || uMode == 11 || uMode == 16 || uMode == 17 || uMode == 3) sky += starField(rd);
   if (uMode == 8) {
     // dusk wash + aurora ribbon over the ridges
@@ -1092,7 +1092,7 @@ vec3 envBase(vec3 rd) {
   if (uMode == 1) {
     // low sun on a sea horizon: the ribbons used to play to an empty void
     vec3 sun = normalize(vec3(0.42, 0.10, -0.90));
-    sky += palf(0.88) * pow(clamp(dot(rd, sun), 0.0, 1.0), 260.0) * (2.4 + uBeat * 1.4);
+    sky += palf(0.66) * pow(clamp(dot(rd, sun), 0.0, 1.0), 360.0) * (0.7 + uBeat * 0.35);
     float hz = exp(-pow((rd.y - 0.015) * 26.0, 2.0));
     sky += palf(0.72) * hz * (0.30 + uLevel * 0.5);
     sky += palf(0.30) * exp(-pow((rd.y - 0.24) * 3.4, 2.0)) * 0.05;
@@ -1107,6 +1107,12 @@ vec3 envBase(vec3 rd) {
    across the sky. So primary misses use envBase, everything else envColor. */
 vec3 envColor(vec3 rd) {
   vec3 sky = envBase(rd);
+  // Lighting belongs in the reflection probe: primary sky rays otherwise
+  // see a floating blue floodlight above every scene, even at silence.
+  vec3 key = normalize(vec3(0.55, 0.75, -0.4));
+  vec3 rim = normalize(vec3(-0.7, 0.2, 0.5));
+  sky += palf(0.5) * pow(clamp(dot(rd, key), 0.0, 1.0), 96.0) * (1.1 + uLevel * 0.9);
+  sky += palf(0.9) * pow(clamp(dot(rd, rim), 0.0, 1.0), 48.0) * 0.25;
   float az = atan2s(rd.z, rd.x);
   float b1 = exp(-pow((rd.y - 0.55) * 6.0, 2.0)) * (0.5 + 0.5 * cos(az));
   float b2 = exp(-pow((rd.y - 0.16) * 14.0, 2.0)) * (0.5 + 0.5 * cos(az * 2.0 + 2.2));
@@ -1194,7 +1200,7 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, Mat m, float shadows) {
   /* Glow used to be the whole pixel, so a box was one flat colour. Wrapping
      it with the key gives every face a lit side and a dark side. */
   float wrap = (uMode == 3) ? 1.0 : clamp(dot(n, key) * 0.65 + 0.35, 0.18, 1.0);
-  vec3 hot = mix(m.emis, vec3(dot(m.emis, vec3(0.2126, 0.7152, 0.0722))) * 1.35, 0.28);
+  vec3 hot = mix(m.emis, vec3(dot(m.emis, vec3(0.2126, 0.7152, 0.0722))) * 1.15, 0.10);
   float hit = pow(clamp(uBeat, 0.0, 1.0), 0.55);
   vec3 col = hot * wrap * (1.0 + hit * 0.55);
   vec3 kc = mix(vec3(1.0, 0.97, 0.92), palf(0.55), 0.4) * (1.45 + uLevel * 0.7 + uBeat * 0.3);
@@ -1281,14 +1287,14 @@ vec3 volColor(float dens, vec3 p) {
   float base = (uMode == 20) ? 0.46 : 0.52;
   if (uMode == 20) {
     float heat = smoothstep(-1.8, 1.8, p.y + 0.35 * sin(uTime * 0.35 + p.x * 2.0));
-    vec3 wax = mix(palf(0.10), palf(0.72), heat);
-    c = mix(c, wax, 0.82);
+    vec3 wax = mix(palf(0.10), palf(0.58), heat);
+    c = mix(c, wax, 0.92);
   }
   return c * (base + uBeat * 0.5 + uDrop * 0.3);
 }
 
 /* Volume march with an optional far limit, so a surface can occlude it. */
-vec3 marchVolume(vec3 ro, vec3 rd, float tmax) {
+vec3 marchVolume(vec3 ro, vec3 rd, float tmax, vec3 field) {
   vec3 acc = vec3(0.0);
   float trans = 1.0;
   float t = 0.4;
@@ -1329,7 +1335,7 @@ vec3 marchVolume(vec3 ro, vec3 rd, float tmax) {
     }
     t += stepSize * (1.0 + t * 0.09);
   }
-  if (tmax > 13.0) acc += envBase(rd) * trans;   // only the open sky adds background
+  if (tmax > 13.0 && uMode != 20) acc += (envBase(rd) + field) * trans;
   return acc;
 }
 
@@ -1338,7 +1344,7 @@ bool isVolumetric(int m) { return m == 10 || m == 11; }
 /* ---------------- camera ---------------- */
 
 void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
-  t *= 1.45 + uLevel * 1.05;
+  t *= 1.75;
   vec3 ta = vec3(0.0);
   float fov = 1.5;
   float ap = 0.012;
@@ -1352,7 +1358,14 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 6)  { ro = vec3(sin(t * 0.4) * 0.3, cos(t * 0.33) * 0.3, 4.0); ta = ro + vec3(0.0, 0.0, -1.0); ap = 0.02; }
   else if (uMode == 7)  { ro = vec3(sway, 0.75, 4.05); ap = 0.018; fov = 1.28; }
   else if (uMode == 8)  { ro = vec3(sway * 1.6, 3.2, 9.0); ta = vec3(0.0, 0.35, -3.5); ap = 0.008; }
-  else if (uMode == 9)  { ro = vec3(sin(t * 0.09) * 7.0, 3.0 + sin(t * 0.14), cos(t * 0.09) * 7.0); ta = vec3(0.0, 1.8, 0.0); ap = 0.04; }
+  else if (uMode == 9)  {
+    // An orbit at street height passed through the repeated buildings,
+    // turning whole views into a dark wall. Clear the tallest audio-driven
+    // roof (including its crown), even at the maximum sensitivity.
+    float roof = 4.4 + 2.64 * clamp(uSens, 0.0, 2.4);
+    ro = vec3(sin(t * 0.09) * 8.8, roof + sin(t * 0.14) * 0.25, cos(t * 0.09) * 8.8);
+    ta = vec3(0.0, 1.8, 0.0); ap = 0.018;
+  }
   else if (uMode == 10) { ro = vec3(sin(t * 0.08) * 5.4, 1.6, cos(t * 0.08) * 5.4); ap = 0.0; }
   else if (uMode == 11) { ro = vec3(sin(t * 0.06) * 2.8, 4.4 + sin(t * 0.1) * 0.7, cos(t * 0.06) * 2.8); ta = vec3(0.0); ap = 0.0; }
   else if (uMode == 12) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.17) * 3.6, 0.8, cos(t * 0.17) * 3.6); ap = 0.03; fov = min(1.5, 1.65 * aspect); }
@@ -1376,6 +1389,10 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
     ta = vec3(0.0, 0.0, -0.8); ap = 0.006; fov = 1.42;
   }
   else                  { ro = vec3(sin(t * 0.12) * 4.0, 2.0, cos(t * 0.12) * 4.0); ap = 0.03; }
+  /* Give small, isolated sculptures the same stage presence as the latest
+     full-frame field. The aspect-aware rigs above still own phone framing. */
+  if (uMode == 4 || uMode == 7 || uMode == 12 || uMode == 13 || uMode == 18) fov *= 1.20;
+  if (uMode == 2 || uMode == 16 || uMode == 19 || uMode == 20 || uMode == 21) fov *= 1.08;
   /* cinematic pass layered over every rig, applied BEFORE the basis is
      built from ro→ta: a second, slower drift breaks the lone-sinusoid sway
      every camera used to share; a drop pushes the whole camera toward its
@@ -1395,6 +1412,8 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   /* The tunnel target is camera-relative. Shared drift moves the camera,
      so move its forward target with it or the bore exits the phone frame. */
   if (uMode == 6) ta = ro + vec3(0.0, 0.0, -1.0);
+  // Beat/drop dolly moves may tighten the view, but cannot enter a roof.
+  if (uMode == 9) ro.y = max(ro.y, 4.4 + 2.64 * clamp(uSens, 0.0, 2.4));
   vec3 fw = normalize(ta - ro);
   vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
   vec3 up = cross(rt, fw);
@@ -1434,14 +1453,15 @@ vec3 glassPath(vec3 p, vec3 rd, vec3 n, float ior) {
 
 /* ---------------- main trace ---------------- */
 
-vec3 trace(vec3 ro, vec3 rd) {
-  if (isVolumetric(uMode)) return marchVolume(ro, rd, 1e9);
+vec3 trace(vec3 ro, vec3 rd, vec3 field) {
+  vec3 noField = vec3(0.0);
+  if (isVolumetric(uMode)) return marchVolume(ro, rd, 1e9, field);
 
   float id, aux;
   float t = march(ro, rd, 40.0, id, aux);
   if (t < 0.0) {
-    vec3 bg = envBase(rd);
-    if (uMode == 20) bg += marchVolume(ro, rd, 1e9);
+    vec3 bg = envBase(rd) + field;
+    if (uMode == 20) bg += marchVolume(ro, rd, 1e9, noField);
     if (uMode == 16) {
       // photon ring: glow for rays that pass just outside the horizon
       float b = length(ro - dot(ro, rd) * rd);          // closest approach to the singularity
@@ -1497,12 +1517,15 @@ vec3 trace(vec3 ro, vec3 rd) {
   // marched separately and composited in front of whatever the SDF hit
   // the wax sits *behind* the near glass wall, so the march limit has to
   // clear the vessel interior — capping at the first hit marched nothing but air
-  if (uMode == 20) col += marchVolume(ro, rd, t + 4.8);
+  if (uMode == 20) col += marchVolume(ro, rd, t + 4.8, noField);
   return col;
 }
 
 void main() {
   vec2 frag = gl_FragCoord.xy;
+  // Once per pixel, outside the sample loop and all secondary transports.
+  vec2 fieldUV = (frag * 2.0 - uRes) / max(uRes.y, 1.0);
+  vec3 field = resonanceField(fieldUV);
   vec3 acc = vec3(0.0);
   float seed = hash13(vec3(frag, uSeed));
   for (int s = 0; s < 8; s++) {
@@ -1518,7 +1541,7 @@ void main() {
     vec2 lens = vec2(cos(ga), sin(ga)) * gr;
     vec3 ro, rd;
     camera(uTime, uv, lens, ro, rd);
-    vec3 c = trace(ro, rd);
+    vec3 c = trace(ro, rd, field);
     // NaN scrub: comparisons against NaN are false, so this catches both NaN
     // and negatives. min(NaN, x) returns x on some drivers, which would paint
     // the clamp ceiling across the frame.

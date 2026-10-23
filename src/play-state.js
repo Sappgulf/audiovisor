@@ -36,6 +36,16 @@ export function createPlayState({ engine, panels, setIcon, setToggle, getDropzon
     syncWakeLock(playing);
     const icon = playing ? 'pause' : 'play';
     setIcon($('play-pause-icon'), icon);
+    const playLabel = engine.activeInput === 'none' ? 'Choose audio to play' : playing ? 'Pause' : 'Play';
+    $('play-pause-btn')?.setAttribute('aria-label', playLabel);
+    $('play-pause-btn')?.setAttribute('title', `${playLabel} (Space)`);
+    const queue = (engine.queue?.length || 0) > 1 || engine.activeInput === 'apple' || engine.activeInput === 'spotify';
+    const previous = queue ? 'Previous track' : 'Restart track';
+    const next = queue ? 'Next track' : 'Forward 10 seconds';
+    $('prev-btn')?.setAttribute('aria-label', previous);
+    $('prev-btn')?.setAttribute('title', previous);
+    $('next-btn')?.setAttribute('aria-label', next);
+    $('next-btn')?.setAttribute('title', next);
 
     $('track-info').classList.toggle('is-playing', playing);
     setToggle($('capture-btn'), engine.captureActive);
@@ -77,6 +87,7 @@ export function createPlayState({ engine, panels, setIcon, setToggle, getDropzon
     onTrackChange();
   });
   engine.onQueueChange = () => {
+    refreshStatus();
     onTrackChange();
     panels.renderQueueIfOpen();
   };

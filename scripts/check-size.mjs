@@ -42,8 +42,11 @@ const BUDGETS = {
   /* v8.20.0: library metadata/IDB hardening, tempo worker reuse, artwork
      races, chrome/caching and the visual pass add ~0.4kB to the entry and
      ~0.4kB to the total. Raise to 60.25kB / 104kB, deliberately. */
-  entry: 60.25 * 1024, // initial JS chunk, gzipped
-  css: 13.3 * 1024,
+  /* v8.23 shared UI: precise transport labels, mute, control resets and
+     loading feedback add ~0.7kB JS; named previews and touch targets add
+     ~0.25kB CSS. Keep these explicit, small feature allowances. */
+  entry: 61 * 1024, // initial JS chunk, gzipped
+  css: 13.6 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is
      unchanged; only the total went up with the features. That is the point
@@ -53,7 +56,9 @@ const BUDGETS = {
      module-wrapper overhead to the entry, and the offline tempo analysis
      worker adds a lazy dsp-worker chunk. Worth it: the boot payload is
      still small and main.js went from 3096 to under 900 lines. */
-  total: 104 * 1024,   // all JS chunks, gzipped
+  /* v8.23: shared resonance profiles, GPU filaments and the bounded Canvas
+     contour cache add ~2kB in lazy chunks. The entry budget stays fixed. */
+  total: 107 * 1024,   // all JS chunks, gzipped
 };
 
 const DIST = 'dist/assets';

@@ -322,7 +322,7 @@ function syncStageContext() {
   if (context) {
     const label = `${mode?.name || 'Stage'} · ${theme?.name || 'Warm Brass'}`;
     context.title = label;
-    context.setAttribute('aria-label', label);
+    context.setAttribute('aria-label', `Open visual controls: ${label}`);
   }
 }
 
@@ -471,6 +471,7 @@ function applySettings(s, { eq = false } = {}) {
     const group = input.closest('.slider-group');
     const label = group?.querySelector('.slider-value');
     if (label) label.textContent = cfg.fmt(parseFloat(input.value));
+    input.setAttribute('aria-valuetext', cfg.fmt(parseFloat(input.value)));
     applySlider(key, parseFloat(input.value));
   }
   for (const [name, on] of Object.entries(s.fx || {})) {
@@ -484,10 +485,7 @@ function applySettings(s, { eq = false } = {}) {
     });
   }
   if (typeof s.volume === 'number') {
-    engine.setVolume(s.volume);
-    $('volume-fill').style.width = `${s.volume * 100}%`;
-    $('volume-track')?.setAttribute('aria-valuenow', String(Math.round(s.volume * 100)));
-    $('volume-track')?.setAttribute('aria-valuetext', `${Math.round(s.volume * 100)} percent`);
+    transport.setVolumeUI(s.volume);
   }
   if (typeof s.loop === 'boolean') {
     engine.setLoop(s.loop);
@@ -725,6 +723,12 @@ const transport = createTransport({
   openFilePicker,
 });
 const { transportToggle, setVolumeUI, updateMediaSession, seekTrack } = transport;
+
+$('stage-context')?.addEventListener('click', () => {
+  if ($('drawer').classList.contains('is-closed')) $('drawer-toggle').click();
+  $('tab-look').click();
+  $('mode-filter')?.focus({ preventScroll: true });
+});
 
 
 /* ---------- snapshot & session recorder ---------- */

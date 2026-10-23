@@ -15,10 +15,25 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, statSync, existsSync } from 'node:fs';
 import { MODES } from '../src/themes.js';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 
 const DIR = 'public/modes';
 
 describe('mode thumbnails', () => {
+  it('every preview contains visible scene details', async () => {
+    for (const mode of MODES) {
+      const image = await loadImage(`${DIR}/${mode.id}.webp`);
+      const canvas = createCanvas(image.width, image.height);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image, 0, 0);
+      const { data } = ctx.getImageData(0, 0, image.width, image.height);
+      let lit = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (Math.max(data[i], data[i + 1], data[i + 2]) > 120) lit++;
+      }
+      expect(lit / (data.length / 4), `${mode.id} preview has no readable subject`).toBeGreaterThan(0.01);
+    }
+  });
   it('the thumbnail directory exists', () => {
     expect(existsSync(DIR)).toBe(true);
   });

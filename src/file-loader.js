@@ -22,6 +22,9 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
   const $ = (id) => doc.getElementById(id);
   const fileInput = $('file-input');
   const dropzone = $('dropzone');
+  const entryTitle = dropzone.querySelector('.drop-title');
+  const readyTitle = entryTitle?.textContent;
+  let pending = 0;
 
   async function loadFiles(files) {
     if (!files || !files.length) return;
@@ -30,14 +33,19 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
       toast('<b>Unsupported</b> — drop an audio file');
       return;
     }
-    if (engine.captureActive) await engine.toggleCapture();
-    if (engine.isExternal()) engine.pause();
-    engine.stopStream();
-    $('status-text').textContent = 'Decoding';
-    $('status-pill')?.setAttribute('title', 'Decoding');
+    pending++;
+    dropzone.setAttribute('aria-busy', 'true');
+    if (entryTitle) entryTitle.textContent = 'Opening audio…';
     try {
+      if (engine.captureActive) await engine.toggleCapture();
+      if (engine.isExternal()) engine.pause();
+      engine.stopStream();
+      $('status-text').textContent = 'Decoding';
+      $('status-pill')?.setAttribute('title', 'Decoding');
       const errors = await engine.addToQueue(audioFiles);
       if (!engine.hasTrack) {
+        $('status-text').textContent = 'Decode failed';
+        $('status-pill')?.setAttribute('title', 'Decode failed');
         toast('<b>Decode failed</b> — no playable files', { duration: 3000 });
         return;
       }
@@ -58,6 +66,12 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
       $('status-text').textContent = 'Decode failed';
       $('status-pill')?.setAttribute('title', 'Decode failed');
       toast('<b>Decode failed</b> — file may be corrupted', { duration: 3000 });
+    } finally {
+      pending--;
+      if (!pending) {
+        dropzone.setAttribute('aria-busy', 'false');
+        if (entryTitle) entryTitle.textContent = readyTitle;
+      }
     }
   }
 
@@ -103,7 +117,11 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
   const sampleButtons = /** @type {HTMLButtonElement[]} */ ([...doc.querySelectorAll('[data-sample]')]);
   async function loadSample(btn) {
     const name = btn.dataset.sampleName || btn.dataset.sample;
+    const label = btn.textContent;
     sampleButtons.forEach((b) => { b.disabled = true; });
+    btn.setAttribute('aria-busy', 'true');
+    btn.setAttribute('aria-label', `Loading ${name}`);
+    btn.textContent = 'Loading…';
     toast(`Loading <b>${name}</b>…`, { duration: 2000 });
     try {
       const res = await fetch(`${import.meta.env.BASE_URL}samples/${btn.dataset.sample}.mp3`);
@@ -114,6 +132,9 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
       console.error(err);
       toast(`<b>Couldn't load ${name}</b> — try again`, { duration: 3000 });
     } finally {
+      btn.textContent = label;
+      btn.removeAttribute('aria-busy');
+      btn.removeAttribute('aria-label');
       sampleButtons.forEach((b) => { b.disabled = false; });
     }
   }

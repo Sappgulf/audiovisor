@@ -42,6 +42,8 @@ export function createDrawerTabs({ onSourceTab, doc = document } = {}) {
       b.tabIndex = on ? 0 : -1;
     });
     panels.forEach((p) => p.classList.toggle('is-active', p.dataset.panel === btn.dataset.tab));
+    const title = doc.getElementById('drawer-title');
+    if (title) title.textContent = { source: 'Choose your audio', look: 'Shape the scene', audio: 'Tune the sound', studio: 'Make it yours' }[btn.dataset.tab];
     if (btn.dataset.tab === 'source') onSourceTab?.();
     if (scroll) scroll.scrollTop = 0;
     moveInk(btn);

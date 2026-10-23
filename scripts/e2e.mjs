@@ -14,6 +14,7 @@
  *
  *   npm run e2e               desktop, 1440x900
  *   npm run e2e -- --mobile   phone, 390x844 touch
+ *   npm run e2e -- --headless deterministic window geometry in automation
  */
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -21,6 +22,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 const MOBILE = process.argv.includes('--mobile');
+const HEADLESS = process.argv.includes('--headless');
 const SP = mkdtempSync(join(tmpdir(), 'audiovisor-e2e-'));
 
 /* a minute of kick, bass, hats and a pad — enough for beat, tempo and
@@ -47,7 +49,7 @@ writeTrack(join(SP, 'track-a.wav'), 55);
 writeTrack(join(SP, 'track-b.wav'), 65);
 const server = await createServer({ root: process.cwd(), server: { port: 0 }, logLevel: 'error' });
 await server.listen();
-const browser = await chromium.launch({ headless: false, args: ['--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--auto-select-desktop-capture-source=Entire screen', '--enable-usermedia-screen-capturing'] });
+const browser = await chromium.launch({ headless: HEADLESS, args: ['--use-angle=metal', '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--auto-select-desktop-capture-source=Entire screen', '--enable-usermedia-screen-capturing'] });
 const ctx = await browser.newContext(MOBILE
   ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, serviceWorkers: 'block', permissions: ['microphone', 'clipboard-read', 'clipboard-write'], acceptDownloads: true }
   : { viewport: { width: 1440, height: 900 }, serviceWorkers: 'block', permissions: ['microphone', 'clipboard-read', 'clipboard-write'], acceptDownloads: true });
@@ -61,7 +63,12 @@ let shot = 0;
 async function step(name, fn) {
   const before = errors.length;
   try { const note = await fn(); results.push(`${errors.length > before ? 'ERR ' : 'ok  '} ${name}${note ? ' — ' + note : ''}${errors.length > before ? ' :: ' + errors.slice(before).join(' | ') : ''}`); }
-  catch (e) { results.push(`FAIL ${name} — ${String(e.message).split('\n').slice(0, 3).join(' ')}`); await page.screenshot({ path: `${SP}/e2e-fail-${++shot}.png` }).catch(() => {}); }
+  catch (e) {
+    results.push(`FAIL ${name} — ${String(e.message).split('\n').slice(0, 3).join(' ')}`);
+    const failure = `${SP}/e2e-fail-${++shot}`;
+    writeFileSync(`${failure}.txt`, String(e.stack || e));
+    await page.screenshot({ path: `${failure}.png` }).catch(() => {});
+  }
 }
 const tap = (sel) => MOBILE ? page.tap(sel) : page.click(sel);
 const vis = (sel) => page.isVisible(sel);
@@ -81,6 +88,9 @@ await step('first paint: audio entry point visible while renderer waits', async 
     picker: getComputedStyle(document.querySelector('#browse-label')).visibility,
   }));
   if (!state.waiting || state.title === 'none' || state.picker !== 'visible') throw new Error(JSON.stringify(state));
+});
+await step('no horizontal horizon overlay across the stage', async () => {
+  if (await page.locator('#horizon, .stage > .horizon').count()) throw new Error('Shared horizon overlay returned');
 });
 await snap('00-first');
 if (!MOBILE) await step('1280px console keeps track text and seek readable', async () => {
@@ -104,6 +114,15 @@ for (const tab of ['look', 'source', 'audio', 'studio', 'look']) await step('dra
 await snap('01-drawer-look');
 await step('mode filter "neon"', async () => { await page.fill('#mode-filter', 'neon'); await page.waitForTimeout(200); const n = await page.$$eval('#mode-list [data-mode-id]', (b) => b.filter((x) => x.offsetParent).length); await page.fill('#mode-filter', ''); return n + ' visible'; });
 await step('pick mode by clicking card (Neon City)', async () => { await tap('[data-mode-id="city"]'); await page.waitForTimeout(800); const m = await page.evaluate(() => window.__av.state.modeId); if (m !== 'city') throw new Error('mode ' + m); if (await page.evaluate(() => document.documentElement.classList.contains('mode-unchosen'))) throw new Error('still blank'); });
+await step('stage mode button opens the named visual picker', async () => {
+  await tap('#drawer-close');
+  await tap('#stage-context');
+  const state = await page.evaluate(() => ({ open: !document.getElementById('drawer').classList.contains('is-closed'),
+    title: document.getElementById('drawer-title').textContent,
+    named: document.querySelector('.mode-name').getBoundingClientRect().height > 0,
+    focused: document.activeElement.id === 'mode-filter' }));
+  if (!state.open || !state.named || !state.focused || state.title !== 'Shape the scene') throw new Error(JSON.stringify(state));
+});
 await step('look presets row', async () => { const b = await page.$$('#preset-row button'); if (!b.length) return 'none'; await (MOBILE ? b[0].tap() : b[0].click()); await page.waitForTimeout(300); return b.length + ' presets, clicked first'; });
 await step('theme swatches (click 4)', async () => { const b = await page.$$('#theme-row [data-theme]'); for (const i of [1, 5, 9, 0]) { await (MOBILE ? b[i].tap() : b[i].click()); await page.waitForTimeout(200); } return b.length + ' swatches, now ' + await page.evaluate(() => window.__av.state.themeId); });
 await step('raytrace quality cycle', async () => { const q = []; for (let i = 0; i < 4; i++) { await tap('#rt-quality'); await page.waitForTimeout(150); q.push(await text('#rt-quality-label')); } return q.join('>'); });
@@ -120,9 +139,34 @@ await step('known 124 BPM file readout', async () => {
   }, null, { timeout: 8000 });
   return (await text('#bpm-value')).trim() + ' BPM';
 });
+await step('mute and restore the previous volume', async () => {
+  // The mobile sheet intentionally makes its covered transport inert.
+  if (MOBILE) await tap('#drawer-close');
+  const before = await page.evaluate(() => window.__av.engine.volume);
+  await page.focus('#mute-btn'); await page.keyboard.press('Space');
+  if (await page.evaluate(() => window.__av.engine.volume) !== 0) throw new Error('Mute did not reach the engine');
+  await tap('#mute-btn');
+  const after = await page.evaluate(() => window.__av.engine.volume);
+  if (Math.abs(after - before) > 0.001) throw new Error(`Volume ${before} -> ${after}`);
+  if (MOBILE) await tap('#drawer-toggle');
+  return `${Math.round(before * 100)}% restored`;
+});
 await snap('02-playing');
 await step('audio tab sliders (drag sensitivity)', async () => { await tap('#tab-audio'); await page.waitForTimeout(300); const r = await page.$$('#sliders input[type=range]'); if (!r.length) return 'no range inputs'; await r[0].scrollIntoViewIfNeeded(); const box = await r[0].boundingBox(); await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2); return r.length + ' sliders, sens=' + await r[0].inputValue(); });
+await step('keyboard reset restores the live visual control without pausing', async () => {
+  const playing = await page.evaluate(() => window.__av.engine.playing);
+  await page.focus('#sl-val-sensitivity'); await page.keyboard.press('Space');
+  const state = await page.evaluate(() => ({ sensitivity: window.__av.engine.sensitivity,
+    renderer: window.__av.renderer.sensitivity, ray: window.__av.ray.sensitivity, playing: window.__av.engine.playing }));
+  if (state.sensitivity !== 1.4 || state.renderer !== 1.4 || state.ray !== 1.4 || state.playing !== playing) throw new Error(JSON.stringify(state));
+});
 await step('EQ bands', async () => { const r = await page.$$('#eq-bands input[type=range]'); if (!r.length) return 'none'; await r[0].scrollIntoViewIfNeeded(); const box = await r[0].boundingBox(); await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); return r.length + ' bands'; });
+await step('reset equalizer returns every audio band to flat', async () => {
+  await page.focus('#eq-60'); await page.keyboard.press('End');
+  await tap('#eq-reset');
+  await page.waitForFunction(() => [...document.querySelectorAll('#eq-bands input')].every((input) => Number(input.value) === 0)
+    && window.__av.engine.eqFilters.every((filter) => Math.abs(filter.gain.value) < 0.05));
+});
 await step('FX toggles', async () => { const b = await page.$$('#fx-row button'); const names = []; for (const x of b) { await (MOBILE ? x.tap() : x.click()); await page.waitForTimeout(150); names.push((await x.textContent()).trim()); await (MOBILE ? x.tap() : x.click()); } return names.join(','); });
 await step('studio tab: AI presets + share + party', async () => { await tap('#tab-studio'); await page.waitForTimeout(300); const b = await page.$$('#ai-presets button'); if (b.length) await (MOBILE ? b[0].tap() : b[0].click()); await page.waitForTimeout(200); await tap('#share-btn'); await page.waitForTimeout(600); await page.keyboard.press('Escape'); return b.length + ' ai presets'; });
 await step('settings export (download)', async () => { const [d] = await Promise.all([page.waitForEvent('download', { timeout: 4000 }), tap('#settings-export')]); return d.suggestedFilename(); });
@@ -160,7 +204,24 @@ await step('mic button (fake device)', async () => { await tap('#mic-btn'); awai
 await step('tab capture button', async () => { await tap('#capture-btn'); await page.waitForTimeout(2000); const s = await page.evaluate(() => window.__av.engine.captureActive); if (s) { await tap('#capture-btn'); await page.waitForTimeout(500); } return 'captureActive=' + s; });
 await step('voice AI button', async () => { await tap('#voice-btn'); await page.waitForTimeout(800); await tap('#voice-btn').catch(() => {}); });
 await step('nav tabs (stage/settings/about)', async () => { const out = []; for (const n of ['nav-about', 'nav-settings', 'nav-stage']) { if (await vis('#' + n)) { await tap('#' + n); await page.waitForTimeout(400); out.push(n); if (n === 'nav-about') { await page.keyboard.press('Escape'); await page.waitForTimeout(300); } } } await page.keyboard.press('Escape'); return out.join(','); });
-await step('all stage modes via cards, still error-free', async () => { if (await page.evaluate(() => document.getElementById('drawer').classList.contains('is-closed'))) { await tap('#drawer-toggle'); await page.waitForTimeout(500); } await tap('#tab-look'); const ids = await page.$$eval('#mode-list [data-mode-id]', (b) => b.map((x) => x.dataset.modeId)); for (const id of ids) { await page.click(`[data-mode-id="${id}"]`, { force: false }); await page.waitForTimeout(250); } return ids.length + ' modes'; });
+await step('all stage modes via cards, still error-free', async () => {
+  if (await page.evaluate(() => document.getElementById('drawer').classList.contains('is-closed'))) {
+    await tap('#drawer-toggle'); await page.waitForTimeout(500);
+  }
+  await tap('#tab-look');
+  const ids = await page.$$eval('#mode-list [data-mode-id]', (buttons) => buttons.map((button) => button.dataset.modeId));
+  for (const id of ids) {
+    await tap(`[data-mode-id="${id}"]`);
+    // A fixed delay raced background shader linking. Wait for the mode the
+    // user picked to actually draw before asking for the next transition.
+    await page.waitForFunction((id) => {
+      const { state, ray, renderer } = window.__av;
+      return state.modeId === id && (!state.raytraceWanted || !ray.ok
+        ? renderer.mode === id : ray._drawnMode === ray.mode);
+    }, id, { timeout: 10000 });
+  }
+  return ids.length + ' modes selected and rendered';
+});
 await step('account playback stays in a still, audio-only view', async () => {
   await page.evaluate(() => {
     const engine = window.__av.engine;

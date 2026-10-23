@@ -1,4 +1,5 @@
 import { logFreqIndex, logSample, hexRgba, clamp } from './utils.js';
+import { ResonanceLayer } from './resonance.js';
 
 /**
  * The eighteen heavier visualizer modes, split out of visualizers.js so the
@@ -8,6 +9,11 @@ import { logFreqIndex, logSample, hexRgba, clamp } from './utils.js';
  * real Renderer prototype, so `this` is an ordinary Renderer throughout.
  */
 class ExtraModes {
+  _resonanceBackdrop() {
+    this._resonance ||= new ResonanceLayer();
+    this._resonance.draw(this);
+  }
+
   /* ---------------- CRYSTAL KALEIDOSCOPE ---------------- */
 
   _kaleido(freq, dt) {
@@ -16,7 +22,7 @@ class ExtraModes {
     const minDim = Math.min(w, h);
     const slices = this.quality === 'low' ? 6 : 10;
     const span = (Math.PI * 2) / slices;
-    const rot = this.t * (0.12 + this.sm.level * 1.1) + this.beat * 0.4;
+    const rot = this.sceneTime * 0.42 + this.beat * 0.12;
     const burst = 1 + this.beat * 0.30;
     const inner = minDim * 0.07 + this.sm.bass * minDim * 0.09;
     const maxR = minDim * 0.4 * (0.75 + this.sensitivity * 0.35) * burst;
@@ -279,7 +285,7 @@ class ExtraModes {
     ctx.globalCompositeOperation = 'lighter';
     for (let r = 0; r < rings; r++) {
       const baseR = minDim * (0.1 + r * 0.15);
-      const spin = this.t * (0.14 + r * 0.08) * (1 + this.sm.level * 1.6) * (r % 2 ? -1 : 1);
+      const spin = this.sceneTime * (0.14 + r * 0.08) * (r % 2 ? -1 : 1);
       const sprite = this._dot(this._color(r));
       const trail = [];
       for (let i = 0; i < P; i++) {
@@ -619,7 +625,7 @@ class ExtraModes {
     ctx.globalCompositeOperation = 'lighter';
     const bands = this._nebulaBands || (this._nebulaBands = [0, 0, 0]);
     bands[0] = this.sm.bass; bands[1] = this.sm.mid; bands[2] = this.sm.high;
-    const swirl = this.t * (0.05 + this.sm.level * 0.35);
+    const swirl = this.sceneTime * 0.15;
 
     /* galactic disc — a stretched, tilted swirl of soft pools */
     const discTilt = -0.3 + Math.sin(this.t * 0.05) * 0.06;
@@ -687,7 +693,7 @@ class ExtraModes {
     const minDim = Math.min(w, h);
     const arms = this.quality === 'low' ? 2 : 3;
     const PTS = this.quality === 'low' ? 90 : 170;
-    const rot = this.t * (0.08 + this.sm.level * 0.8) - this.beat * 0.25;
+    const rot = this.sceneTime * 0.28 - this.beat * 0.08;
     const inner = minDim * 0.03;
     const outer = minDim * 0.44;
     ctx.globalCompositeOperation = 'lighter';
@@ -1332,8 +1338,8 @@ class ExtraModes {
     };
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < (this.quality === 'low' ? 3 : 5); i++) {
-      /* treble spins the bloom — the one mode whose rotation answers highs */
-      const ang = (i / 5) * Math.PI * 2 + this.t * (0.2 + this.sm.high * 0.5);
+      // Treble flexes each branch without skipping its accumulated rotation.
+      const ang = (i / 5) * Math.PI * 2 + this.sceneTime * 0.3 + this.sm.high * 0.12;
       drawBranch(cx, cy, base, ang, depth, i);
     }
     const cr = base * 0.35 * (1 + this.beat * 0.8 + drop * 0.6);
@@ -1782,11 +1788,10 @@ class ExtraModes {
     const cx = w / 2, cy = h / 2;
     const minDim = Math.min(w, h);
     const R = minDim * 0.40;
-    const drop = this.beatInfo?.drop || 0;
     /* the platter drags under the drop — pitch sags with the slam, then
        recovers. Grooves are circularly symmetric so the rate change reads
        as weight, not a skip. */
-    const rot = this.t * (0.18 + this.sm.level * 0.9) * (1 - drop * 0.3) + this.beat * 0.2;
+    const rot = this.sceneTime * 0.4 + this.beat * 0.08;
     const c0 = this._color(0), c1 = this._color(1);
     void dt;
     ctx.globalCompositeOperation = 'source-over';

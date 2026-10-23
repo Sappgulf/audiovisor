@@ -69,18 +69,22 @@ export function createControls({ engine, renderer, getRay, state, toast, setTogg
       group.innerHTML = `
     <div class="slider-head">
       <label class="slider-label mono" for="sl-${cfg.id}">${cfg.label}</label>
-      <span class="slider-value" id="sl-val-${cfg.id}">${cfg.fmt(cfg.value)}</span>
+      <button type="button" class="slider-value" id="sl-val-${cfg.id}" title="Reset to ${cfg.fmt(cfg.value)}" aria-label="Reset ${cfg.label} to ${cfg.fmt(cfg.value)}">${cfg.fmt(cfg.value)}</button>
     </div>
-    <input type="range" class="ctrl-slider" id="sl-${cfg.id}" min="${cfg.min}" max="${cfg.max}" step="${cfg.step}" value="${cfg.value}" aria-describedby="sl-val-${cfg.id}">`;
+    <input type="range" class="ctrl-slider" id="sl-${cfg.id}" min="${cfg.min}" max="${cfg.max}" step="${cfg.step}" value="${cfg.value}">`;
       wrap.appendChild(group);
       const input = group.querySelector('input');
       sliderEls[cfg.id] = input;
-      input.addEventListener('input', () => {
-        const v = parseFloat(input.value);
+      const update = (v) => {
+        input.value = String(v);
         group.querySelector('.slider-value').textContent = cfg.fmt(v);
+        input.setAttribute('aria-valuetext', cfg.fmt(v));
         applySlider(cfg.id, v);
         saveSettings();
-      });
+      };
+      input.setAttribute('aria-valuetext', cfg.fmt(cfg.value));
+      input.addEventListener('input', () => update(parseFloat(input.value)));
+      group.querySelector('.slider-value').addEventListener('click', () => update(cfg.value));
     });
   }
 
@@ -130,6 +134,19 @@ export function createControls({ engine, renderer, getRay, state, toast, setTogg
   buildSliders();
   buildFx();
   buildEq();
+  doc.getElementById('eq-reset')?.addEventListener('click', () => {
+    EQ_FREQS.forEach((frequency, index) => {
+      const input = /** @type {HTMLInputElement | null} */ (doc.getElementById(`eq-${frequency}`));
+      if (input) {
+        input.value = '0';
+        input.setAttribute('aria-valuetext', '0 dB');
+        doc.getElementById(`eq-${frequency}-value`).textContent = '0';
+      }
+      engine.setEq(index, 0);
+    });
+    saveSettings();
+    toast('Equalizer <b>reset</b> to flat', { duration: 1400 });
+  });
 
   return { SLIDERS, FX, EQ_FREQS, sliderEls, fxEls, applySlider, setFx };
 }

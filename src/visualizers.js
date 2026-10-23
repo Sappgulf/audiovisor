@@ -2,7 +2,7 @@ import { THEMES } from './themes.js';
 import { lerp, logSample, hexRgba, clamp } from './utils.js';
 import { beatEnergy } from './beatenergy.js';
 import { sanitizeLevels, usableSpectrum, safeDimension } from './levels.js';
-import { motionScale } from './motion.js';
+import { motionScale, advanceSceneTime } from './motion.js';
 import { isLowPowerDevice } from './adaptive.js';
 import { getPluginMode, isPluginMode } from './plugins.js';
 
@@ -74,6 +74,7 @@ export class Renderer {
     this.w = 0;
     this.h = 0;
     this.t = 0;
+    this.sceneTime = 0;
 
     /* bloom buffers */
     this.glowA = document.createElement('canvas');
@@ -238,6 +239,7 @@ export class Renderer {
   }
   setTheme(t) {
     this.theme = t;
+    if (this._resonance) this._resonance.theme = null;
     this._cacheTheme = null;
     this._bgTheme = null;
     /* the spectro buffer bakes palette-tinted pixels; force a rebuild */
@@ -433,6 +435,7 @@ export class Renderer {
     this.beatInfo = levels;
     this.beat = beatEnergy(this.beat, levels, dt);
     this._updateLevels(levels, dt);
+    this.sceneTime = advanceSceneTime(this.sceneTime, dt, this.sm.level);
     return dt;
   }
 
@@ -543,6 +546,7 @@ export class Renderer {
     this._scene(freq, wave, dt, dt60);
     if (chopGlitch && motion > 0) ctx.restore();
     if (this.beat > 0.45) this._kickFlare();
+    if (punched) ctx.restore();
 
     /* phosphor trail: accumulate this frame onto a faded accumulation
        buffer, then blend it under the live scene (spectro scrolls its own
@@ -726,6 +730,7 @@ export class Renderer {
 
   _backdrop() {
     const { ctx, w, h } = this;
+    this._resonanceBackdrop?.();
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     /* Three sprites at 0.55x the min dimension cover the entire frame, so an

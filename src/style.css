@@ -559,8 +559,10 @@ button:focus-visible, input:focus-visible {
   box-shadow: 0 8px 24px rgba(0,0,0,0.18), 0 1px 0 rgba(255,250,243,0.06) inset;
   color: var(--text-60);
   transition: opacity 0.35s var(--ease), transform 0.35s var(--ease);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
 }
+.stage-context:hover { border-color: var(--accent-line); background: rgba(22, 21, 23, 0.94); }
 .stage-context-eyebrow {
   color: var(--accent);
   font-size: 8px;
@@ -630,18 +632,6 @@ button:focus-visible, input:focus-visible {
   width: 100%;
   height: 100%;
   display: block;
-}
-
-.horizon {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 35%;
-  height: 1px;
-  background: linear-gradient(to right, transparent, rgba(var(--accent-rgb), 0.14), transparent);
-  box-shadow: 0 0 80px 20px rgba(var(--accent-rgb), 0.04);
-  pointer-events: none;
-  z-index: 3;
 }
 
 .stage-overlays {
@@ -1010,6 +1000,10 @@ button:focus-visible, input:focus-visible {
   gap: 8px;
 }
 .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); margin-left: 8px; }
+.section-value, .section-reset { order: 2; margin-left: 8px; font-size: 8px; letter-spacing: 0; text-transform: none; color: var(--text-60); white-space: nowrap; }
+.section-value { max-width: 128px; overflow: hidden; text-overflow: ellipsis; }
+.section-reset { border: 1px solid var(--border); border-radius: 6px; padding: 4px 7px; background: var(--glass); }
+.section-reset:hover { color: var(--accent); border-color: var(--accent-line); }
 
 .divider { height: 1px; background: var(--border-soft); flex-shrink: 0; }
 
@@ -1141,6 +1135,7 @@ button:focus-visible, input:focus-visible {
 }
 .mode-card:hover .mode-name { color: var(--text-60); }
 .mode-card.is-active .mode-name { color: var(--text); }
+.mode-card.is-active .mode-name::before { content: '•'; color: var(--accent); margin-right: 3px; }
 
 /* Theme dots */
 
@@ -1203,6 +1198,10 @@ button:focus-visible, input:focus-visible {
   border: 1px solid transparent;
 }
 .slider-value.is-muted { color: var(--text-40); background: transparent; border-color: transparent; }
+.slider-value::after { content: '↺'; margin-left: 6px; opacity: 0.6; }
+.slider-value:hover { border-color: var(--accent-line); }
+.drop-privacy { margin: 15px 0 0; font-size: 9px; color: var(--text-60); }
+.drop-sample[aria-busy="true"] { color: var(--accent); border-color: var(--accent-line); }
 
 input[type="range"].ctrl-slider {
   -webkit-appearance: none;
@@ -1505,6 +1504,9 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   color: var(--text-40);
   font-size: 14px;
 }
+.mute-btn { position: relative; display: grid; place-items: center; width: 28px; height: 32px; flex-shrink: 0; border: 0; border-radius: 7px; background: transparent; color: var(--text-60); }
+.mute-btn:hover, .mute-btn[aria-pressed="true"] { color: var(--accent); background: var(--accent-dim); }
+.mute-btn[aria-pressed="true"]::after { content: ''; position: absolute; width: 22px; height: 1px; background: currentColor; transform: rotate(-45deg); }
 .volume-track {
   touch-action: none;
   width: 84px;
@@ -2428,7 +2430,7 @@ input:focus-visible,
 .mode-list { grid-template-columns: repeat(3, 1fr); gap: 5px; }
 .mode-preview { font-size: 13px; }
 .mode-card { padding: 6px 4px; gap: 4px; }
-.mode-name { font-size: 8px; letter-spacing: 0.03em; }
+.mode-name { font-size: 8.5px; line-height: 1.5; letter-spacing: 0.01em; color: var(--text-60); }
 
 @media (max-width: 1024px) {
   .add-label { display: none; }
@@ -2994,7 +2996,7 @@ html, body {
 
 /* Playback without decoded audio stays in a still player view. The animated
    canvases and analysis badges belong only to analyzable sources. */
-:root.audio-only-playback .stage > :is(canvas, .horizon, .stage-overlays, .stage-context, .idle-visual, .stage-story) {
+:root.audio-only-playback .stage > :is(canvas, .stage-overlays, .stage-context, .idle-visual, .stage-story) {
   display: none !important;
 }
 :root.audio-only-playback :is(#seek-wave, #vu-meter) { display: none !important; }
@@ -3109,13 +3111,19 @@ html, body {
   .stage-context {
     top: 14px;
     right: 14px;
-    gap: 7px;
-    padding: 7px 9px;
+    gap: 0;
+    padding: 10px;
+    min-width: 44px;
+    min-height: 44px;
   }
   .stage-context-eyebrow,
   .stage-context-theme { font-size: 7px; }
-  .stage-context strong { font-size: 10px; }
-  .stage-context-rule { height: 10px; }
+  .stage-context strong, .stage-context-theme, .stage-context-rule { display: none; }
+  .mode-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .section-reset, .slider-value { min-height: 32px; }
+  .volume-group { display: flex; gap: 0; }
+  .volume-track { display: none; }
+  .mute-btn { width: 44px; height: 44px; }
 
   .dropzone {
     width: min(520px, calc(100% - 32px));
@@ -3235,7 +3243,7 @@ html, body {
 /* Keep the renderer idle before the first source or mode pick, but leave the
    audio entry point visible. The old broad selector hid the entire stage,
    including the only in-stage path to getting started and its toasts. */
-:root.mode-unchosen .stage > :is(canvas, .horizon, .stage-overlays, .stage-context) {
+:root.mode-unchosen .stage > :is(canvas, .stage-overlays, .stage-context) {
   visibility: hidden;
 }
 .stage.is-empty .dropzone {

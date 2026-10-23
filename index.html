@@ -112,8 +112,6 @@
           <canvas id="viz-canvas" aria-hidden="true"></canvas>
           <canvas id="webgpu-canvas" aria-hidden="true" style="position:absolute; inset:0; width:100%; height:100%; display:none"></canvas>
 
-          <div class="horizon" id="horizon"></div>
-
           <div class="stage-overlays">
             <div class="data-chip" id="bpm-chip" title="Tempo">
               <span class="mono chip-label sr-only">BPM</span>
@@ -129,12 +127,12 @@
             </div>
           </div>
 
-          <div class="stage-context" id="stage-context" aria-label="Current visual setup">
+          <button class="stage-context" id="stage-context" type="button" aria-label="Open visual controls" aria-controls="drawer">
             <span class="ic stage-context-icon" id="active-mode-icon" data-icon="bars" aria-hidden="true"></span>
-            <strong class="sr-only" id="active-mode-label">Spectrum Bars</strong>
-            <span class="stage-context-rule sr-only" aria-hidden="true"></span>
-            <span class="mono stage-context-theme sr-only" id="active-theme-label">Warm Brass</span>
-          </div>
+            <strong id="active-mode-label">Spectrum Bars</strong>
+            <span class="stage-context-rule" aria-hidden="true"></span>
+            <span class="mono stage-context-theme" id="active-theme-label">Warm Brass</span>
+          </button>
 
           <div class="provider-playback" id="provider-playback" hidden aria-live="polite">
             <div class="provider-playback-art" id="provider-playback-art">
@@ -193,6 +191,7 @@
                   <button class="drop-sample" type="button" data-sample="last-seen" data-sample-name="Last Seen">Last Seen</button>
                 </div>
               </div>
+              <p class="drop-privacy">Local files stay on your device.</p>
               <p class="drop-meta sr-only"><span>MP3 / WAV / FLAC / OGG</span><span class="drop-meta-sep" aria-hidden="true"></span><span>24 modes · 32 themes</span><span class="drop-meta-sep" aria-hidden="true"></span><span>Runs locally</span></p>
             </div>
           </div>
@@ -206,9 +205,9 @@
                drawer becomes a sheet and can be dragged down to dismiss -->
           <div class="sheet-handle" id="sheet-handle" aria-hidden="true"><span></span></div>
           <div class="drawer-head">
-            <div class="drawer-heading sr-only">
+            <div class="drawer-heading">
               <span class="mono drawer-kicker">CONTROL ROOM</span>
-              <strong>Shape the scene</strong>
+              <strong id="drawer-title">Shape the scene</strong>
             </div>
             <button class="drawer-close" id="drawer-close" type="button" aria-label="Close settings panel">
               <span class="ic" data-icon="close"></span>
@@ -249,7 +248,7 @@
           </div>
           <div class="drawer-panel" id="panel-look" data-panel="look" role="tabpanel" aria-labelledby="tab-look">
             <section>
-              <h3 class="section-title">Stage Mode</h3>
+              <h3 class="section-title">Stage Mode <span class="section-value mono" id="mode-count">24 modes</span></h3>
 
               <input id="mode-filter" class="connect-input drawer-filter" type="search" placeholder="Filter modes…" aria-label="Filter stage modes" autocomplete="off" />
               <div class="mode-list" id="mode-list"></div>
@@ -266,7 +265,7 @@
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title">Theme Mood</h3>
+              <h3 class="section-title">Theme Mood <span class="section-value mono" id="theme-current">Iridescent</span></h3>
 
               <div class="theme-row" id="theme-row"></div>
             </section>
@@ -290,7 +289,7 @@
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title">EQ — 5 Band</h3>
+              <h3 class="section-title">EQ — 5 Band <button type="button" class="section-reset" id="eq-reset" aria-label="Reset equalizer">Reset</button></h3>
 
               <div class="eq-bands" id="eq-bands"></div>
             </section>
@@ -383,14 +382,14 @@
         <div class="utility-controls">
           <canvas id="vu-meter" width="58" height="24" title="Bass / Mid / High levels" aria-label="Live level meter"></canvas>
           <div class="volume-group" id="volume-group">
-            <span class="ic" data-icon="volume"></span>
+            <button type="button" class="mute-btn" id="mute-btn" aria-label="Mute" aria-pressed="false" title="Mute"><span class="ic" data-icon="volume" aria-hidden="true"></span></button>
             <div class="volume-track" id="volume-track" role="slider" tabindex="0"
                  aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
               <div class="volume-fill" id="volume-fill"></div>
             </div>
           </div>
           <div class="util-sep"></div>
-          <button class="ghost-btn" id="loop-btn" title="Loop (L)" aria-label="Loop">
+          <button class="ghost-btn" id="loop-btn" title="Loop track" aria-label="Loop">
             <span class="ic" data-icon="repeat"></span>
           </button>
           <button class="ghost-btn" id="queue-btn" title="Queue (Q)" aria-label="Queue manager">

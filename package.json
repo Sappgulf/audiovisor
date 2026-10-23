@@ -1,7 +1,7 @@
 {
   "name": "audiovisor",
   "private": true,
-  "version": "8.22.0",
+  "version": "8.23.0",
   "type": "module",
   "sideEffects": false,
   "engines": {
@@ -22,6 +22,7 @@
     "icons": "node scripts/make-icons.mjs",
     "analyze": "node scripts/analyze-shots.mjs",
     "thumbs": "node scripts/make-thumbs.mjs",
+    "thumbs:ray": "node scripts/make-ray-thumbs.mjs",
     "sweep": "node scripts/sweep.mjs",
     "bench": "node scripts/live-bench.mjs",
     "e2e": "node scripts/e2e.mjs",

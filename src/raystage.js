@@ -2,7 +2,7 @@ import { VERT, SCENE_FRAG, BLUR_FRAG, ACCUM_FRAG, POST_FRAG } from './rayshader.
 import { MODES } from './themes.js';
 import { beatEnergy } from './beatenergy.js';
 import { sanitizeLevels, usableSpectrum, safeDimension } from './levels.js';
-import { motionScale } from './motion.js';
+import { motionScale, advanceSceneTime } from './motion.js';
 
 /**
  * RayStage — WebGL2 raytraced stage renderer (v8.7).
@@ -186,6 +186,7 @@ export class RayStage {
        while keeping the deep blacks and most of the saturation. */
     this.exposure = 1.3;
     this.t = 0;
+    this.sceneTime = 0;
     this.beat = 0;
     this.frames = 0;
 
@@ -323,6 +324,18 @@ export class RayStage {
           gl.viewport(0, 0, 1, 1);
           gl.bindVertexArray(this.vao);
           gl.useProgram(ready.prog);
+          /* _target() binds the new render texture on the active unit.
+             Leaving sampler defaults in place makes the warmup sample its
+             own framebuffer, an invalid WebGL feedback loop. */
+          const u = ready.u;
+          gl.uniform2f(u.uRes, 1, 1);
+          gl.uniform1i(u.uSpp, 1);
+          gl.uniform1i(u.uSteps, 1);
+          gl.uniform1i(u.uPalN, 1);
+          gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.specTex); gl.uniform1i(u.uSpec, 0);
+          gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.waveTex); gl.uniform1i(u.uWave, 1);
+          gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.histTex); gl.uniform1i(u.uHist, 2);
+          gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.noiseTex); gl.uniform1i(u.uNoise, 3);
           this._fullscreen();
           gl.bindFramebuffer(gl.FRAMEBUFFER, null);
           ready.warm = true;
@@ -612,7 +625,7 @@ export class RayStage {
     // budget on an idle stage
     if (idle && tOverride == null) {
       this._idleSkip = !this._idleSkip;
-      if (this._idleSkip) { this.t += Math.min(Math.max((dtMs || 16.7) / 1000, 0.001), 0.06); return; }
+      if (this._idleSkip) return;
       dtMs = (dtMs || 16.7) * 2;
     }
     const gl = this.gl;
@@ -625,6 +638,7 @@ export class RayStage {
        as garbage. See src/levels.js. The scratch object is this stage's own;
        nothing outside reads it before the next frame overwrites it. */
     const lv = sanitizeLevels(levels, this._lvScratch || (this._lvScratch = {}));
+    this.sceneTime = tOverride != null ? tOverride : advanceSceneTime(this.sceneTime, dt, idle ? 0 : lv.level);
     this._drop = lv.drop;
     this.beat = beatEnergy(this.beat, lv, dt);
     if (usableSpectrum(freq)) {
@@ -692,8 +706,7 @@ export class RayStage {
     gl.useProgram(sp.prog);
     const u = sp.u;
     gl.uniform2f(u.uRes, this.rw, this.rh);
-    const drive = idle ? 1 : 1 + Math.min(1, lv.level || 0) * 0.9;
-    gl.uniform1f(u.uTime, this.t * drive);
+    gl.uniform1f(u.uTime, this.sceneTime);
     /* mode/tier/palette/sampler-assignment only change with a look edit.
        Program uniforms persist between frames, so re-uploading them
        60-144x/s was ~20 dead calls every frame; one revision counter gates

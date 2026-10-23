@@ -3,7 +3,9 @@ import { setIcon } from './icons.js';
 import { modeArt } from './mode-art.js';
 
 export function modeAssetPath(id, animated = false) {
-  return `/modes/${id}${animated ? '-anim' : ''}.webp`;
+  // Public previews have a long HTTP cache. A new artwork revision must
+  // change their URLs so returning listeners see the upgraded scenes.
+  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.23`;
 }
 
 /**
@@ -57,7 +59,7 @@ export function createModePicker({
            loading="lazy" decoding="async" width="176" height="108">
       <span class="mode-thumb-anim" aria-hidden="true"></span>
     </div>
-    <span class="mode-name sr-only">${m.name}</span>`;
+    <span class="mode-name">${m.name}</span>`;
     const thumb = btn.querySelector('.mode-thumb');
     const anim = /** @type {HTMLElement | null} */ (btn.querySelector('.mode-thumb-anim'));
     thumb.addEventListener('load', () => btn.classList.add('has-thumb'));
@@ -163,6 +165,8 @@ export function createModePicker({
       if (hit) shown++;
     });
     modeEmpty?.classList.toggle('is-hidden', shown > 0);
+    const count = doc.getElementById('mode-count');
+    if (count) count.textContent = q ? `${shown} / ${modeCatalog.length}` : `${modeCatalog.length} modes`;
     const cards = getModeFilterCards();
     if (!cards.length) modeFilterIndex = -1;
     else if (modeFilterIndex < 0 || modeFilterIndex >= cards.length) modeFilterIndex = cards.findIndex((c) => c.dataset.modeId === getModeId());
@@ -196,6 +200,8 @@ export function createModePicker({
 
   function setActiveTheme(id) {
     [...themeRow.children].forEach((el) => setToggle(/** @type {HTMLElement} */ (el), el.dataset.theme === id, 'is-active'));
+    const current = doc.getElementById('theme-current');
+    if (current) current.textContent = id === 'auto' ? 'From artwork' : themes.find((theme) => theme.id === id)?.name || '';
   }
 
   modeFilter?.addEventListener('input', () => {

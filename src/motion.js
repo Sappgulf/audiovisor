@@ -16,6 +16,13 @@
 
 const QUERY = '(prefers-reduced-motion: reduce)';
 
+/** Integrate audio-driven speed. Scaling absolute elapsed time by a live
+ * level makes scenes teleport whenever the mix changes, especially late
+ * in a session. Only this frame's increment should change with energy. */
+export function advanceSceneTime(time, dt, level) {
+  return time + dt * (1 + Math.max(0, Math.min(1, level || 0)) * 0.9);
+}
+
 let mq = null;
 function query() {
   if (mq === null && typeof window !== 'undefined' && window.matchMedia) {
