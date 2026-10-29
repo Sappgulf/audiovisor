@@ -31,7 +31,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@napi-rs/canvas": "^1.0.9",
+    "@napi-rs/canvas": "^1.0.13",
     "@shaderfrog/glsl-parser": "^7.0.1",
     "@vitest/coverage-v8": "^5.0.2",
     "axe-core": "^4.13.0",
@@ -41,7 +41,7 @@
     "jsdom": "^30.0.1",
     "playwright": "^1.63.0",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2",
+    "vite": "^8.3.5",
     "vitest": "^5.0.2"
   }
 }
