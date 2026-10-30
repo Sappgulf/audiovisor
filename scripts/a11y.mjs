@@ -51,13 +51,28 @@ async function drive(viewport, label, mobile) {
     await tap('#tab-' + tab);
     await page.waitForTimeout(250);
     await audit(page, `${label} ${tab} tab`);
+    if (tab === 'studio') {
+      await tap('#party-btn');
+      await page.waitForTimeout(650);
+      await audit(page, `${label} party QR`);
+      await tap('#party-btn');
+      await page.waitForTimeout(200);
+    }
   }
   await tap('#tab-look');
   await page.waitForTimeout(200);
+  await page.waitForSelector('#custom-theme .custom-color', { timeout: 6000 });
+  await audit(page, `${label} custom palette`);
   const theme = page.locator('[data-theme="monolith"]');
   if (await theme.count()) { await theme.first().click(); await page.waitForTimeout(250); await audit(page, `${label} monolith`); }
   await tap('#drawer-close').catch(() => page.keyboard.press('Escape'));
   await page.waitForTimeout(300);
+
+  await tap('#more-btn');
+  await page.waitForTimeout(300);
+  await audit(page, `${label} more menu`);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
 
   for (const [sel, name] of [['#queue-btn', 'queue'], ['#library-btn', 'library'], ['#nav-about', 'about']]) {
     if (await page.isVisible(sel)) {

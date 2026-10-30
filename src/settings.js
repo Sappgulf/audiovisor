@@ -10,7 +10,7 @@
 
 export const SETTINGS_KEY = 'audiovisor.settings.v2';
 export const LEGACY_SETTINGS_KEY = 'audiovisor.settings.v1';
-export const SETTINGS_VERSION = 6;
+export const SETTINGS_VERSION = 7;
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -30,6 +30,7 @@ export function serializeSettings(src) {
     fx: { ...src.fx },
     sliders: { ...src.sliders },
     eq: Array.isArray(src.eq) ? src.eq.slice() : undefined,
+    customTheme: Array.isArray(src.customTheme) ? src.customTheme.slice() : undefined,
     volume: src.volume,
     loop: !!src.loop,
     autoDj: !!src.autoDj,
@@ -75,6 +76,14 @@ export function validateSettings(raw, vocab) {
       if (v !== null) sliders[id] = v;
     }
     if (Object.keys(sliders).length) out.sliders = sliders;
+  }
+
+  if (Array.isArray(raw.customTheme)) {
+    const colors = raw.customTheme
+      .filter((c) => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c))
+      .map((c) => c.toLowerCase())
+      .slice(0, 5);
+    if (colors.length === 5) out.customTheme = colors;
   }
 
   if (Array.isArray(raw.eq)) {

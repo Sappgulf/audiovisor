@@ -1,6 +1,7 @@
 // @ts-check
 import { LEGACY_SETTINGS_KEY, SETTINGS_KEY, serializeSettings, validateSettings } from './settings.js';
 import { remove as removeStored } from './storage.js';
+import { loadCustomTheme, CUSTOM_THEME_KEY } from './custom-theme.js';
 
 /**
  * Settings export/import and reset.
@@ -37,6 +38,7 @@ export function createSettingsUI({
       fx: state.fx,
       sliders: Object.fromEntries(Object.entries(sliderEls).map(([k, el]) => [k, parseFloat(el.value)])),
       eq: eqFreqs.map((_, i) => engine.eqFilters?.[i]?.gain.value || 0),
+      customTheme: loadCustomTheme()?.colors,
       volume: engine.volume,
       loop: engine.loop,
       autoDj: getAutoDj(),
@@ -46,6 +48,7 @@ export function createSettingsUI({
   doc.getElementById('settings-reset')?.addEventListener('click', () => {
     removeStored(SETTINGS_KEY);
     removeStored(LEGACY_SETTINGS_KEY);
+    removeStored(CUSTOM_THEME_KEY);
     removeStored('audiovisor.tour');
     location.reload();
   });

@@ -141,6 +141,7 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
   });
 
   queuePanel.addEventListener('click', (e) => {
+    if (e.target.closest('.queue-grip')) return;
     const clear = e.target.closest('#queue-clear-btn');
     const shuffle = e.target.closest('#queue-shuffle-btn');
     const close = e.target.closest('#queue-close-btn');
@@ -222,6 +223,44 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
   });
   queuePanel.addEventListener('dragend', () => {
     queueDragIndex = null;
+    getQueueRows().forEach((r) => r.classList.remove('is-drop', 'is-dragging'));
+  });
+
+  /* Native HTML5 drag is desktop-only. Touch and pen users get the same
+     reorder from the grip handle with Pointer Events, which also keeps the
+     gesture alive when the finger leaves the row. */
+  let pointerDrag = null;
+  queuePanel.addEventListener('pointerdown', (e) => {
+    const grip = e.target.closest('.queue-grip');
+    const row = grip?.closest('.queue-row');
+    if (!row || !grip) return;
+    e.preventDefault();
+    pointerDrag = { from: Number(row.dataset.i), id: e.pointerId };
+    try { grip.setPointerCapture(e.pointerId); } catch { /* move still works */ }
+    row.classList.add('is-dragging');
+  });
+  queuePanel.addEventListener('pointermove', (e) => {
+    if (!pointerDrag || e.pointerId !== pointerDrag.id) return;
+    const hit = /** @type {HTMLElement | null} */ (document.elementFromPoint(e.clientX, e.clientY));
+    const row = /** @type {HTMLElement | null} */ (hit?.closest('.queue-row'));
+    getQueueRows().forEach((r) => r.classList.toggle('is-drop', r === row));
+  });
+  const endPointerDrag = (e) => {
+    if (!pointerDrag || e.pointerId !== pointerDrag.id) return;
+    const hit = /** @type {HTMLElement | null} */ (document.elementFromPoint(e.clientX, e.clientY));
+    const row = /** @type {HTMLElement | null} */ (hit?.closest('.queue-row'));
+    const to = row ? Number(row.dataset.i) : pointerDrag.from;
+    const from = pointerDrag.from;
+    pointerDrag = null;
+    getQueueRows().forEach((r) => r.classList.remove('is-drop', 'is-dragging'));
+    if (to !== from && engine.moveQueueItem(from, to)) {
+      renderQueue();
+      setQueueActive(to, true);
+    }
+  };
+  queuePanel.addEventListener('pointerup', endPointerDrag);
+  queuePanel.addEventListener('pointercancel', () => {
+    pointerDrag = null;
     getQueueRows().forEach((r) => r.classList.remove('is-drop', 'is-dragging'));
   });
 
@@ -427,8 +466,9 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
     if (!q.length) {
       html += `<div class="queue-empty mono">DROP AUDIO FILES TO BUILD A QUEUE</div>`;
     } else {
-      html += `<div class="queue-list" role="listbox" aria-label="Queue tracks">` + q.map((t, i) => `
+      html += `<div class="queue-list" role="listbox" aria-label="Queue tracks. Drag the grip or press Alt+Up/Alt+Down to reorder.">` + q.map((t, i) => `
       <div class="queue-row${i === engine.queueIndex ? ' is-active' : ''}" data-i="${i}" data-index="${i}" draggable="true" role="option" id="queue-row-${i}" tabindex="-1" aria-selected="false">
+        <span class="queue-grip" aria-hidden="true" title="Drag to reorder">⋮⋮</span>
         <span class="mono queue-idx">${i === engine.queueIndex ? '▶' : String(i + 1).padStart(2, '0')}</span>
         <span class="queue-name">${esc(t.meta.name)}</span>
         <span class="mono queue-dur">${fmtTime(t.meta.duration)}</span>
@@ -570,6 +610,7 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
         sourceName,
       });
       try { await navigator.storage?.persist?.(); } catch { /* best effort */ }
+      if (!libraryPanel.classList.contains('is-hidden')) void renderLibrary();
       toast(`Saved <b>${esc(rec.name)}</b> to library · ${fmtBytes(ab.byteLength)}`, { duration: 2200 });
     } catch (e) {
       console.error(e);

@@ -16,7 +16,7 @@
  *   npm run e2e -- --mobile   phone, 390x844 touch
  *   npm run e2e -- --headless deterministic window geometry in automation
  */
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -157,6 +157,31 @@ for (const chip of ['autopilot-chip', 'autodj-chip', 'sleep-chip']) await step(c
 // audio
 await step('load two tracks via file input', async () => { await page.setInputFiles('#file-input', [SP + '/track-a.wav', SP + '/track-b.wav']); await page.waitForFunction(() => window.__av.engine.playing, null, { timeout: 8000 }); return 'playing: ' + await text('#track-name'); });
 await page.waitForTimeout(1500);
+await step('queue grip reorders with a pointer drag', async () => {
+  if (MOBILE) { await tap('#drawer-close'); await page.waitForTimeout(450); }
+  await tap('#queue-btn'); await page.waitForTimeout(350);
+  const before = await page.evaluate(() => window.__av.engine.queue.map((t) => t.meta.name));
+  const drag = async (from, to) => {
+    const grip = await page.locator(`.queue-row[data-i="${from}"] .queue-grip`).boundingBox();
+    const target = await page.locator(`.queue-row[data-i="${to}"]`).boundingBox();
+    if (!grip || !target) throw new Error('queue row not found');
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(target.x + 24, target.y + target.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(350);
+  };
+  await drag(1, 0);
+  const mid = await page.evaluate(() => window.__av.engine.queue.map((t) => t.meta.name));
+  if (mid[0] === before[0]) throw new Error('grip drag did not reorder: ' + mid.join(','));
+  await drag(0, 1);
+  const after = await page.evaluate(() => window.__av.engine.queue.map((t) => t.meta.name));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  if (MOBILE) { await tap('#drawer-toggle'); await page.waitForTimeout(350); }
+  if (after.join(',') !== before.join(',')) throw new Error('restore failed: ' + after.join(','));
+  return after.join(' / ');
+});
 await step('known 124 BPM file readout', async () => {
   await page.waitForFunction(() => {
     const value = document.getElementById('bpm-value');
@@ -208,7 +233,23 @@ await step('studio tab: party QR renders', async () => {
   await tap('#party-btn'); await page.waitForTimeout(200);
   return `qr ${(await url || '').length} chars`;
 });
-await step('settings export (download)', async () => { const [d] = await Promise.all([page.waitForEvent('download', { timeout: 4000 }), tap('#settings-export')]); return d.suggestedFilename(); });
+await step('settings export/import round-trips the custom palette', async () => {
+  await tap('#tab-look');
+  await page.waitForTimeout(200);
+  await tap('[data-theme="custom"]');
+  await page.waitForTimeout(200);
+  await tap('#tab-studio');
+  await page.waitForTimeout(200);
+  const [d] = await Promise.all([page.waitForEvent('download', { timeout: 5000 }), tap('#settings-export')]);
+  const file = await d.path();
+  const json = JSON.parse(readFileSync(file, 'utf8'));
+  if (!Array.isArray(json.customTheme) || json.customTheme.length !== 5) throw new Error('export lost customTheme');
+  await page.setInputFiles('#settings-file', file);
+  await page.waitForTimeout(600);
+  const theme = await page.evaluate(() => window.__av.state.themeId);
+  if (theme !== 'custom') throw new Error('import did not restore custom theme: ' + theme);
+  return d.suggestedFilename();
+});
 
 // close drawer on mobile so transport is reachable
 if (MOBILE) await step('close drawer', async () => { await tap('#drawer-close'); await page.waitForTimeout(500); });

@@ -3,7 +3,7 @@ import { readJSON, writeJSON } from './storage.js';
 
 /** The single user-editable palette slot. */
 export const CUSTOM_THEME_ID = 'custom';
-const KEY = 'audiovisor.customTheme.v1';
+export const CUSTOM_THEME_KEY = 'audiovisor.customTheme.v1';
 
 /** @param {unknown} value */
 export function normalizeColors(value) {
@@ -30,7 +30,7 @@ export function makeCustomTheme(colors) {
 }
 
 export function loadCustomTheme() {
-  const data = readJSON(KEY, null);
+  const data = readJSON(CUSTOM_THEME_KEY, null);
   const colors = normalizeColors(data?.colors);
   return colors ? makeCustomTheme(colors) : null;
 }
@@ -38,6 +38,6 @@ export function loadCustomTheme() {
 /** @param {string[]} colors */
 export function saveCustomTheme(colors) {
   const theme = makeCustomTheme(colors);
-  writeJSON(KEY, { colors: theme.colors });
+  writeJSON(CUSTOM_THEME_KEY, { colors: theme.colors });
   return theme;
 }

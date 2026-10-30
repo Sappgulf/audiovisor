@@ -90,6 +90,13 @@ export function createThemeEditor({ root, picker, getTheme, setCustomTheme, toas
   });
   save.addEventListener('click', () => apply());
 
+  function syncColors(next) {
+    if (!Array.isArray(next) || next.length !== 5) return;
+    inputs.forEach((input, i) => { if (/^#[0-9a-f]{6}$/i.test(next[i])) input.value = next[i]; });
+    paintPreview();
+  }
+  window.addEventListener('audiovisor:custom-theme', (e) => syncColors(/** @type {CustomEvent} */ (e).detail?.colors));
+
   paintPreview();
   return { apply, colors: currentColors, inputs };
 }

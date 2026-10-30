@@ -1715,6 +1715,8 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 }
 .queue-dur { font-size: 10px; color: var(--text-40); font-variant-numeric: tabular-nums; }
 
+.queue-grip { flex: 0 0 auto; color: var(--text-20); font-size: 12px; line-height: 1; letter-spacing: -2px; cursor: grab; touch-action: none; user-select: none; }
+.queue-row:hover .queue-grip, .queue-row.is-active .queue-grip { color: var(--text-40); }
 .queue-row[draggable="true"] { cursor: grab; }
 .queue-row.is-dragging { opacity: 0.45; cursor: grabbing; }
 .queue-row.is-drop { border-color: var(--accent-line); background: var(--accent-dim); }

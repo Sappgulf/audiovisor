@@ -149,14 +149,18 @@ export async function renderRemixToWav(buffer, edits = {}, eq = edits.eq || []) 
   src.connect(filter);
   let node = filter;
 
-  for (let i = 0; i < 5; i++) {
-    const band = offline.createBiquadFilter();
-    band.type = 'peaking';
-    band.frequency.value = [60, 250, 1000, 4000, 12000][i];
-    band.Q.value = 1.1;
-    band.gain.value = Number(eq[i]) || 0;
-    node.connect(band);
-    node = band;
+  /* A flat EQ is transparent; skipping five peaking filters makes exports
+     (and the E2E download) noticeably cheaper in the common all-zero case. */
+  if (Array.isArray(eq) && eq.some((v) => Number(v) !== 0)) {
+    for (let i = 0; i < 5; i++) {
+      const band = offline.createBiquadFilter();
+      band.type = 'peaking';
+      band.frequency.value = [60, 250, 1000, 4000, 12000][i];
+      band.Q.value = 1.1;
+      band.gain.value = Number(eq[i]) || 0;
+      node.connect(band);
+      node = band;
+    }
   }
 
   if (edits.autotune) {

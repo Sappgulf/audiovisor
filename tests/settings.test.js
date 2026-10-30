@@ -48,6 +48,7 @@ describe('serializeSettings', () => {
       rayQuality: 'ultra', fx: { reverb: true, limiter: false, chop: true },
       sliders: { sensitivity: 1.4, bloom: 0.5 },
       eq: [0, 3, -2, 0, 1], volume: 0.75, loop: true, autoDj: false,
+      customTheme: ['#112233', '#224466', '#336699', '#44aacc', '#66ddff'],
     };
     const back = validateSettings(serializeSettings(src), VOCAB);
     expect(back).toMatchObject({
@@ -56,6 +57,7 @@ describe('serializeSettings', () => {
     });
     expect(back.fx).toEqual({ reverb: true, limiter: false, chop: true });
     expect(back.eq).toEqual([0, 3, -2, 0, 1]);
+    expect(back.customTheme).toEqual(['#112233', '#224466', '#336699', '#44aacc', '#66ddff']);
   });
 });
 
@@ -96,6 +98,14 @@ describe('validateSettings', () => {
   it('clamps eq gains to the UI range and truncates extra bands', () => {
     const out = validateSettings({ eq: [99, -99, 'x', 0, 2, 7, 7] }, VOCAB);
     expect(out.eq).toEqual([12, -12, 0, 0, 2]);
+  });
+
+  it('accepts only five valid hex stops for a custom palette', () => {
+    expect(validateSettings({ customTheme: ['#112233', '#224466', '#336699', '#44aacc', '#66ddff'] }, VOCAB).customTheme)
+      .toHaveLength(5);
+    expect(validateSettings({ customTheme: ['#fff', '#224466', '#336699', '#44aacc', '#66ddff'] }, VOCAB).customTheme)
+      .toBeUndefined();
+    expect(validateSettings({ customTheme: ['#112233'] }, VOCAB).customTheme).toBeUndefined();
   });
 
   it('rejects an unknown raytrace quality', () => {

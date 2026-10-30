@@ -364,7 +364,8 @@ const autoPaletteCache = new Map();
  */
 function activeTheme() {
   if (state.themeId === 'auto') return autoTheme || THEMES.find((t) => t.id === DEFAULT_THEME);
-  return THEMES.find((t) => t.id === state.themeId);
+  return THEMES.find((t) => t.id === state.themeId)
+    || THEMES.find((t) => t.id === DEFAULT_THEME);
 }
 
 function syncStageContext() {
@@ -470,6 +471,7 @@ function applyCustomTheme(colors) {
   else THEMES.push(theme);
   picker.addTheme?.(theme);
   setTheme(theme.id);
+  window.dispatchEvent(new CustomEvent('audiovisor:custom-theme', { detail: { colors: theme.colors } }));
   return theme;
 }
 
@@ -551,8 +553,12 @@ const SETTINGS_VOCAB = {
 function applySettings(s, { eq = false } = {}) {
   if (typeof s.raytrace === 'boolean') setRaytrace(s.raytrace, { quiet: true });   // stored intent, not availability
   if (s.rayQuality) setRayQuality(s.rayQuality, { quiet: true });
+  /* Imported settings can carry the custom palette itself. Apply it before
+     the theme id, otherwise `theme: custom` resolves to nothing on a fresh
+     device and the export silently loses the user's colours. */
+  if (Array.isArray(s.customTheme) && s.customTheme.length === 5) applyCustomTheme(s.customTheme);
   if (s.mode) setMode(s.mode, { restore: true });
-  if (s.theme) setTheme(s.theme);
+  if (s.theme && (s.theme !== 'custom' || THEMES.some((t) => t.id === 'custom'))) setTheme(s.theme);
   for (const [key, val] of Object.entries(s.sliders || {})) {
     const input = sliderEls[key];
     if (!input) continue;

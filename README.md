@@ -1,8 +1,16 @@
-# AUDIOVISOR — v8.25.0
+# AUDIOVISOR — v8.26.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Follow-up pass (v8.26)
+- **Custom palettes survive settings** — export/import now carries the five custom stops, so moving a configuration to another device restores the palette instead of leaving a dangling `custom` theme id. Reset also clears the saved palette, and a missing custom theme falls back to the default theme rather than handing the renderer `undefined`.
+- **Touch reorder** — queue rows now have a grip handle driven by Pointer Events, so phones and pens can reorder as well as desktop drag-and-drop. Alt+Up/Alt+Down remains the keyboard path, and the queue list announces the gesture.
+- **Share-target proof** — `npm run offline` now posts a real WAV through the PWA share target, verifies it is parked in the cache, reloads into `?shared=1`, and confirms the file loader starts playback before testing offline boot.
+- **Wider accessibility gate** — the axe run now covers 25 live surfaces including the More menu, custom palette and Party QR; the scrollable URL field is keyboard-focusable. Install-prompt state has dedicated unit coverage.
+- **Faster remix export** — a flat EQ no longer instantiates five peaking filters during offline rendering, cutting the common export path.
+- **Smaller correctness fixes** — custom-theme editor inputs resync when a palette arrives via import or a share link; library save refreshes an open library panel; theme resolution is total even if stored settings reference a palette this device does not have.
 
 ### Upgrade pass (v8.25)
 - **The More menu works with a mouse again** — a focusout handler closed the menu during the transient body-focus of a pointer press, so only the already-focused first action ever fired. Record, Export, Shuffle and Add files now receive the click; E2E asserts the recording and WAV downloads instead of merely logging that none arrived.
