@@ -5,7 +5,7 @@ import { modeArt } from './mode-art.js';
 export function modeAssetPath(id, animated = false) {
   // Public previews have a long HTTP cache. A new artwork revision must
   // change their URLs so returning listeners see the upgraded scenes.
-  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.24`;
+  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.25`;
 }
 
 /**
@@ -104,7 +104,7 @@ export function createModePicker({
   autoDot.style.background = 'conic-gradient(from 210deg, #ff2bd6, #ff8a00, #ccff00, #00f0ff, #7b2bff, #ff2bd6)';
   autoDot.addEventListener('click', () => onPickTheme('auto'));
   themeRow.appendChild(autoDot);
-  themes.forEach((t) => {
+  function buildThemeDot(t) {
     const btn = doc.createElement('button');
     const active = t.id === getThemeId();
     btn.className = 'theme-dot' + (active ? ' is-active' : '');
@@ -115,7 +115,9 @@ export function createModePicker({
     btn.setAttribute('aria-pressed', String(active));
     btn.addEventListener('click', () => onPickTheme(t.id));
     themeRow.appendChild(btn);
-  });
+    return btn;
+  }
+  themes.forEach(buildThemeDot);
 
   const modeFilter = doc.getElementById('mode-filter');
   const modeEmpty = doc.getElementById('mode-empty');
@@ -238,5 +240,17 @@ export function createModePicker({
     applyModeFilter();
   }
 
-  return { modeCatalog, setActiveMode, setActiveTheme, getModeFilterCards, applyModeFilter, focusModeFilterCard, syncModeFilterTabStops, addMode };
+  /** Add or refresh a theme dot after the custom palette changes. */
+  function addTheme(t) {
+    const existing = /** @type {HTMLElement | null} */ (themeRow.querySelector(`[data-theme="${t.id}"]`));
+    if (existing) {
+      existing.style.background = t.css;
+      existing.title = t.name;
+      existing.setAttribute('aria-label', t.name);
+      return existing;
+    }
+    return buildThemeDot(t);
+  }
+
+  return { modeCatalog, setActiveMode, setActiveTheme, getModeFilterCards, applyModeFilter, focusModeFilterCard, syncModeFilterTabStops, addMode, addTheme };
 }

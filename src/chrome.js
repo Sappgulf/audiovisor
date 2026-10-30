@@ -1,7 +1,7 @@
 /**
  * Chrome accent — derive the interface accent from the selected stage theme.
  *
- * The app shipped 25 stage themes and an interface locked to one of them:
+ * The app shipped 32 stage themes and an interface locked to one of them:
  * --accent was hardcoded to the brass palette, so choosing Neon Cyber
  * recoloured the visualiser and left every chip, tab, slider and button warm
  * brown. The chrome now follows the theme.
@@ -56,7 +56,7 @@ export function chroma(rgb) {
 }
 
 /* How much brightness counts against colourfulness when ranking a palette.
-   Tuned against all 25 themes: high enough that Monolith picks white rather
+   Tuned against all 32 themes: high enough that Monolith picks white rather
    than its dimmest grey, low enough that Warm Brass picks #d9b089 rather than
    the pale cream above it. */
 const LUM_WEIGHT = 0.35;
@@ -96,7 +96,7 @@ export function pickAccent(colors) {
 /**
  * Lift a colour toward white until it clears the small-text threshold.
  *
- * Measured across all 25 themes the brightest-entry rule already clears AA
+ * Measured across all 32 themes the brightest-entry rule already clears AA
  * everywhere — the worst case is Sunset at 6.12:1 — so this never fires
  * today. It is here because the theme list is data: someone adding a moody
  * palette of three mid-tones would otherwise ship an unreadable interface

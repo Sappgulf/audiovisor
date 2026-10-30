@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { readdirSync } from 'node:fs';
 
 /* The GLSL sources are JS template literals, so the minifier leaves them
    alone and every design note inside them shipped to the browser — about a
@@ -15,6 +16,40 @@ export function minifyGlsl(src) {
     .join('\n');
 }
 
+
+/* The service worker can only cache what it knows about. Emit a build-time
+   manifest of every JS/CSS chunk (including lazy ones) plus the static fonts,
+   icons and mode stills, so a first install can render offline instead of
+   waiting for a second online visit to populate the cache. */
+const precacheManifest = {
+  name: 'precache-manifest',
+  apply: 'build',
+  generateBundle(_options, bundle) {
+    const assets = new Set(['/precache-manifest.json', '/manifest.json']);
+    for (const file of Object.keys(bundle)) {
+      if (/\.(js|css)$/.test(file)) assets.add('/' + file);
+    }
+    for (const file of ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png']) {
+      assets.add('/icons/' + file);
+    }
+    for (const file of [
+      'space-grotesk-400.woff2', 'space-grotesk-500.woff2',
+      'space-grotesk-600.woff2', 'space-grotesk-700.woff2',
+      'jetbrains-mono-400.woff2', 'jetbrains-mono-500.woff2',
+    ]) assets.add('/fonts/' + file);
+    try {
+      for (const file of readdirSync('public/modes')) {
+        if (file.endsWith('.webp') && !file.includes('-anim')) assets.add('/modes/' + file);
+      }
+    } catch { /* styles/art may not exist in a minimal checkout */ }
+    this.emitFile({
+      type: 'asset',
+      fileName: 'precache-manifest.json',
+      source: JSON.stringify({ assets: [...assets].sort() }, null, 2),
+    });
+  },
+};
+
 const glslMinify = {
   name: 'glsl-minify',
   apply: 'build',
@@ -25,7 +60,7 @@ const glslMinify = {
 };
 
 export default defineConfig({
-  plugins: [glslMinify],
+  plugins: [glslMinify, precacheManifest],
   build: {
     /* The provider panel and the raytraced stage are dynamic imports, split
        out so a cold visit does not pay for them. Vite's default would emit
@@ -63,6 +98,15 @@ export default defineConfig({
          have settled. */
       include: ['src/**/*.js'],
       exclude: ['src/dom-shim.d.ts'],
+      /* A floor below today's measured baseline (roughly 60/47/49/63) so a
+         drop is visible in CI without pretending the UI orchestration suites
+         are fully unit-tested. Raise these as coverage improves. */
+      thresholds: {
+        statements: 55,
+        branches: 42,
+        functions: 44,
+        lines: 57,
+      },
     },
   },
 });

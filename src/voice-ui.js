@@ -16,6 +16,8 @@ export function createVoiceInput({ engine, renderer, toast, doc = document }) {
   let active = false;
   let raf = null;
   let stream = null;
+  let source = null;
+  let analyser = null;
 
   doc.getElementById('voice-btn')?.addEventListener('click', async () => {
     const btn = doc.getElementById('voice-btn');
@@ -23,7 +25,11 @@ export function createVoiceInput({ engine, renderer, toast, doc = document }) {
       active = false;
       btn.classList.remove('is-on');
       if (raf) cancelAnimationFrame(raf);
-      synth?.stop();
+      synth?.dispose();
+      synth = null;
+      try { source?.disconnect(); } catch { /* already detached */ }
+      source = null;
+      analyser = null;
       if (stream) { stream.getTracks().forEach(tr => tr.stop()); stream = null; }
       toast('Voice AI <b>off</b>');
       return;
@@ -33,10 +39,10 @@ export function createVoiceInput({ engine, renderer, toast, doc = document }) {
       // warm context already ensured via engine
       if (!engine.ctx) engine._ensureCtx();
       synth = new VoiceSynth(engine.ctx);
-      const src = engine.ctx.createMediaStreamSource(stream);
-      const analyser = engine.ctx.createAnalyser();
+      source = engine.ctx.createMediaStreamSource(stream);
+      analyser = engine.ctx.createAnalyser();
       analyser.fftSize = 2048;
-      src.connect(analyser);
+      source.connect(analyser);
       const buf = new Float32Array(analyser.fftSize);
       active = true;
       btn.classList.add('is-on');

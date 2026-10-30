@@ -7,7 +7,7 @@
  * is a purely visual decision, so the tile should show the mode.
  *
  * These are deliberately monochrome. Colour in this app belongs to the theme,
- * and a thumbnail baked in one theme is wrong in the other twenty-four; what
+ * and a thumbnail baked in one theme is wrong in the other thirty-one; what
  * actually distinguishes the modes is their form. Rendering the whole set in
  * the neutral Monolith palette keeps the grid calm and truthful, and means
  * one asset set stays correct whatever theme is selected.

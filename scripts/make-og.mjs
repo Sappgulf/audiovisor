@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Regenerate public/og.png — the social-share card.
+ * Regenerate public/og.jpg — the social-share card.
  *
  * The old card was a flat diamond on a dotted grid; it looked nothing like
  * the product. This renders the REAL WebGL2 raytraced stage: og.html mounts
@@ -8,13 +8,13 @@
  * temporal accumulator converges, overlays the brand lockup, and Playwright
  * screenshots the result once the page signals OG READY.
  *
- *   npm run og                                     # lava / cyber -> public/og.png
+ *   npm run og                                     # lava / cyber -> public/og.jpg
  *   node scripts/make-og.mjs --mode fluid --theme cyber --out /tmp/alt.png
  *
  * Output is committed (like the icons) so deploys don't need a GPU.
  */
 import { chromium } from 'playwright';
-import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadImage, createCanvas } from '@napi-rs/canvas';
@@ -28,7 +28,7 @@ const flag = (name, fallback) => {
 };
 const MODE = flag('mode', 'city');
 const THEME = flag('theme', 'cyber');
-const OUT = flag('out', 'public/og.png');
+const OUT = flag('out', 'public/og.jpg');
 
 /* ---------- serve ---------- */
 
@@ -121,7 +121,9 @@ try {
     process.exit(1);
   }
 
-  copyFileSync(shot, OUT);
+  /* JPEG keeps the same 1200x630 card under 200kB; the PNG screenshot was
+     ~900kB and social crawlers fetched it on every share. */
+  writeFileSync(OUT, canvas.toBuffer('image/jpeg', 88));
   rmSync(tmp, { recursive: true, force: true });
   console.log(`wrote ${OUT} (${MODE} / ${THEME}, mean luminance ${mean.toFixed(1)})`);
 } finally {

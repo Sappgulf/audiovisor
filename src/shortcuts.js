@@ -1,4 +1,6 @@
 // @ts-check
+import { createFocusTrap } from './focus-trap.js';
+
 /**
  * Keyboard-shortcuts overlay.
  *
@@ -42,6 +44,7 @@ const SHORTCUTS = [
 export function createShortcutsOverlay({ isTypingTarget, doc = document }) {
   const overlay = doc.getElementById('shortcuts-overlay');
   const grid = doc.getElementById('shortcuts-grid');
+  const trap = overlay ? createFocusTrap(overlay, doc) : null;
   let returnFocus = null;
 
   if (grid) {
@@ -59,8 +62,11 @@ export function createShortcutsOverlay({ isTypingTarget, doc = document }) {
     else if (overlay.contains(doc.activeElement)) doc.activeElement.blur();
     overlay.classList.toggle('is-hidden', !open);
     overlay.setAttribute('aria-hidden', String(!open));
-    if (open) doc.getElementById('shortcuts-close')?.focus();
-    else {
+    if (open) {
+      trap?.activate();
+      doc.getElementById('shortcuts-close')?.focus();
+    } else {
+      trap?.deactivate();
       const restore = returnFocus;
       returnFocus = null;
       restore?.focus?.();

@@ -7,7 +7,7 @@
  * mode picker, themes, raytrace controls, playback, seek, volume, loop,
  * queue, library, the More menu (snapshot, shuffle, record), fullscreen,
  * every keyboard shortcut, the command palette, mic and tab capture, and all
- * 23 modes. Each step passes, fails with the reason (an element covered or
+ * 24 modes. Each step passes, fails with the reason (an element covered or
  * unreachable fails here, where a scripted .click() would not), or is
  * flagged if it logged an error. Two generated tracks are used, so no media
  * needs to be checked in.
@@ -49,7 +49,8 @@ writeTrack(join(SP, 'track-a.wav'), 55);
 writeTrack(join(SP, 'track-b.wav'), 65);
 const server = await createServer({ root: process.cwd(), server: { port: 0 }, logLevel: 'error' });
 await server.listen();
-const browser = await chromium.launch({ headless: HEADLESS, args: ['--use-angle=metal', '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--auto-select-desktop-capture-source=Entire screen', '--enable-usermedia-screen-capturing'] });
+const GL = process.platform === 'darwin' ? ['--use-angle=metal'] : [];
+const browser = await chromium.launch({ headless: HEADLESS, args: [...GL, '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--auto-select-desktop-capture-source=Entire screen', '--enable-usermedia-screen-capturing'] });
 const ctx = await browser.newContext(MOBILE
   ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, serviceWorkers: 'block', permissions: ['microphone', 'clipboard-read', 'clipboard-write'], acceptDownloads: true }
   : { viewport: { width: 1440, height: 900 }, serviceWorkers: 'block', permissions: ['microphone', 'clipboard-read', 'clipboard-write'], acceptDownloads: true });
@@ -75,7 +76,7 @@ const vis = (sel) => page.isVisible(sel);
 const text = (sel) => page.textContent(sel);
 const snap = (n) => page.screenshot({ path: `${SP}/e2e-${MOBILE ? 'm' : 'd'}-${n}.png`, timeout: 15_000 });
 
-/* First load also waits on the font CDN and the lazy raytrace chunk, so it
+/* First load also waits on the self-hosted fonts and the lazy raytrace chunk, so it
    needs its own generous budget; the 3.5s default is for individual steps. */
 await page.goto(server.resolvedUrls.local[0], { waitUntil: 'load', timeout: 30_000 });
 await page.waitForLoadState('networkidle', { timeout: 30_000 });
@@ -133,6 +134,22 @@ await step('stage mode button opens the named visual picker', async () => {
 });
 await step('look presets row', async () => { const b = await page.$$('#preset-row button'); if (!b.length) return 'none'; await (MOBILE ? b[0].tap() : b[0].click()); await page.waitForTimeout(300); return b.length + ' presets, clicked first'; });
 await step('theme swatches (click 4)', async () => { const b = await page.$$('#theme-row [data-theme]'); for (const i of [1, 5, 9, 0]) { await (MOBILE ? b[i].tap() : b[i].click()); await page.waitForTimeout(200); } return b.length + ' swatches, now ' + await page.evaluate(() => window.__av.state.themeId); });
+await step('custom palette applies and joins the theme row', async () => {
+  await page.waitForSelector('#custom-theme .custom-color', { timeout: 5000 });
+  await page.evaluate(() => {
+    const colors = ['#112233', '#224466', '#336699', '#44aacc', '#66ddff'];
+    document.querySelectorAll('#custom-theme .custom-color').forEach((el, i) => {
+      el.value = colors[i];
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  });
+  await page.click('#custom-theme .lime-btn-sm');
+  await page.waitForTimeout(350);
+  const theme = await page.evaluate(() => window.__av.state.themeId);
+  const dot = await page.$('[data-theme="custom"]');
+  if (theme !== 'custom' || !dot) throw new Error('custom theme did not apply: ' + theme);
+  return 'custom';
+});
 await step('raytrace quality cycle', async () => { const q = []; for (let i = 0; i < 4; i++) { await tap('#rt-quality'); await page.waitForTimeout(150); q.push(await text('#rt-quality-label')); } return q.join('>'); });
 await step('raytrace on/off chip', async () => { await tap('#rt-chip'); await page.waitForTimeout(400); const off = await page.evaluate(() => window.__av.state.raytraceWanted); await tap('#rt-chip'); await page.waitForTimeout(400); return 'toggled ' + off + '→' + await page.evaluate(() => window.__av.state.raytraceWanted); });
 for (const chip of ['autopilot-chip', 'autodj-chip', 'sleep-chip']) await step(chip, async () => { await tap('#' + chip); await page.waitForTimeout(200); const t = (await text('#' + chip)).trim().replace(/\s+/g, ' '); await tap('#' + chip); return t; });
@@ -149,14 +166,14 @@ await step('known 124 BPM file readout', async () => {
 });
 await step('mute and restore the previous volume', async () => {
   // The mobile sheet intentionally makes its covered transport inert.
-  if (MOBILE) await tap('#drawer-close');
+  if (MOBILE) { await tap('#drawer-close'); await page.waitForTimeout(450); }
   const before = await page.evaluate(() => window.__av.engine.volume);
   await page.focus('#mute-btn'); await page.keyboard.press('Space');
   if (await page.evaluate(() => window.__av.engine.volume) !== 0) throw new Error('Mute did not reach the engine');
   await tap('#mute-btn');
   const after = await page.evaluate(() => window.__av.engine.volume);
   if (Math.abs(after - before) > 0.001) throw new Error(`Volume ${before} -> ${after}`);
-  if (MOBILE) await tap('#drawer-toggle');
+  if (MOBILE) { await tap('#drawer-toggle'); await page.waitForTimeout(300); }
   return `${Math.round(before * 100)}% restored`;
 });
 await snap('02-playing');
@@ -183,6 +200,14 @@ await step('reset equalizer returns every audio band to flat', async () => {
 });
 await step('FX toggles', async () => { const b = await page.$$('#fx-row button'); const names = []; for (const x of b) { await (MOBILE ? x.tap() : x.click()); await page.waitForTimeout(150); names.push((await x.textContent()).trim()); await (MOBILE ? x.tap() : x.click()); } return names.join(','); });
 await step('studio tab: AI presets + share + party', async () => { await tap('#tab-studio'); await page.waitForTimeout(300); const b = await page.$$('#ai-presets button'); if (b.length) await (MOBILE ? b[0].tap() : b[0].click()); await page.waitForTimeout(200); await tap('#share-btn'); await page.waitForTimeout(600); await page.keyboard.press('Escape'); return b.length + ' ai presets'; });
+await step('studio tab: party QR renders', async () => {
+  await tap('#party-btn'); await page.waitForTimeout(800);
+  const svg = await page.$('#party-qr-code svg');
+  if (!svg) throw new Error('QR did not render');
+  const url = await page.textContent('#qr-url');
+  await tap('#party-btn'); await page.waitForTimeout(200);
+  return `qr ${(await url || '').length} chars`;
+});
 await step('settings export (download)', async () => { const [d] = await Promise.all([page.waitForEvent('download', { timeout: 4000 }), tap('#settings-export')]); return d.suggestedFilename(); });
 
 // close drawer on mobile so transport is reachable
@@ -207,9 +232,50 @@ await step('More menu keyboard navigation and focus return', async () => {
     open: document.getElementById('more-btn').getAttribute('aria-expanded'), playing: window.__av.engine.playing, volume: window.__av.engine.volume }));
   if (after.focused !== 'more-btn' || after.open !== 'false' || before.volume !== after.volume || before.playing !== after.playing) throw new Error(JSON.stringify(after));
 });
-await step('more menu: snapshot', async () => { await tap('#more-btn'); await page.waitForTimeout(300); if (!await vis('#snapshot-btn')) throw new Error('menu item hidden'); const [d] = await Promise.all([page.waitForEvent('download', { timeout: 4000 }).catch(() => null), tap('#snapshot-btn')]); return d ? d.suggestedFilename() : 'no download event'; });
-await step('more menu: shuffle', async () => { await tap('#more-btn'); await page.waitForTimeout(300); await tap('#shuffle-btn'); await page.waitForTimeout(300); });
-await step('more menu: record 2s', async () => { await tap('#more-btn'); await page.waitForTimeout(300); await tap('#record-btn'); await page.waitForTimeout(2000); const [d] = await Promise.all([page.waitForEvent('download', { timeout: 6000 }).catch(() => null), (async () => { await tap('#more-btn'); await page.waitForTimeout(300); await tap('#record-btn'); })()]); return d ? d.suggestedFilename() : 'no download'; });
+await step('more menu: snapshot (pointer click)', async () => {
+  await tap('#more-btn'); await page.waitForTimeout(300);
+  if (!await vis('#snapshot-btn')) throw new Error('menu item hidden');
+  const [d] = await Promise.all([page.waitForEvent('download', { timeout: 5000 }), tap('#snapshot-btn')]);
+  return d.suggestedFilename();
+});
+await step('more menu: shuffle (pointer click)', async () => {
+  await tap('#more-btn'); await page.waitForTimeout(300);
+  const before = await page.getAttribute('#shuffle-btn', 'aria-checked');
+  await tap('#shuffle-btn'); await page.waitForTimeout(300);
+  const after = await page.getAttribute('#shuffle-btn', 'aria-checked');
+  if (before === after) throw new Error('shuffle did not toggle: ' + before);
+  await tap('#more-btn'); await page.waitForTimeout(300);
+  await tap('#shuffle-btn'); await page.waitForTimeout(300);
+  return `${before}→${after}`;
+});
+await step('more menu: export remix (pointer click)', async () => {
+  await tap('#more-btn'); await page.waitForTimeout(300);
+  const [d] = await Promise.all([page.waitForEvent('download', { timeout: 25000 }), tap('#export-remix-btn')]);
+  if (!/\.wav$/i.test(d.suggestedFilename())) throw new Error('not a wav: ' + d.suggestedFilename());
+  return d.suggestedFilename();
+});
+await step('more menu: record, pause, resume, save (pointer click)', async () => {
+  await tap('#more-btn'); await page.waitForTimeout(300);
+  await tap('#record-btn'); await page.waitForTimeout(700);
+  await tap('#more-btn'); await page.waitForTimeout(300);
+  await tap('#record-pause-btn'); await page.waitForTimeout(300);
+  const paused = await page.textContent('#record-pause-btn .tool-label');
+  if (!/Resume/i.test(paused || '')) throw new Error('pause state not shown: ' + paused);
+  await tap('#more-btn'); await page.waitForTimeout(300);
+  await tap('#record-pause-btn'); await page.waitForTimeout(700);
+  const resumed = await page.textContent('#record-pause-btn .tool-label');
+  if (!/Pause/i.test(resumed || '')) throw new Error('resume state not shown: ' + resumed);
+  const [d] = await Promise.all([page.waitForEvent('download', { timeout: 10000 }), (async () => {
+    await tap('#more-btn'); await page.waitForTimeout(300); await tap('#record-btn');
+  })()]);
+  if (!/\.(webm|mp4)$/i.test(d.suggestedFilename())) throw new Error('unexpected recording: ' + d.suggestedFilename());
+  return d.suggestedFilename();
+});
+await step('more menu: add files opens the picker (pointer click)', async () => {
+  await tap('#more-btn'); await page.waitForTimeout(300);
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser', { timeout: 4000 }), tap('#add-more-btn')]);
+  return chooser.isMultiple() ? 'multi-select' : 'single-select';
+});
 
 // fullscreen + cinema
 await step('fullscreen button', async () => { await tap('#fullscreen-btn'); await page.waitForTimeout(1200); const fs = await page.evaluate(() => !!document.fullscreenElement || document.getElementById('shell').classList.contains('is-cinema')); await snap('05-fullscreen'); const r = await page.evaluate(() => { const c = document.getElementById('ray-canvas').getBoundingClientRect(); return [Math.round(c.width), Math.round(c.height), innerWidth, innerHeight]; }); if (await page.evaluate(() => !!document.fullscreenElement)) await tap('#fullscreen-btn').catch(() => page.evaluate(() => document.exitFullscreen())); else await page.keyboard.press('Escape'); await page.waitForTimeout(800); return 'entered=' + fs + ' canvas ' + r.join('x'); });

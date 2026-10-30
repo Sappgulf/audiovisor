@@ -1,3 +1,12 @@
+/* Self-hosted variable-font subsets keep typography working offline and
+   remove a third-party render dependency. Files live in public/fonts. */
+@font-face { font-family: 'Space Grotesk'; src: url('/fonts/space-grotesk-400.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('/fonts/space-grotesk-500.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('/fonts/space-grotesk-600.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('/fonts/space-grotesk-700.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'JetBrains Mono'; src: url('/fonts/jetbrains-mono-400.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'JetBrains Mono'; src: url('/fonts/jetbrains-mono-500.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+
 :root {
   /* Channels only, so every rgba() built from the accent can be re-tinted by
      setting one property. Twenty-five call sites had the brass literal baked
@@ -1706,9 +1715,13 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 }
 .queue-dur { font-size: 10px; color: var(--text-40); font-variant-numeric: tabular-nums; }
 
-.queue-remove { opacity: 0; transition: opacity 0.16s var(--ease), background 0.16s var(--ease); border-radius: 50%; }
-.queue-row:hover .queue-remove,
-.queue-row.is-active .queue-remove { opacity: 1; }
+.queue-row[draggable="true"] { cursor: grab; }
+.queue-row.is-dragging { opacity: 0.45; cursor: grabbing; }
+.queue-row.is-drop { border-color: var(--accent-line); background: var(--accent-dim); }
+.queue-next, .queue-remove { opacity: 0; transition: opacity 0.16s var(--ease), background 0.16s var(--ease); border-radius: 50%; }
+.queue-row:hover .queue-next, .queue-row:hover .queue-remove,
+.queue-row.is-active .queue-next, .queue-row.is-active .queue-remove { opacity: 1; }
+.queue-next:disabled { opacity: 0.25; }
 
 .queue-empty {
   padding: 32px 16px;
@@ -1748,14 +1761,19 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 }
 .library-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border-soft); background: var(--glass); }
 .library-title { font-size: 10px; letter-spacing: 0.14em; color: var(--text); font-weight: 600; flex: 1; }
-.library-list { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.library-search { padding: 8px 12px; border-bottom: 1px solid var(--border-soft); }
+.library-search .connect-input { width: 100%; padding: 7px 10px; font-size: 11px; }
+.library-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 .library-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; border: 1px solid transparent; transition: all 0.16s var(--ease); }
 .library-row:hover { background: var(--glass); border-color: var(--border-soft); }
 .library-row[aria-selected="true"] { background: var(--glass); border-color: var(--accent-line); }
 .library-row.is-remix { border-left: 3px solid var(--accent); }
-.library-name { flex: 1; font-size: 12px; font-weight: 550; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.library-copy { flex: 1; min-width: 0; }
+.library-name { font-size: 12px; font-weight: 550; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.library-remix-tag { font-size: 9px; color: var(--accent); margin-left: 6px; }
 .library-meta { font-size: 10px; color: var(--text-40); }
 .library-actions { display: flex; gap: 6px; }
+.library-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--border-soft); background: var(--glass); font-size: 9px; letter-spacing: 0.1em; color: var(--text-40); flex-shrink: 0; }
 .library-empty { padding: 28px 16px; text-align: center; font-size: 10px; letter-spacing: 0.12em; color: var(--text-40); background: var(--glass); border: 1px dashed var(--border); border-radius: 12px; margin: 8px; }
 
 /* ---------- Record button state ---------- */
@@ -3324,3 +3342,31 @@ html, body {
 .provider-apple .provider-btn { color: #fff; }
 .provider-btn:hover { filter: brightness(1.08); }
 .provider-card .sp-help .sp-login { margin-top: 8px; }
+
+/* ---------- Party QR ---------- */
+.party-qr {
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-align: center;
+}
+.party-qr-code { display: grid; place-items: center; min-height: 180px; background: #fff; border-radius: 8px; padding: 8px; }
+.party-qr-code svg { display: block; width: min(180px, 55vw); height: auto; }
+.party-qr-loading { font-size: 9px; color: #5a5650; letter-spacing: 0.08em; }
+.party-qr-url { margin: 8px 0; font-size: 9px; color: var(--text-40); word-break: break-all; max-height: 44px; overflow: auto; }
+.party-qr .mini-btn { width: 100%; }
+
+/* ---------- Custom palette editor ---------- */
+.custom-theme { margin-top: 12px; padding: 10px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--glass); display: flex; flex-direction: column; gap: 8px; }
+.custom-theme-copy { display: flex; flex-direction: column; gap: 2px; }
+.custom-theme-copy strong { font-size: 11px; color: var(--text); font-weight: 550; }
+.custom-theme-copy span { font-size: 9px; letter-spacing: 0.08em; color: var(--text-40); }
+.custom-preview { height: 22px; border-radius: 6px; border: 1px solid var(--border); }
+.custom-colors { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.custom-color { width: 100%; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: transparent; cursor: pointer; }
+.custom-color::-webkit-color-swatch-wrapper { padding: 2px; }
+.custom-color::-webkit-color-swatch { border: 0; border-radius: 4px; }
+.custom-actions { display: flex; gap: 6px; }
+.custom-actions .mini-btn { flex: 1; }

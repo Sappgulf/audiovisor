@@ -29,6 +29,7 @@ export const ICONS = {
   spotify: svg('<circle cx="12" cy="12" r="9.2" fill="none"/><path d="M8.4 10.6 C10.8 9.8 13.2 10 15.6 10.9" fill="none"/><path d="M8.6 13.2 C10.6 12.6 12.8 12.7 15 13.6" fill="none"/><path d="M9 15.6 C10.6 15.1 12.2 15.2 13.8 16" fill="none"/>'),
   keyboard: svg('<rect x="2.6" y="6" width="18.8" height="12" rx="2.2" fill="none"/><path d="M6.4 9.8 H6.5"/><path d="M9.8 9.8 H9.9"/><path d="M13.2 9.8 H13.3"/><path d="M16.6 9.8 H16.7"/><path d="M6.4 13 H6.5"/><path d="M9.8 13 H9.9"/><path d="M13.2 13 H13.3"/><path d="M16.6 13 H16.7"/><path d="M8.6 15.9 H15.4"/>'),
   plus: svg('<path d="M12 5.2 V18.8"/><path d="M5.2 12 H18.8"/>'),
+  download: svg('<path d="M12 3.4 V15.4"/><path d="M7.2 10.8 L12 15.6 L16.8 10.8"/><path d="M4.4 20.2 H19.6"/>'),
   more: svg('<circle cx="5.4" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18.6" cy="12" r="1.7" fill="currentColor" stroke="none"/>'),
   sliders: svg('<path d="M5 20V14"/><path d="M5 10V4"/><path d="M12 20V12"/><path d="M12 8V4"/><path d="M19 20V16"/><path d="M19 12V4"/><path d="M2.6 14 H7.4"/><path d="M9.6 8 H14.4"/><path d="M16.6 16 H21.4"/>'),
   search: svg('<circle cx="11" cy="11" r="6.2" fill="none"/><path d="M15.6 15.6 L20.2 20.2"/>'),

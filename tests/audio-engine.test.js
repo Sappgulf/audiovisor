@@ -377,6 +377,28 @@ describe('AudioEngine', () => {
     expect(engine.source.startCalls.length).toBe(1);
   });
 
+  it('moveQueueItem reorders entries and keeps the playing track current', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3'), makeFile('c.mp3'), makeFile('d.mp3')]);
+    engine.nextTrack();
+    expect(engine.track.name).toBe('b');
+    expect(engine.moveQueueItem(3, 0)).toBe(true);
+    expect(engine.queue.map((t) => t.meta.name)).toEqual(['d', 'a', 'b', 'c']);
+    expect(engine.queueIndex).toBe(2);
+    expect(engine.track.name).toBe('b');
+    expect(engine.moveQueueItem(0, 3)).toBe(true);
+    expect(engine.queue.map((t) => t.meta.name)).toEqual(['a', 'b', 'c', 'd']);
+    expect(engine.queueIndex).toBe(1);
+  });
+
+  it('playNext moves an entry directly behind the current track', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3'), makeFile('c.mp3')]);
+    expect(engine.playNext(2)).toBe(true);
+    expect(engine.queue.map((t) => t.meta.name)).toEqual(['a', 'c', 'b']);
+    expect(engine.queueIndex).toBe(0);
+    expect(engine.playNext(0)).toBe(false);
+    expect(engine.moveQueueItem(-1, 1)).toBe(false);
+  });
+
   it('getLevels with preFetched reuses cached frame (no double sampling)', async () => {
     await engine.addToQueue([makeFile()]);
     engine.play();

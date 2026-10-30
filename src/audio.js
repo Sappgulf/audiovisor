@@ -699,6 +699,27 @@ export class AudioEngine {
     if (this.onQueueChange) this.onQueueChange();
   }
 
+  /** Move a queue entry. The currently playing track keeps its identity. */
+  moveQueueItem(from, to) {
+    if (!Number.isInteger(from) || !Number.isInteger(to)) return false;
+    if (from < 0 || from >= this.queue.length || to < 0 || to >= this.queue.length) return false;
+    if (from === to) return false;
+    const [item] = this.queue.splice(from, 1);
+    this.queue.splice(to, 0, item);
+    if (this.queueIndex === from) this.queueIndex = to;
+    else if (from < this.queueIndex && to >= this.queueIndex) this.queueIndex--;
+    else if (from > this.queueIndex && to <= this.queueIndex) this.queueIndex++;
+    if (this.onQueueChange) this.onQueueChange();
+    return true;
+  }
+
+  /** Move a queue entry to play immediately after the current one. */
+  playNext(i) {
+    if (i < 0 || i >= this.queue.length || i === this.queueIndex) return false;
+    const target = Math.min(this.queue.length - 1, Math.max(0, this.queueIndex + 1));
+    return this.moveQueueItem(i, target);
+  }
+
   /** Fisher–Yates shuffle of the queue, keeping the current track first. */
   shuffleQueue() {
     if (this.queue.length < 2) return;

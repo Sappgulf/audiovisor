@@ -1,7 +1,7 @@
 {
   "name": "audiovisor",
   "private": true,
-  "version": "8.24.0",
+  "version": "8.25.0",
   "type": "module",
   "sideEffects": false,
   "engines": {
@@ -27,7 +27,11 @@
     "bench": "node scripts/live-bench.mjs",
     "e2e": "node scripts/e2e.mjs",
     "rayshots": "node scripts/ray-shots.mjs",
-    "ci": "npm run lint && npm run typecheck && npm run build && npm test && npm run size"
+    "ci": "npm run lint && npm run typecheck && npm run build && npm test && npm run size",
+    "a11y": "node scripts/a11y.mjs",
+    "version:bump": "node scripts/version.mjs",
+    "shots:pwa": "node scripts/make-pwa-shots.mjs",
+    "offline": "node scripts/offline.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -43,5 +47,8 @@
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vitest": "^5.0.2"
+  },
+  "dependencies": {
+    "qrcode-generator": "^1.5.2"
   }
 }

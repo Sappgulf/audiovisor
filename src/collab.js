@@ -1,6 +1,7 @@
 // @ts-check
 import { readJSON, writeJSON } from './storage.js';
 import { esc } from './utils.js';
+import { loadCustomTheme } from './custom-theme.js';
 
 /**
  * Collab & share: the shareable look link, the party QR panel and the local
@@ -17,35 +18,63 @@ import { esc } from './utils.js';
  * @param {(id: string) => void} deps.setMode
  * @param {(id: string) => void} deps.setTheme
  * @param {(name: string, on: boolean) => void} deps.setFx
+ * @param {(colors: string[], opts?: object) => void} [deps.setCustomTheme]
  * @param {Document} [deps.doc]
  * @param {Location} [deps.location]
  */
-export function createCollab({ state, toast, setMode, setTheme, setFx, doc = document, location = window.location }) {
+export function createCollab({ state, toast, setMode, setTheme, setFx, setCustomTheme = () => {}, doc = document, location = window.location }) {
   const COLLAB_KEY = 'audiovisor.collab';
   const COMMENTS_KEY = 'audiovisor.comments';
 
-  doc.getElementById('share-btn')?.addEventListener('click', async () => {
-    const data = btoa(JSON.stringify({ mode: state.modeId, theme: state.themeId, fx: state.fx }));
-    const url = location.origin + location.pathname + '#share=' + data;
-    try { await navigator.clipboard.writeText(url); toast('Link <b>copied</b>'); } catch { prompt('Copy link', url); }
-    // store in local collab history
+  function lookUrl() {
+    const custom = state.themeId === 'custom' ? loadCustomTheme()?.colors : undefined;
+    const data = btoa(JSON.stringify({ mode: state.modeId, theme: state.themeId, fx: state.fx, custom }));
+    return location.origin + location.pathname + '#share=' + data;
+  }
+
+  async function copyLookLink() {
+    const url = lookUrl();
+    try { await navigator.clipboard.writeText(url); toast('Link <b>copied</b>'); }
+    catch { prompt('Copy link', url); }
     const hist = readJSON(COLLAB_KEY, []);
     hist.unshift({ url, at: Date.now() });
     writeJSON(COLLAB_KEY, hist.slice(0, 20));
-  });
+    return url;
+  }
 
-  doc.getElementById('party-btn')?.addEventListener('click', () => {
-    const qr = doc.getElementById('party-qr');
+  doc.getElementById('share-btn')?.addEventListener('click', () => { void copyLookLink(); });
+
+  doc.getElementById('party-btn')?.addEventListener('click', async () => {
+    const panel = doc.getElementById('party-qr');
+    if (!panel) return;
+    const opening = panel.classList.contains('is-hidden');
+    panel.classList.toggle('is-hidden', !opening);
+    if (!opening) return;
+
+    const url = lookUrl();
     const urlEl = doc.getElementById('qr-url');
-    if (urlEl) urlEl.textContent = location.href;
-    qr?.classList.toggle('is-hidden');
-    toast('Party <b>QR</b> — others scan to join');
-    // broadcast via BroadcastChannel for live sync
+    if (urlEl) urlEl.textContent = url;
+    const target = doc.getElementById('party-qr-code');
+    if (target) target.innerHTML = '<span class="mono party-qr-loading">Rendering QR…</span>';
+    try {
+      const { default: qrcode } = await import('qrcode-generator');
+      const qr = qrcode(0, 'M');
+      qr.addData(url);
+      qr.make();
+      if (target) target.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+      toast('Party <b>QR</b> — scan to open this look');
+    } catch {
+      if (target) target.innerHTML = '<span class="mono party-qr-loading">QR unavailable — copy the link below</span>';
+    }
+    /* Same-browser tabs still sync live over BroadcastChannel; the QR carries
+       the look itself, which works across devices without a backend. */
     try {
       const bc = new BroadcastChannel('audiovisor-party');
       bc.postMessage({ type: 'party', mode: state.modeId, theme: state.themeId });
     } catch {}
   });
+
+  doc.getElementById('party-copy')?.addEventListener('click', () => { void copyLookLink(); });
 
   const commentInput = doc.getElementById('comment-input');
   const collabEl = doc.getElementById('collab-comments');
@@ -89,6 +118,7 @@ export function createCollab({ state, toast, setMode, setTheme, setFx, doc = doc
     const h = location.hash;
     if (h.startsWith('#share=')) {
       const data = JSON.parse(atob(h.slice(7)));
+      if (Array.isArray(data.custom) && data.custom.length) setCustomTheme(data.custom);
       if (data.mode) setMode(data.mode);
       if (data.theme) setTheme(data.theme);
       if (data.fx) for (const [k, v] of Object.entries(data.fx)) setFx(k, v);

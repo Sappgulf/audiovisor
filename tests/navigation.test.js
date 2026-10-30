@@ -47,6 +47,20 @@ describe('More menu', () => {
     expect(document.getElementById('more-menu').classList.contains('is-hidden')).toBe(true);
     expect(document.activeElement.id).toBe('fullscreen-btn');
   });
+
+  it('survives the transient body focus of a pointer press on a later action', async () => {
+    createOverflowMenu();
+    document.getElementById('more-btn').click();
+    const snapshot = document.getElementById('snapshot-btn');
+    const record = document.getElementById('record-btn');
+    snapshot.dispatchEvent(new FocusEvent('focusout', {
+      bubbles: true,
+      relatedTarget: record,
+    }));
+    document.body.focus();
+    await Promise.resolve();
+    expect(document.getElementById('more-menu').classList.contains('is-hidden')).toBe(false);
+  });
 });
 
 describe('visual navigation', () => {

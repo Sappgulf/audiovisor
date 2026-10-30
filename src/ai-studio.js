@@ -20,22 +20,33 @@ import { AI_PRESETS, suggestPreset } from './ai.js';
 export function createAiStudio({ engine, toast, setFx, setTheme, saveSettings, doc = document }) {
   const stems = doc.getElementById('ai-stems');
   if (stems) {
-    ['vocals', 'drums', 'bass'].forEach((s) => {
+    const buttons = new Map();
+    let activeStem = null;
+    const frequencies = { vocals: 3200, drums: 8000, bass: 180 };
+    function restoreFilter() {
+      if (!engine.filter) return;
+      engine.filter.type = 'lowpass';
+      engine.filter.frequency.setTargetAtTime(engine.fx.lowpass ? 400 : 22050, engine.ctx?.currentTime || 0, 0.08);
+    }
+    function setStem(name) {
+      const next = activeStem === name ? null : name;
+      if (next && !engine.filter) {
+        toast('<b>Play something first</b>', { duration: 1600 });
+        return;
+      }
+      activeStem = next;
+      for (const [key, btn] of buttons) btn.classList.toggle('is-active', key === activeStem);
+      if (!next) { restoreFilter(); toast('Stem <b>all</b>'); return; }
+      engine.filter.type = 'bandpass';
+      engine.filter.frequency.setTargetAtTime(frequencies[next], engine.ctx?.currentTime || 0, 0.08);
+      toast(`Stem <b>${next}</b> solo`);
+    }
+    ['vocals', 'drums', 'bass'].forEach((name) => {
       const b = doc.createElement('button');
       b.className = 'fx-chip';
-      b.innerHTML = `<span class="chip-dot"></span><span class="chip-txt">${s}</span>`;
-      b.addEventListener('click', () => {
-        b.classList.toggle('is-active');
-        const on = b.classList.contains('is-active');
-        if (!engine.filter) { toast('<b>Play something first</b>', { duration: 1600 }); b.classList.remove('is-active'); return; }
-        // stem isolation via filter
-        if (s === 'vocals') engine.filter.frequency.setTargetAtTime(on ? 3200 : 22050, engine.ctx?.currentTime || 0, 0.08);
-        if (s === 'bass') engine.filter.frequency.setTargetAtTime(on ? 180 : 22050, engine.ctx?.currentTime || 0, 0.08);
-        if (s === 'drums') engine.filter.frequency.setTargetAtTime(on ? 8000 : 22050, engine.ctx?.currentTime || 0, 0.08);
-        engine.filter.type = 'bandpass';
-        if (!on) { engine.filter.type = 'lowpass'; engine.filter.frequency.setTargetAtTime(engine.fx.lowpass ? 400 : 22050, engine.ctx?.currentTime || 0, 0.08); }
-        toast(`Stem <b>${s}</b> ${on ? 'solo' : 'all'}`);
-      });
+      b.innerHTML = `<span class="chip-dot"></span><span class="chip-txt">${name}</span>`;
+      b.addEventListener('click', () => setStem(name));
+      buttons.set(name, b);
       stems.appendChild(b);
     });
   }
@@ -57,10 +68,13 @@ export function createAiStudio({ engine, toast, setFx, setTheme, saveSettings, d
   }
 
   doc.getElementById('ai-suggest')?.addEventListener('click', () => {
-    const pr = suggestPreset(Math.floor(Math.random() * 9999));
+    const levels = engine.getLevels?.() || {};
+    const bpm = engine.beat?.bpm || 0;
+    const mood = doc.getElementById('mood-value')?.textContent?.trim() || '';
+    const pr = suggestPreset({ ...levels, mood, bpm });
     for (const [k, v] of Object.entries(pr.fx)) setFx(k, !!v);
     setTheme(pr.theme);
     saveSettings();
-    toast(`AI suggests <b>${pr.name}</b>`);
+    toast(`AI suggests <b>${pr.name}</b>${mood && mood !== '—' ? ` for ${mood}` : ''}`);
   });
 }

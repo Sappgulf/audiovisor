@@ -414,3 +414,34 @@ describe('touch-device compositing', () => {
     }
   });
 });
+
+describe.skipIf(!hasDist)('OS integration', () => {
+  it('accepts audio via the system share sheet', () => {
+    expect(manifest.share_target?.action).toBe('/share-target');
+    expect(manifest.share_target?.method).toBe('POST');
+    expect(manifest.share_target?.params?.files?.[0]?.name).toBe('audio');
+    expect(manifest.share_target?.params?.files?.[0]?.accept).toContain('audio/mpeg');
+  });
+
+  it('registers as a handler for local audio files', () => {
+    const handler = manifest.file_handlers?.[0];
+    expect(handler?.action).toBe('/');
+    expect(handler?.accept?.['audio/*']).toContain('.mp3');
+    expect(handler?.accept?.['audio/*']).toContain('.flac');
+  });
+
+  it('offers direct shortcuts into the stage, library and looks', () => {
+    const urls = (manifest.shortcuts || []).map((s) => s.url);
+    expect(urls).toContain('/?open=library');
+    expect(urls).toContain('/?open=look');
+    expect(manifest.launch_handler?.client_mode).toBe('focus-existing');
+  });
+
+  it('ships the screenshots install prompts use', () => {
+    for (const shot of manifest.screenshots || []) {
+      expect(existsSync(`dist${shot.src}`), `missing ${shot.src}`).toBe(true);
+      expect(shot.type).toBe('image/jpeg');
+      expect(shot.form_factor).toMatch(/^(wide|narrow)$/);
+    }
+  });
+});

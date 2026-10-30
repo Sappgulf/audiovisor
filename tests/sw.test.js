@@ -42,7 +42,7 @@ describe('immutable asset matching', () => {
   it('does not match anything that must stay network-first', () => {
     for (const p of [
       '/', '/index.html', '/sw.js', '/manifest.json',
-      '/icons/icon-192.png', '/og.png',
+      '/icons/icon-192.png', '/og.jpg',
       '/assets/unhashed.js',          // no hash: could change without a new name
       '/assets/short-abc.js',         // hash too short to be a build hash
     ]) {
@@ -70,6 +70,21 @@ describe('cache versioning', () => {
 
   it('drops caches that are not the current one on activate', () => {
     expect(sw).toMatch(/keys\.filter\(\(k\) => k !== CACHE\)/);
+  });
+});
+
+describe('offline precache', () => {
+  it('loads the build manifest and caches every asset individually', () => {
+    expect(sw).toContain('/precache-manifest.json');
+    expect(sw).toMatch(/Promise\.allSettled\(assets\.map/);
+  });
+
+  it('handles the PWA share target before the GET-only gate', () => {
+    const share = sw.indexOf("url.pathname === '/share-target'");
+    const getGate = sw.indexOf("request.method !== 'GET'");
+    expect(share).toBeGreaterThan(0);
+    expect(share).toBeLessThan(getGate);
+    expect(sw).toContain("caches.match('/__shared_audio__')");
   });
 });
 

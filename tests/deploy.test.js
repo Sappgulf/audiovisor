@@ -50,3 +50,29 @@ describe('deployment caching', () => {
     expect(header('/(.*)', 'Referrer-Policy')).toBe('strict-origin-when-cross-origin');
   });
 });
+
+describe('security policy', () => {
+  it('ships a CSP that blocks object/base injection and unknown scripts', () => {
+    const csp = header('/(.*)', 'Content-Security-Policy');
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("base-uri 'self'");
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain('https://sdk.scdn.co');
+    expect(csp).toContain('https://js-cdn.music.apple.com');
+  });
+
+  it('allows local audio streams and album art without allowing arbitrary frames', () => {
+    const csp = header('/(.*)', 'Content-Security-Policy');
+    expect(csp).toContain('media-src');
+    expect(csp).toContain('blob:');
+    expect(csp).toContain('img-src');
+    expect(csp).toContain('frame-src');
+  });
+
+  it('caches self-hosted fonts but not as immutable', () => {
+    const value = header('/fonts/(.*)', 'Cache-Control');
+    expect(value).toContain('max-age=86400');
+    expect(value).not.toContain('immutable');
+  });
+});

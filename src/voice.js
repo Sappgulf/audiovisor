@@ -50,4 +50,8 @@ export class VoiceSynth {
       this.osc = null;
     }
   }
+  dispose() {
+    this.stop();
+    try { this.gain.disconnect(); } catch { /* already detached */ }
+  }
 }

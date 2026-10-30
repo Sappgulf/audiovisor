@@ -304,13 +304,20 @@ float scParticles(vec3 p) {
      least ~0.78 away; capping the result at 0.75 keeps it a safe bound. */
   vec3 side = sign(p - cell * c);
   side = mix(vec3(1.0), side, abs(side));
+  /* Four spectrum taps outside the 8-cell search instead of one texture
+     fetch per cell inside it. The hash still gives each ember its own band,
+     but the distance field pays four samples per step, not eight. */
+  float b0 = spec(0.10);
+  float b1 = spec(0.34);
+  float b2 = spec(0.58);
+  float b3 = spec(0.82);
   float d = 0.75;
   for (int x = 0; x <= 1; x++)
   for (int y = 0; y <= 1; y++)
   for (int z = 0; z <= 1; z++) {
     vec3 id = cell + vec3(float(x), float(y), float(z)) * side;
     vec3 h = hash33(id);
-    float band = spec(h.x);
+    float band = h.x < 0.25 ? b0 : h.x < 0.5 ? b1 : h.x < 0.75 ? b2 : b3;
     vec3 off = (h - 0.5) * 0.75;
     off.y += sin(uTime * (0.4 + h.y * 0.8) + h.z * TAU) * 0.35;
     vec3 q = p - (id * c + off);
@@ -611,7 +618,11 @@ float scBloom(vec3 p) {
       float leafD = sdCapsule(p, leaf, tip, 0.045 * size);
       if (leafD < d) { d = leafD; g_id = 6.0; g_aux = 0.38 + float(side) * 0.2; }
     }
-    float localBound = length(p - head) - 1.55 * size;
+    /* Petals reach at most 0.79*size + 0.672 from the head (max sensitivity
+       and beat). This bound clears that with a small margin but is much
+       tighter than the old 1.55*size for the large flower, so rays passing
+       it skip the five ellipsoid evaluations sooner. */
+    float localBound = length(p - head) - (0.80 * size + 0.72);
     if (localBound < d) {
       vec3 flower = p - head;
       float phase = uTime * (0.38 + fi * 0.08 + uMid * 0.12) + fi * 2.0;
@@ -736,17 +747,20 @@ float scGpu(vec3 p) {
   float wire = sdCapsule(q, vec3(0.0, -1.95, 0.0), vec3(0.0, 1.95, 0.0), 0.02);
   if (wire < d) { d = wire; g_id = 4.0; g_aux = 0.78; }
   /* Eight explicit struts make an open compute chassis. A thin box shell
-     looked like a solid plate from the moving camera. */
-  float frame = 1e9;
-  for (int i = 0; i < 4; i++) {
-    float xSide = i < 2 ? -1.56 : 1.56;
-    float ySide = (i == 0 || i == 2) ? -1.56 : 1.56;
-    float zSide = (i == 0 || i == 1) ? -1.56 : 1.56;
-    float xRail = sdBox(q - vec3(0.0, ySide, zSide), vec3(1.56, 0.024, 0.024));
-    float zRail = sdBox(q - vec3(xSide, ySide, 0.0), vec3(0.024, 0.024, 1.56));
-    frame = min(frame, min(xRail, zRail));
+     looked like a solid plate from the moving camera. Low tier keeps the
+     pylons and core but skips the eight box evaluations. */
+  if (uSteps >= 80) {
+    float frame = 1e9;
+    for (int i = 0; i < 4; i++) {
+      float xSide = i < 2 ? -1.56 : 1.56;
+      float ySide = (i == 0 || i == 2) ? -1.56 : 1.56;
+      float zSide = (i == 0 || i == 1) ? -1.56 : 1.56;
+      float xRail = sdBox(q - vec3(0.0, ySide, zSide), vec3(1.56, 0.024, 0.024));
+      float zRail = sdBox(q - vec3(xSide, ySide, 0.0), vec3(0.024, 0.024, 1.56));
+      frame = min(frame, min(xRail, zRail));
+    }
+    if (frame < d) { d = frame; g_id = 6.0; g_aux = 0.72; }
   }
-  if (frame < d) { d = frame; g_id = 6.0; g_aux = 0.72; }
   float halo = abs(sdTorus(q.xzy, vec2(0.82 + uBass * 0.12, 0.025))) - 0.006;
   if (halo < d) { d = halo; g_id = 4.0; g_aux = 0.95; }
   float core = sdSphere(q, 0.32 + uBass * 0.18 + uBeat * 0.08);

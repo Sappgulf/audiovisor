@@ -4,6 +4,26 @@ import { esc, fmtTime } from './utils.js';
 import { clampActive } from './palette.js';
 import * as Library from './library.js';
 
+function fmtBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/** Push saved EQ gains through the real inputs so UI, engine and settings agree. */
+function applyEqGains(gains) {
+  const inputs = document.querySelectorAll('.eq-row input[type="range"]');
+  inputs.forEach((node, i) => {
+    const input = /** @type {HTMLInputElement} */ (node);
+    const v = Number(gains[i]);
+    if (!Number.isFinite(v)) return;
+    input.value = String(Math.max(-10, Math.min(10, v)));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
 /**
  * Queue and library panels.
  *
@@ -41,6 +61,7 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
 
   let queueActiveIndex = 0;
   let libraryActiveIndex = 0;
+  let queueDragIndex = null;
 
   const libSearchInput = () => /** @type {HTMLInputElement | null} */ (libraryPanel.querySelector('#lib-search'));
 
@@ -99,10 +120,12 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
     const file = new File([blob], rec.name + '.' + rec.ext.toLowerCase());
     await engine.addToQueue([file]);
     if (rec.edits) {
-      for (const [k, v] of Object.entries(rec.edits)) {
-        if (v) setFx(k, true);
-      }
+      /* Restore the exact saved chain. The old loop only re-enabled the FX
+         stored as true, so effects from the previous session stayed on and
+         a "remix" was never the remix that was saved. */
+      for (const k of Object.keys(engine.fx || {})) setFx(k, !!rec.edits[k]);
     }
+    if (Array.isArray(rec.eq)) applyEqGains(rec.eq);
     toggleLibrary(false);
     toast(`Loaded <b>${esc(rec.name)}</b> from library`);
   }
@@ -139,6 +162,17 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
       }
     }
 
+    const next = e.target.closest('.queue-next');
+    if (next) {
+      const i = Number(next.dataset.i);
+      if (!Number.isNaN(i) && engine.playNext(i)) {
+        renderQueue();
+        setQueueActive(clampActive(engine.queueIndex + 1, engine.queue.length), false);
+        toast('Queued <b>next</b>', { duration: 1200 });
+      }
+      return;
+    }
+
     const remove = e.target.closest('.queue-remove');
     if (remove) {
       const i = Number(remove.dataset.i);
@@ -152,6 +186,43 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
 
     const row = e.target.closest('.queue-row');
     if (row) playQueueRow(Number(row.dataset.i));
+  });
+
+  queuePanel.addEventListener('dragstart', (e) => {
+    const row = e.target.closest('.queue-row');
+    if (!row) return;
+    queueDragIndex = Number(row.dataset.i);
+    row.classList.add('is-dragging');
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(queueDragIndex)); } catch { /* Firefox needs this */ }
+    }
+  });
+  queuePanel.addEventListener('dragover', (e) => {
+    if (queueDragIndex === null) return;
+    const row = e.target.closest('.queue-row');
+    if (!row) return;
+    e.preventDefault();
+    getQueueRows().forEach((r) => r.classList.toggle('is-drop', r === row));
+  });
+  queuePanel.addEventListener('dragleave', (e) => {
+    if (!queuePanel.contains(/** @type {Node | null} */ (e.relatedTarget))) getQueueRows().forEach((r) => r.classList.remove('is-drop'));
+  });
+  queuePanel.addEventListener('drop', (e) => {
+    const row = e.target.closest('.queue-row');
+    if (!row || queueDragIndex === null) return;
+    e.preventDefault();
+    const to = Number(row.dataset.i);
+    if (engine.moveQueueItem(queueDragIndex, to)) {
+      renderQueue();
+      setQueueActive(to, true);
+    }
+    queueDragIndex = null;
+    getQueueRows().forEach((r) => r.classList.remove('is-drop', 'is-dragging'));
+  });
+  queuePanel.addEventListener('dragend', () => {
+    queueDragIndex = null;
+    getQueueRows().forEach((r) => r.classList.remove('is-drop', 'is-dragging'));
   });
 
   queuePanel.addEventListener('keydown', (e) => {
@@ -168,6 +239,16 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
     if (e.key === 'Escape') {
       e.preventDefault();
       toggleQueue(false);
+      return;
+    }
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const to = clampActive(queueActiveIndex + (e.key === 'ArrowUp' ? -1 : 1), rows.length);
+      if (engine.moveQueueItem(queueActiveIndex, to)) {
+        renderQueue();
+        setQueueActive(to, true);
+      }
       return;
     }
     if (e.key === 'Home') {
@@ -218,6 +299,17 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
       toggleLibrary(false);
       return;
     }
+    if (e.target.closest('#lib-clear')) {
+      const win = libraryPanel.ownerDocument.defaultView;
+      if (!win?.confirm?.('Delete every saved track from this device?')) return;
+      void (async () => {
+        await Library.clearLibrary();
+        renderLibrary();
+        setLibraryActive(0, false);
+        toast('Library <b>cleared</b>', { duration: 1600 });
+      })();
+      return;
+    }
     const btn = e.target.closest('.lib-play, .lib-export, .lib-del');
     if (btn) {
       const id = btn.dataset.id;
@@ -230,7 +322,7 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
           toast('Rendering <b>remix</b>…', { duration: 1600 });
           try {
             const buf = await engine.ctx.decodeAudioData(rec.arrayBuffer.slice(0));
-            const blob = await Library.renderRemixToWav(buf, rec.edits || engine.fx);
+            const blob = await Library.renderRemixToWav(buf, rec.edits || engine.fx, rec.eq || []);
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -320,6 +412,7 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
   });
 
   function renderQueue() {
+    queueDragIndex = null;
     const q = engine.queue;
     const total = q.reduce((acc, t) => acc + (t.meta?.duration || 0), 0);
     const totalText = q.length ? ` · ${fmtTime(total)}` : '';
@@ -335,11 +428,12 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
       html += `<div class="queue-empty mono">DROP AUDIO FILES TO BUILD A QUEUE</div>`;
     } else {
       html += `<div class="queue-list" role="listbox" aria-label="Queue tracks">` + q.map((t, i) => `
-      <div class="queue-row${i === engine.queueIndex ? ' is-active' : ''}" data-i="${i}" data-index="${i}" role="option" id="queue-row-${i}" tabindex="-1" aria-selected="false">
+      <div class="queue-row${i === engine.queueIndex ? ' is-active' : ''}" data-i="${i}" data-index="${i}" draggable="true" role="option" id="queue-row-${i}" tabindex="-1" aria-selected="false">
         <span class="mono queue-idx">${i === engine.queueIndex ? '▶' : String(i + 1).padStart(2, '0')}</span>
         <span class="queue-name">${esc(t.meta.name)}</span>
         <span class="mono queue-dur">${fmtTime(t.meta.duration)}</span>
-        <button class="icon-x queue-remove" data-i="${i}" title="Remove"><span class="ic ic-sm" data-icon="close"></span></button>
+        <button class="icon-x queue-next" data-i="${i}" title="Play next" draggable="false" ${i === engine.queueIndex ? 'disabled' : ''}><span class="ic ic-sm" data-icon="skip-fwd"></span></button>
+        <button class="icon-x queue-remove" data-i="${i}" title="Remove" draggable="false"><span class="ic ic-sm" data-icon="close"></span></button>
       </div>`).join('') + `</div>`;
     }
     queuePanel.innerHTML = html;
@@ -381,16 +475,18 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
     const filteredMeta = q
       ? baseMeta.filter((m) => m.name.toLowerCase().includes(q) || (m.ext || '').toLowerCase().includes(q))
       : baseMeta;
+    const totalBytes = baseMeta.reduce((n, m) => n + (Number(m.bytes) || 0), 0);
+    const totalLabel = fmtBytes(totalBytes);
     let html = `<div class="library-head"><span class="ic ic-lime" data-icon="layers"></span><span class="mono library-title">LIBRARY · ${filteredMeta.length}</span><button class="icon-x" id="lib-close" title="Close"><span class="ic ic-sm" data-icon="close"></span></button></div>
-  <div style="padding:8px 12px; border-bottom:1px solid var(--border-soft)"><input id="lib-search" class="connect-input" placeholder="Search library…" style="width:100%; padding:7px 10px; font-size:11px"/></div>`;
+  <div class="library-search"><input id="lib-search" class="connect-input" placeholder="Search library…" aria-label="Search saved tracks"/></div>`;
     if (!filteredMeta.length) {
       html += `<div class="library-empty mono">${baseMeta.length ? 'NO MATCHING TRACKS — WIDEN YOUR SEARCH' : 'NO SAVED TRACKS — PLAY A TRACK THEN HIT SAVE'}</div>`;
     } else {
       html += `<div class="library-list" role="listbox" aria-label="Saved library tracks">` + filteredMeta.map((m, i) => `
       <div class="library-row ${m.edits ? 'is-remix' : ''}" data-id="${m.id}" data-index="${i}" role="option" id="lib-row-${i}" tabindex="-1" aria-selected="false">
-        <div style="flex:1; min-width:0">
-          <div class="library-name">${esc(m.name)} ${m.edits ? '<span style="font-size:9px; color:var(--accent); margin-left:6px">REMIX</span>' : ''}</div>
-          <div class="mono library-meta">${esc(m.ext)} · ${(m.duration||0).toFixed(1)}s${m.edits ? ' · ' + Object.keys(m.edits).filter(k=>m.edits[k]).join(', ') : ''}</div>
+        <div class="library-copy">
+          <div class="library-name">${esc(m.name)} ${m.edits ? '<span class="library-remix-tag">REMIX</span>' : ''}</div>
+          <div class="mono library-meta">${esc(m.ext)} · ${(m.duration||0).toFixed(1)}s${m.bytes ? ' · ' + fmtBytes(m.bytes) : ''}${m.edits ? ' · ' + Object.keys(m.edits).filter(k=>m.edits[k]).join(', ') : ''}</div>
         </div>
         <div class="library-actions">
           <button class="ghost-btn lib-play" data-id="${m.id}" title="Play"><span class="ic ic-sm" data-icon="play"></span></button>
@@ -399,6 +495,10 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
         </div>
       </div>`).join('') + `</div>`;
     }
+    html += `<div class="library-foot mono">
+      <span>${totalLabel} on this device</span>
+      <button class="mini-btn" id="lib-clear" ${baseMeta.length ? '' : 'disabled'}>CLEAR ALL</button>
+    </div>`;
     libraryPanel.innerHTML = html;
     libraryPanel.querySelectorAll('[data-icon]').forEach(el => setIcon(el, el.dataset.icon));
     const sInput = libSearchInput();
@@ -434,28 +534,48 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
 
   async function saveToLibrary() {
     if (!engine.buffer || !engine.track) { toast('<b>No track</b> to save', { duration: 1600 }); return; }
-    // render the current buffer to WAV and store that
     try {
-      const ch = engine.buffer.numberOfChannels;
-      const len = engine.buffer.length;
-      const tmp = new OfflineAudioContext(ch, len, engine.buffer.sampleRate);
-      const src = tmp.createBufferSource(); src.buffer = engine.buffer; src.connect(tmp.destination); src.start(0);
-      const rendered = await tmp.startRendering();
-      const blob = await Library.renderRemixToWav(rendered, {});
-      const ab = await blob.arrayBuffer();
       const edits = { ...engine.fx };
+      const eq = (engine.eqFilters || []).map((f) => Number(f.gain.value) || 0);
+      const hasEdits = Object.values(edits).some(Boolean) || eq.some((v) => Math.abs(v) >= 0.05);
+      const item = engine.queue?.[engine.queueIndex];
+      let ab = null;
+      let ext = 'WAV';
+      let sourceName = item?.file?.name || engine.track.name;
+
+      /* Local files are already compressed. Store the original instead of
+         inflating them to WAV: a five-minute track is ~100MB decoded, and a
+         library of a few of those exhausts the origin quota. The saved edit
+         chain is replayed when it is loaded or exported. */
+      if (item?.file) {
+        try {
+          ab = await item.file.arrayBuffer();
+          ext = (item.file.name.split('.').pop() || 'MP3').toUpperCase();
+        } catch { ab = null; }
+      }
+      if (!ab) {
+        const blob = await Library.renderRemixToWav(engine.buffer, {}, eq);
+        ab = await blob.arrayBuffer();
+      }
+
       const rec = await Library.addToLibrary({
-        name: engine.track.name + (Object.values(edits).some(Boolean) ? ' (remix)' : ''),
-        ext: 'WAV',
+        name: engine.track.name + (hasEdits ? ' (remix)' : ''),
+        ext,
         sampleRate: engine.buffer.sampleRate,
-        channels: ch,
+        channels: engine.buffer.numberOfChannels,
         duration: engine.buffer.duration,
         arrayBuffer: ab,
         edits,
-        sourceName: engine.track.name,
+        eq,
+        sourceName,
       });
-      toast(`Saved <b>${esc(rec.name)}</b> to library`, { duration: 2000 });
-    } catch (e) { console.error(e); toast('<b>Save failed</b>', { duration: 2000 }); }
+      try { await navigator.storage?.persist?.(); } catch { /* best effort */ }
+      toast(`Saved <b>${esc(rec.name)}</b> to library · ${fmtBytes(ab.byteLength)}`, { duration: 2200 });
+    } catch (e) {
+      console.error(e);
+      const full = e?.name === 'QuotaExceededError';
+      toast(full ? '<b>Library full</b> — delete a saved track and try again' : '<b>Save failed</b>', { duration: 2600 });
+    }
   }
 
   triggerQueue.addEventListener('click', () => toggleQueue());

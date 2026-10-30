@@ -1,6 +1,7 @@
 // @ts-check
 import { filterCommands, clampActive } from './palette.js';
 import { esc } from './utils.js';
+import { createFocusTrap } from './focus-trap.js';
 
 /**
  * Command palette (⌘/Ctrl + K).
@@ -29,6 +30,7 @@ export function createCommandPalette({ commands, doc = document }) {
   input?.setAttribute('aria-expanded', 'false');
   input?.setAttribute('aria-describedby', 'cmd-status');
 
+  const trap = createFocusTrap(palette, doc);
   let active = 0;
   let returnFocus = null;
   /** The list currently on screen — what Enter must index into. */
@@ -59,9 +61,11 @@ export function createCommandPalette({ commands, doc = document }) {
     active = 0;
     render('');
     input.focus();
+    trap.activate();
   }
 
   function close() {
+    trap.deactivate();
     if (palette.contains(doc.activeElement)) doc.activeElement.blur();
     palette.classList.add('is-hidden');
     palette.setAttribute('aria-hidden', 'true');

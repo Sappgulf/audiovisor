@@ -55,4 +55,14 @@ describe('createToasts', () => {
     expect(root.children).toHaveLength(3);
     expect([...root.children].map((el) => el.textContent)).toEqual(['t2', 't3', 't4']);
   });
+
+  it('keeps bold emphasis but strips executable markup and attributes', () => {
+    toast('<b onclick="alert(1)">safe</b><img src=x onerror=alert(2)><script>alert(3)</script>');
+    expect(root.firstChild.innerHTML).toBe('<b>safe</b>');
+  });
+
+  it('preserves escaped entities from the original message', () => {
+    toast('A &amp; B <b>C</b>');
+    expect(root.firstChild.innerHTML).toBe('A &amp; B <b>C</b>');
+  });
 });

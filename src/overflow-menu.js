@@ -47,9 +47,19 @@ export function createOverflowMenu({ doc = document } = {}) {
       e.preventDefault(); actions[next]?.focus();
     }
   });
-  moreMenu?.addEventListener('focusout', () => queueMicrotask(() => {
-    if (!moreMenu.contains(doc.activeElement) && doc.activeElement !== moreBtn) closeMore(false);
-  }));
+  moreMenu?.addEventListener('focusout', (e) => {
+    /* A pointer press moves focus through a transient body state before it
+       lands on the pressed item: at the microtask below activeElement is
+       BODY, so the menu closed before mouseup and every item except the
+       already-focused first one never received its click. The event's
+       relatedTarget already names the item focus is moving to, so judge by
+       that instead of the asynchronously-current activeElement. */
+    const next = /** @type {Node | null} */ (e.relatedTarget);
+    if (next && (moreMenu.contains(next) || next === moreBtn)) return;
+    queueMicrotask(() => {
+      if (!moreMenu.contains(doc.activeElement) && doc.activeElement !== moreBtn) closeMore(false);
+    });
+  });
   doc.addEventListener('click', (e) => {
     if (!isOpen() || e.target.closest('#more-menu, #more-btn')) return;
     closeMore(false);

@@ -24,7 +24,7 @@ export function createSocialFeed({ state, toast, doc = document }) {
         <div style="font-size:11px; font-weight:600; color:var(--text)">${esc(e.title)}</div>
         <div style="font-size:10px; color:var(--text-40)">${esc(e.user)} · ${esc(e.mode)} · ${e.likes}♥</div>
       </div>
-      <button class="ghost-btn" data-like="${e.id}" style="width:28px; height:28px; flex-shrink:0"><span class="ic ic-sm" data-icon="record"></span></button>
+      <button class="ghost-btn" data-like="${e.id}" title="Like ${esc(e.title)}" aria-label="Like ${esc(e.title)}" style="width:28px; height:28px; flex-shrink:0"><span class="ic ic-sm" data-icon="record"></span></button>
     </div>`).join('');
     el.querySelectorAll('[data-like]').forEach(b => b.addEventListener('click', () => { Social.likeFeed(b.dataset.like); renderSocial(); }));
   }

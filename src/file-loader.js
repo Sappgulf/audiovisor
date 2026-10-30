@@ -155,5 +155,45 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
     loadFiles(e.dataTransfer.files);
   });
 
+  /* ---------- OS integration ---------- */
+
+  /** Take the file a share_target POST parked in the service-worker cache. */
+  async function takeSharedFile() {
+    const win = /** @type {any} */ (doc.defaultView || window);
+    if (!win.caches) return null;
+    try {
+      for (const name of await win.caches.keys()) {
+        const cache = await win.caches.open(name);
+        const res = await cache.match('/__shared_audio__');
+        if (!res) continue;
+        await cache.delete('/__shared_audio__');
+        const blob = await res.blob();
+        const decoded = decodeURIComponent(res.headers.get('X-File-Name') || 'shared-audio');
+        return new File([blob], decoded, { type: res.headers.get('Content-Type') || blob.type || 'audio/mpeg' });
+      }
+    } catch { /* cache unavailable in private mode */ }
+    return null;
+  }
+
+  const shared = new URLSearchParams((doc.defaultView || window).location.search).get('shared');
+  if (shared === '1') {
+    takeSharedFile().then((file) => {
+      if (file) loadFiles([file]);
+      const win = /** @type {any} */ (doc.defaultView || window);
+      const clean = new URL(win.location.href);
+      clean.searchParams.delete('shared');
+      win.history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
+    });
+  }
+
+  const launchQueue = /** @type {any} */ (doc.defaultView || window).launchQueue;
+  launchQueue?.setConsumer?.(async (params) => {
+    const files = [];
+    for (const handle of params.files || []) {
+      try { files.push(await handle.getFile()); } catch { /* stale handle */ }
+    }
+    if (files.length) loadFiles(files);
+  });
+
   return { loadFiles, openFilePicker, dropzone };
 }

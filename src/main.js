@@ -8,23 +8,17 @@ import { esc, fmtTime, pickRandom } from './utils.js';
 import { createToasts } from './toast.js';
 import { createFavicon } from './favicon.js';
 import { createShareCard } from './share-card.js';
-import { createAboutPanel } from './about.js';
-import { createShortcutsOverlay } from './shortcuts.js';
 import { createPanels } from './panels.js';
 import { createControls } from './controls.js';
 import { createModePicker } from './mode-picker.js';
 import { createDrawerTabs } from './drawer-tabs.js';
 import { createSleepTimer } from './sleep-timer.js';
-import { createLookPresets } from './look-presets.js';
-import { createAiStudio } from './ai-studio.js';
-import { createCollab } from './collab.js';
 import { createRecorder } from './recorder.js';
 import { createStageChrome } from './stage-chrome.js';
 import { createKeyboardShortcuts } from './keyboard.js';
 import { createAutoplayGuard } from './autoplay.js';
 import { createOverflowMenu } from './overflow-menu.js';
 import { createFileLoader } from './file-loader.js';
-import { createCommandPalette } from './command-palette.js';
 import { createDrawer } from './drawer.js';
 import { createOnboarding } from './onboarding.js';
 import { registerServiceWorker } from './pwa.js';
@@ -41,16 +35,20 @@ import { extractPalette, paletteToTheme, hashStr } from './artpalette.js';
 import { createRenderLoop } from './render-loop.js';
 import { createRaytraceControls } from './raytrace-controls.js';
 import { createSettingsUI } from './settings-ui.js';
-import { createVoiceInput } from './voice-ui.js';
-import { createSocialFeed } from './social-ui.js';
 import { createPlayState } from './play-state.js';
 import { createConnectLoader } from './connect-loader.js';
 import { createAutopilot } from './autopilot.js';
 import { createTempoPrime } from './tempo-prime.js';
 import { registerMode, registeredModes, isPluginMode } from './plugins.js';
-import { createMidiInput } from './midi.js';
+import { canInstall, promptInstall } from './install.js';
+import { loadCustomTheme, saveCustomTheme } from './custom-theme.js';
 
 const $ = (id) => document.getElementById(id);
+
+/* A saved custom palette is part of the theme vocabulary from the first
+   frame, so restored settings and deep links can resolve it. */
+const storedCustomTheme = loadCustomTheme();
+if (storedCustomTheme && !THEMES.some((t) => t.id === storedCustomTheme.id)) THEMES.push(storedCustomTheme);
 
 const engine = new AudioEngine();
 const renderer = new Renderer($('viz-canvas'));
@@ -197,18 +195,6 @@ function setSliderNormalized(id, norm) {
   saveSettings();
 }
 
-/* MIDI input — opt-in via the MIDI chip in the Look tab. */
-createMidiInput({
-  chip: $('midi-chip'),
-  fxNames: FX,
-  modes: MODES,
-  setSlider: setSliderNormalized,
-  setFx,
-  setMode,
-  toast,
-  setToggle,
-});
-
 // Auto DJ
 let autoDj = false;
 let djFiring = false;
@@ -230,22 +216,94 @@ createSleepTimer({
   label: $('sleep-label'),
 });
 
-/* ---------- look presets, AI studio, collab ---------- */
+/* ---------- install prompt ---------- */
 
-const { savePreset, loadPreset } = createLookPresets({
-  state,
-  fxNames: FX,
-  toast,
-  setMode,
-  setTheme,
-  setFx,
-  saveSettings,
-  row: document.getElementById('preset-row'),
+const installBtn = /** @type {HTMLButtonElement | null} */ ($('install-app-btn'));
+function syncInstallButton() {
+  if (!installBtn) return;
+  const available = canInstall();
+  installBtn.hidden = !available;
+  installBtn.disabled = !available;
+  installBtn.classList.toggle('is-hidden', !available);
+}
+window.addEventListener('audiovisor:installable', syncInstallButton);
+window.addEventListener('audiovisor:installed', syncInstallButton);
+syncInstallButton();
+installBtn?.addEventListener('click', async () => {
+  const result = await promptInstall();
+  syncInstallButton();
+  toast(result === 'accepted' ? 'App <b>installed</b>' : result === 'dismissed' ? 'Install <b>dismissed</b>' : 'Use your browser menu to <b>install</b>', { duration: 2200 });
 });
 
-createAiStudio({ engine, toast, setFx, setTheme, saveSettings });
+/* ---------- look presets + deferred Studio wiring ---------- */
 
-createCollab({ state, toast, setMode, setTheme, setFx });
+let lookPresetsPromise = null;
+let lookPresets = null;
+function loadLookPresets() {
+  if (!lookPresetsPromise) {
+    lookPresetsPromise = import('./look-presets.js').then(({ createLookPresets }) => {
+      lookPresets = createLookPresets({
+        state,
+        fxNames: FX,
+        toast,
+        setMode,
+        setTheme,
+        setFx,
+        saveSettings,
+        row: document.getElementById('preset-row'),
+      });
+      return lookPresets;
+    }).catch((err) => {
+      lookPresetsPromise = null;
+      console.warn('look presets failed to load:', err);
+      return null;
+    });
+  }
+  return lookPresetsPromise;
+}
+const savePreset = (slot) => { void loadLookPresets().then((p) => p?.savePreset(slot)); };
+const loadPreset = (slot) => { void loadLookPresets().then((p) => p?.loadPreset(slot)); };
+for (const id of ['tab-look', 'stage-context', 'explore-modes']) {
+  $(id)?.addEventListener('click', loadLookPresets, { once: true });
+}
+if (typeof requestIdleCallback === 'function') requestIdleCallback(loadLookPresets, { timeout: 3000 });
+else setTimeout(loadLookPresets, 1800);
+
+let studioPromise = null;
+let studioMounted = false;
+function loadStudioExtras() {
+  if (studioPromise) return studioPromise;
+  studioPromise = import('./studio.js').then(({ mountStudio }) => {
+    mountStudio({
+      engine, renderer, state, toast, setMode, setTheme, setFx,
+      setCustomTheme: applyCustomTheme, saveSettings,
+      setSlider: setSliderNormalized, setToggle,
+      fxNames: FX, modes: MODES, chip: $('midi-chip'),
+    });
+    studioMounted = true;
+    return true;
+  }).catch((err) => {
+    studioPromise = null;
+    console.warn('studio extras failed to load:', err);
+    return false;
+  });
+  return studioPromise;
+}
+function armStudioAction(id) {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener('click', async (e) => {
+    if (studioMounted) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    await loadStudioExtras();
+    el.click();
+  }, { once: true, capture: true });
+}
+['voice-btn', 'midi-chip', 'party-btn', 'tab-studio'].forEach(armStudioAction);
+if (location.hash.startsWith('#share=')) void loadStudioExtras();
+else if (typeof requestIdleCallback === 'function') requestIdleCallback(loadStudioExtras, { timeout: 2500 });
+else setTimeout(loadStudioExtras, 1200);
 
 
 /* ---------- mode / theme switching ---------- */
@@ -361,7 +419,7 @@ function onArtworkLoaded(url, img) {
 }
 
 /* Artless local files still get per-track personality: the track name hashes
-   onto one of the 25 built-in palettes, so a given song always lands on the
+   onto one of the 32 built-in palettes, so a given song always lands on the
    same look without pretending we read colours that were never there. */
 function applyNamePalette(name) {
   const base = THEMES[hashStr(name || 'audiovisor') % THEMES.length];
@@ -405,6 +463,38 @@ function setTheme(id) {
   saveSettings();
 }
 
+function applyCustomTheme(colors) {
+  const theme = saveCustomTheme(colors);
+  const existing = THEMES.find((t) => t.id === theme.id);
+  if (existing) Object.assign(existing, theme);
+  else THEMES.push(theme);
+  picker.addTheme?.(theme);
+  setTheme(theme.id);
+  return theme;
+}
+
+let themeEditorPromise = null;
+function loadThemeEditor() {
+  if (themeEditorPromise) return themeEditorPromise;
+  themeEditorPromise = import('./theme-editor.js').then(({ createThemeEditor }) => createThemeEditor({
+    root: $('custom-theme'),
+    picker,
+    getTheme: activeTheme,
+    setCustomTheme: applyCustomTheme,
+    toast,
+  })).catch((err) => {
+    themeEditorPromise = null;
+    console.warn('theme editor failed to load:', err);
+    return null;
+  });
+  return themeEditorPromise;
+}
+for (const id of ['tab-look', 'stage-context', 'explore-modes']) {
+  $(id)?.addEventListener('click', loadThemeEditor, { once: true });
+}
+if (typeof requestIdleCallback === 'function') requestIdleCallback(loadThemeEditor, { timeout: 3000 });
+else setTimeout(loadThemeEditor, 1800);
+
 function randomizeLook() {
   setMode(pickRandom(MODES).id);
   setTheme(pickRandom(THEMES).id);
@@ -446,7 +536,7 @@ function saveSettingsNow() {
 /** The ids this build accepts; anything else in stored/imported JSON is dropped. */
 const SETTINGS_VOCAB = {
   modeIds: MODES.map((m) => m.id),
-  themeIds: ['auto', ...THEMES.map((t) => t.id)],
+  themeIds: [...new Set(['auto', 'custom', ...THEMES.map((t) => t.id)])],
   sliderIds: SLIDERS.map((c) => c.id),
   fxNames: FX,
   rayQualities: RAY_QUALITIES,
@@ -789,12 +879,43 @@ $('mic-btn').addEventListener('click', async () => {
 
 /* ---------- nav ---------- */
 
-const about = createAboutPanel({
-  shell: $('shell'),
-  trigger: $('nav-about'),
-  modeCount: MODES.length,
-  themeCount: THEMES.length,
-});
+/* About, shortcuts and the command palette are loaded on first use. The
+   small proxy keeps the keyboard Escape path working before the lazy panel
+   exists, and the capture listener replays the opening click after mount. */
+let aboutInstance = null;
+let aboutPromise = null;
+function loadAbout() {
+  if (!aboutPromise) {
+    aboutPromise = import('./about.js').then(({ createAboutPanel }) => {
+      aboutInstance = createAboutPanel({
+        shell: $('shell'),
+        trigger: $('nav-about'),
+        modeCount: MODES.length,
+        themeCount: THEMES.length,
+      });
+      return aboutInstance;
+    }).catch((err) => {
+      aboutPromise = null;
+      console.warn('about panel failed to load:', err);
+      return null;
+    });
+  }
+  return aboutPromise;
+}
+const about = {
+  isOpen: () => !!aboutInstance?.isOpen(),
+  setOpen: (open) => {
+    if (open) void loadAbout().then((inst) => inst?.setOpen(true));
+    else aboutInstance?.setOpen(false);
+  },
+};
+$('nav-about')?.addEventListener('click', async (e) => {
+  if (aboutInstance) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  await loadAbout();
+  $('nav-about')?.click();
+}, { once: true, capture: true });
 
 createDrawer({ state });
 
@@ -895,6 +1016,20 @@ renderLoop.start();
 // Onboarding tour
 createOnboarding({ toast, modeCount: MODES.length, themeCount: THEMES.length });
 
+/* Manifest shortcuts open a specific surface without adding another route:
+   /?open=library, /?open=settings or /?open=look. */
+const openParam = new URLSearchParams(location.search).get('open');
+if (openParam) {
+  requestAnimationFrame(() => {
+    if (openParam === 'library') $('library-btn')?.click();
+    else if (openParam === 'look') { $('nav-settings')?.click(); $('tab-look')?.click(); }
+    else if (openParam === 'settings') $('nav-settings')?.click();
+    const clean = new URL(location.href);
+    clean.searchParams.delete('open');
+    history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
+  });
+}
+
 // Command palette (Cmd+K)
 function buildCommands() {
   const cmds = [];
@@ -926,10 +1061,40 @@ function buildCommands() {
     keys: `tab ${t}`,
   }));
   cmds.push({ label: 'Export Remix', action: () => document.getElementById('export-remix-btn')?.click(), keys: 'export' });
+  cmds.push({
+    label: 'Install app',
+    action: async () => {
+      const result = await promptInstall();
+      toast(result === 'accepted' ? 'App <b>installed</b>' : result === 'dismissed' ? 'Install <b>dismissed</b>' : 'Use your browser menu to <b>install</b>', { duration: 2200 });
+    },
+    keys: 'install pwa app',
+  });
   return cmds;
 }
 
-createCommandPalette({ commands: buildCommands() });
+let palettePromise = null;
+function loadPalette() {
+  if (!palettePromise) {
+    palettePromise = import('./command-palette.js').then(({ createCommandPalette }) => {
+      const palette = createCommandPalette({ commands: buildCommands() });
+      return palette;
+    }).catch((err) => {
+      palettePromise = null;
+      console.warn('command palette failed to load:', err);
+      return null;
+    });
+  }
+  return palettePromise;
+}
+function paletteHotkey(e) {
+  if (!((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')) return;
+  e.preventDefault();
+  loadPalette().then((palette) => {
+    window.removeEventListener('keydown', paletteHotkey);
+    palette?.toggle();
+  });
+}
+window.addEventListener('keydown', paletteHotkey);
 
 function isTypingTarget(el) {
   if (!el || !(el instanceof HTMLElement)) return false;
@@ -968,19 +1133,45 @@ gpu.whenReady().then((backend) => {
   if (window.__av) window.__av.gpuBackend = backend;
 });
 
-// Voice AI
-createVoiceInput({ engine, renderer, toast });
-
-// Social feed wiring
-createSocialFeed({ state, toast });
-
 /* ---------- drawer tabs (v8.7) ---------- */
 
 createDrawerTabs({ onSourceTab: connectLoader.ensureConnect });
 
 /* ---------- keyboard shortcuts overlay ---------- */
 
-createShortcutsOverlay({ isTypingTarget });
+let shortcutsPromise = null;
+let shortcutsOverlay = null;
+function loadShortcuts() {
+  if (!shortcutsPromise) {
+    shortcutsPromise = import('./shortcuts.js').then(({ createShortcutsOverlay }) => {
+      shortcutsOverlay = createShortcutsOverlay({ isTypingTarget });
+      /* The overlay owns the ? key from here; leaving the boot loader armed
+         would toggle it twice (once from each listener). */
+      window.removeEventListener('keydown', shortcutsKey);
+      return shortcutsOverlay;
+    }).catch((err) => {
+      shortcutsPromise = null;
+      console.warn('shortcuts overlay failed to load:', err);
+      return null;
+    });
+  }
+  return shortcutsPromise;
+}
+$('help-btn')?.addEventListener('click', async (e) => {
+  if (shortcutsOverlay) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  await loadShortcuts();
+  $('help-btn')?.click();
+}, { once: true, capture: true });
+function shortcutsKey(e) {
+  if (isTypingTarget(e.target)) return;
+  if (e.key !== '?' && !(e.key === '/' && !e.shiftKey)) return;
+  e.preventDefault();
+  window.removeEventListener('keydown', shortcutsKey);
+  loadShortcuts().then((overlay) => overlay?.toggle(true));
+}
+window.addEventListener('keydown', shortcutsKey);
 
 
 /* debug/testing hook */

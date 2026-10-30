@@ -55,7 +55,7 @@ export function uid() {
   return Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
 }
 
-export async function addToLibrary({ name, ext, sampleRate, channels, duration, arrayBuffer, edits, sourceName }) {
+export async function addToLibrary({ name, ext, sampleRate, channels, duration, arrayBuffer, edits, eq, sourceName }) {
   const id = uid();
   const rec = {
     id,
@@ -65,7 +65,9 @@ export async function addToLibrary({ name, ext, sampleRate, channels, duration, 
     channels,
     duration,
     arrayBuffer,
+    bytes: arrayBuffer?.byteLength || 0,
     edits: edits || null,
+    eq: Array.isArray(eq) ? eq.slice() : null,
     sourceName: sourceName || null,
     created: Date.now(),
   };
@@ -119,24 +121,44 @@ export async function clearLibrary() {
   }));
 }
 
-export async function renderRemixToWav(buffer, edits = {}) {
+/**
+ * Render the current look through the same FX order as the live engine.
+ *
+ * The old exporter only knew lowpass, autotune, crush and reverb, so a remix
+ * with Echo, Chorus, Widener, Limiter or EQ downloaded a file that sounded
+ * unlike the performance. Keep this graph in step with `_ensureCtx()` in
+ * src/audio.js: filter -> EQ -> autotune -> crush -> limiter -> chop gate ->
+ * widener, with reverb/chorus/echo as parallel sends from the filter.
+ *
+ * @param {AudioBuffer} buffer
+ * @param {Record<string, any>} edits
+ * @param {number[]} [eq] five band gains in dB
+ */
+export async function renderRemixToWav(buffer, edits = {}, eq = edits.eq || []) {
   const rate = edits.speed ? 1.5 : (edits.chop ? 0.66 : 1);
   const len = Math.max(1, Math.ceil(buffer.length / rate));
   const offline = new OfflineAudioContext(buffer.numberOfChannels, len, buffer.sampleRate);
   const src = offline.createBufferSource();
   src.buffer = buffer;
   src.playbackRate.value = rate;
-  let node = src;
+  const duration = len / offline.sampleRate;
 
-  // lowpass
-  if (edits.lowpass || edits.chop) {
-    const lp = offline.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = edits.chop ? 900 : 400;
-    node.connect(lp);
-    node = lp;
+  const filter = offline.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = edits.lowpass || edits.chop ? (edits.chop ? 900 : 400) : 22050;
+  src.connect(filter);
+  let node = filter;
+
+  for (let i = 0; i < 5; i++) {
+    const band = offline.createBiquadFilter();
+    band.type = 'peaking';
+    band.frequency.value = [60, 250, 1000, 4000, 12000][i];
+    band.Q.value = 1.1;
+    band.gain.value = Number(eq[i]) || 0;
+    node.connect(band);
+    node = band;
   }
-  // autotune peaking
+
   if (edits.autotune) {
     const pk = offline.createBiquadFilter();
     pk.type = 'peaking';
@@ -146,10 +168,10 @@ export async function renderRemixToWav(buffer, edits = {}) {
     node.connect(pk);
     node = pk;
   }
-  // crush
+
   if (edits.crush) {
     const ws = offline.createWaveShaper();
-    const k = 20, n = 1024;
+    const k = 20, n = 44100;
     const curve = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       const x = (i * 2) / n - 1;
@@ -160,24 +182,84 @@ export async function renderRemixToWav(buffer, edits = {}) {
     node.connect(ws);
     node = ws;
   }
-  // reverb (simple)
-  if (edits.reverb) {
-    const conv = offline.createConvolver();
-    const rate = offline.sampleRate;
-    const l = Math.floor(rate * 0.9);
-    const b = offline.createBuffer(2, l, rate);
-    for (let ch = 0; ch < 2; ch++) {
-      const d = b.getChannelData(ch);
-      for (let i = 0; i < l; i++) d[i] = (Math.random()*2-1)*Math.pow(1-i/l, 2.2);
+
+  const limiter = offline.createDynamicsCompressor();
+  limiter.threshold.value = edits.limiter ? -18 : 0;
+  limiter.knee.value = 20;
+  limiter.ratio.value = 12;
+  limiter.attack.value = 0.003;
+  limiter.release.value = 0.25;
+  node.connect(limiter);
+  node = limiter;
+
+  const chopGate = offline.createGain();
+  chopGate.gain.value = 1;
+  if (edits.chop) {
+    /* mirror the live 420ms stutter gate, scheduled on the offline clock */
+    for (let t = 0; t < duration; t += 0.42) {
+      chopGate.gain.setValueAtTime(1, t);
+      chopGate.gain.linearRampToValueAtTime(0.02, t + 0.045);
+      chopGate.gain.linearRampToValueAtTime(1, t + 0.14);
     }
-    conv.buffer = b;
-    const g = offline.createGain();
-    g.gain.value = 0.22;
-    node.connect(conv);
-    conv.connect(g);
-    g.connect(offline.destination);
+  }
+  node.connect(chopGate);
+  node = chopGate;
+
+  if (edits.widener) {
+    const wide = offline.createBiquadFilter();
+    wide.type = 'highshelf';
+    wide.frequency.value = 8000;
+    wide.gain.value = 7;
+    node.connect(wide);
+    node = wide;
   }
   node.connect(offline.destination);
+
+  /* parallel sends, matching the live engine's filter-fed sends */
+  if (edits.reverb) {
+    const conv = offline.createConvolver();
+    const l = Math.floor(offline.sampleRate * 2.2);
+    const b = offline.createBuffer(2, l, offline.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = b.getChannelData(ch);
+      for (let i = 0; i < l; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / l, 2.6);
+    }
+    conv.buffer = b;
+    const wet = offline.createGain();
+    wet.gain.value = 0.35;
+    filter.connect(conv);
+    conv.connect(wet);
+    wet.connect(offline.destination);
+  }
+
+  if (edits.chorus) {
+    const delay = offline.createDelay(0.05);
+    delay.delayTime.value = 0.028;
+    const wet = offline.createGain();
+    wet.gain.value = 0.42;
+    const feedback = offline.createGain();
+    feedback.gain.value = 0.18;
+    filter.connect(delay);
+    delay.connect(wet);
+    wet.connect(offline.destination);
+    delay.connect(feedback);
+    feedback.connect(delay);
+  }
+
+  if (edits.echo) {
+    const delay = offline.createDelay(1.0);
+    delay.delayTime.value = 0.34;
+    const wet = offline.createGain();
+    wet.gain.value = 0.32;
+    const feedback = offline.createGain();
+    feedback.gain.value = 0.28;
+    filter.connect(delay);
+    delay.connect(wet);
+    wet.connect(offline.destination);
+    delay.connect(feedback);
+    feedback.connect(delay);
+  }
+
   src.start(0);
   const rendered = await offline.startRendering();
   return audioBufferToWavBlob(rendered);

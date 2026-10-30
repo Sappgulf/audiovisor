@@ -11,12 +11,14 @@ describe('Library (IndexedDB)', () => {
   it('add and list', async () => {
     const { addToLibrary, listLibraryMeta } = await import('../src/library.js');
     const ab = new ArrayBuffer(8);
-    await addToLibrary({ name: 'Test', ext: 'WAV', sampleRate: 44100, channels: 1, duration: 1, arrayBuffer: ab, edits: { chop: true } });
+    await addToLibrary({ name: 'Test', ext: 'WAV', sampleRate: 44100, channels: 1, duration: 1, arrayBuffer: ab, edits: { chop: true }, eq: [1, 0, -1, 0, 2] });
     const list = await listLibraryMeta();
     expect(list.length).toBe(1);
     expect(list[0].name).toBe('Test');
     expect(list[0].edits.chop).toBe(true);
     expect(list[0].arrayBuffer).toBeUndefined(); // meta strips buffer
+    expect(list[0].bytes).toBe(8);
+    expect(list[0].eq).toEqual([1, 0, -1, 0, 2]);
   });
 
   it('remove', async () => {

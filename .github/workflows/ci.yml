@@ -43,3 +43,35 @@ jobs:
 
       - name: Bundle budget
         run: npm run size
+
+  browser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E desktop
+        run: npm run e2e -- --headless
+
+      - name: E2E mobile
+        run: npm run e2e -- --mobile --headless
+
+      - name: Build (offline shell)
+        run: npm run build
+
+      - name: Offline first-install check
+        run: npm run offline
+
+      - name: Accessibility audit
+        run: npm run a11y

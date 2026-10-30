@@ -5,7 +5,7 @@
   Mounts the real WebGL2 raytraced stage full-bleed at 1200x630, pumps a
   synthetic track through it until the temporal accumulator converges, then
   overlays the brand lockup. scripts/make-og.mjs screenshots this page with
-  headless Chrome to produce public/og.png.
+  headless Chrome to produce public/og.jpg.
 
   Query params: ?mode=lava&theme=cyber&frames=150&t0=4
 -->
@@ -13,9 +13,13 @@
 <head>
   <meta charset="UTF-8" />
   <title>OG</title>
-  <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
-  <link href="https://api.fontshare.com/v2/css?f[]=space-grotesk@300,400,500,600,700&f[]=jet-brains-mono@400,500&display=swap" rel="stylesheet" />
   <style>
+    @font-face { font-family: 'Space Grotesk'; src: url('/fonts/space-grotesk-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+    @font-face { font-family: 'Space Grotesk'; src: url('/fonts/space-grotesk-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+    @font-face { font-family: 'Space Grotesk'; src: url('/fonts/space-grotesk-600.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+    @font-face { font-family: 'Space Grotesk'; src: url('/fonts/space-grotesk-700.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+    @font-face { font-family: 'JetBrains Mono'; src: url('/fonts/jetbrains-mono-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+    @font-face { font-family: 'JetBrains Mono'; src: url('/fonts/jetbrains-mono-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 1200px; height: 630px; overflow: hidden; background: #000; }
     :root {

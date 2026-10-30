@@ -2,7 +2,7 @@
  * Chrome accent derivation.
  *
  * The interface used to be locked to the brass palette while the stage
- * offered 25 themes. Now it follows the theme, which means a data file that
+ * offered 32 themes. Now it follows the theme, which means a data file that
  * anyone can extend is deciding what colour the app's labels are — so the
  * rules that turn a palette into an accent are worth pinning down.
  */
