@@ -201,6 +201,30 @@ mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 float g_id;
 float g_aux;
 
+/* Shared set dressing for the sculptural scenes: a floor and an open
+   cylindrical room. Camera rigs for these modes sit inside the radius, so
+   the wall becomes a real backdrop instead of a void. */
+float roomD(vec3 p, float radius, float halfHeight, float floorY, out float rid) {
+  float floorD = p.y - floorY;
+  float wallD = max(abs(length(p.xz) - radius) - 0.06,
+                    abs(p.y - (floorY + halfHeight)) - halfHeight);
+  if (floorD < wallD) { rid = 27.0; return floorD; }
+  rid = 26.0; return wallD;
+}
+
+float addRoom(vec3 p, float d, float radius, float halfHeight, float floorY) {
+  float rid;
+  float r = roomD(p, radius, halfHeight, floorY, rid);
+  if (r < d) {
+    d = r;
+    g_id = rid;
+    g_aux = rid < 26.5
+      ? fract(atan2s(p.z, p.x) / TAU + 0.5)
+      : clamp(length(p.xz) / radius, 0.0, 1.0);
+  }
+  return d;
+}
+
 /* ---------------- scenes ---------------- */
 
 /* 0 bars — spectrum slabs of brushed metal on a mirror floor */
@@ -211,7 +235,9 @@ float scBars(vec3 p) {
   slot = clamp(slot, 0.0, 25.0);
   float cx = (slot + 0.5) * 0.46 - 5.98;
   float u = pow(clamp(slot / 26.0, 0.0, 1.0), 0.62);
-  float e = pow(spec(u), 1.2) * uSens;
+  /* Lift the top octaves a little so the right half of the spectrum stays
+     in the composition instead of collapsing into the stage. */
+  float e = pow(spec(u), 1.2) * uSens * (1.0 + u * 0.75);
   e = e / (1.0 + 0.55 * e);
   /* A small mid-driven floor keeps the top octaves visible instead of
      letting the right half of the spectrum disappear into the stage. */
@@ -224,6 +250,18 @@ float scBars(vec3 p) {
   if (cap < d) { d = cap; g_id = 4.0; g_aux = u; }
   else { g_id = 1.0; g_aux = u; }
   d = max(d, abs(q.x) - 6.1);
+  /* A back wall and a ring portal turn the spectrum into a room instead of
+     a row of slabs floating in the void. */
+  float back = sdBox(p - vec3(0.0, 2.0, -3.6), vec3(6.2, 2.2, 0.06));
+  if (back < d) { d = back; g_id = 26.0; g_aux = 0.0; }
+  float portal = max(abs(length(p.xy - vec2(0.0, 2.1)) - 3.5) - 0.035,
+                     abs(p.z + 3.3) - 0.08);
+  if (portal < d) { d = portal; g_id = 4.0; g_aux = 0.45; }
+  for (int i = 0; i < 2; i++) {
+    float sx = i == 0 ? -5.9 : 5.9;
+    float col = sdCapsule(p, vec3(sx, 0.0, -0.4), vec3(sx, 3.1, -0.4), 0.045);
+    if (col < d) { d = col; g_id = 6.0; g_aux = 0.35; }
+  }
   if (floorD < d) { d = floorD; g_id = 0.0; }
   return d;
 }
@@ -248,6 +286,12 @@ float scWaves(vec3 p) {
     s = max(s, abs(q.x) - 6.2);
     if (s < d) { d = s; g_id = 2.0; g_aux = fi / 5.0; }
   }
+  /* A shallow water plane under the ribbons catches the low sun and gives
+     the mode a horizon/foreground instead of a mirror floor at infinity. */
+  float sea = p.y + 0.78
+            + 0.030 * sin(p.x * 1.8 + uTime * 1.4)
+            + 0.018 * sin(p.z * 2.7 - uTime * 0.9);
+  if (sea < d) { d = sea; g_id = 0.0; }
   float fl = p.y + 2.6 + portrait * 20.0;
   if (fl < d) { d = fl; g_id = 0.0; }
   return d;
@@ -266,6 +310,12 @@ float scScope(vec3 p) {
   if (ring < d) { d = ring; g_id = 1.0; g_aux = 0.6; }
   float tick = abs(sdTorus(p.xzy, vec2(1.55 + uHigh * 0.06, 0.014))) - 0.003;
   if (tick < d) { d = tick; g_id = 1.0; g_aux = 0.35; }
+  /* An instrument face and circular bezel give the trace a screen to live
+     on instead of leaving it as a floating loop. */
+  float panel = sdBox(p - vec3(0.0, 0.0, -1.7), vec3(4.75, 3.05, 0.06));
+  if (panel < d) { d = panel; g_id = 26.0; g_aux = 0.0; }
+  float bezel = max(abs(length(p.xy) - 3.25) - 0.035, abs(p.z + 1.58) - 0.075);
+  if (bezel < d) { d = bezel; g_id = 6.0; g_aux = 0.45; }
   /* The trace lives in a thin slab (|z| <= 0.28 + tube radius) inside r 3.8.
      Most march steps are rays heading for the housing; only walk the 40
      segments when the slab could be nearer than what is already found. */
@@ -299,12 +349,14 @@ float scParticles(vec3 p) {
   float bound = length(p) - 6.6;
   if (bound > 0.3) { g_id = 4.0; g_aux = 0.0; return bound; }
   vec3 c = vec3(1.9);
-  vec3 cell = floor((p + 0.5 * c) / c);
+  vec3 rp = p;
+  rp.xz *= rot(uTime * 0.035 + uBass * 0.018);
+  vec3 cell = floor((rp + 0.5 * c) / c);
   /* Search the 2x2x2 block on the side p leans toward instead of all 27
      neighbours. A sphere sits within 0.73 of its cell centre with radius at
      most 0.39 (sensitivity maxes at 2.4), so one in a skipped cell is at
      least ~0.78 away; capping the result at 0.75 keeps it a safe bound. */
-  vec3 side = sign(p - cell * c);
+  vec3 side = sign(rp - cell * c);
   side = mix(vec3(1.0), side, abs(side));
   /* Four spectrum taps outside the 8-cell search instead of one texture
      fetch per cell inside it. The hash still gives each ember its own band,
@@ -322,7 +374,7 @@ float scParticles(vec3 p) {
     float band = h.x < 0.25 ? b0 : h.x < 0.5 ? b1 : h.x < 0.75 ? b2 : b3;
     vec3 off = (h - 0.5) * 0.75;
     off.y += sin(uTime * (0.4 + h.y * 0.8) + h.z * TAU) * 0.35;
-    vec3 q = p - (id * c + off);
+    vec3 q = rp - (id * c + off);
     // shrink toward the edge of the cloud: an unbounded field fills the
     // frame with speckle and reads as noise
     float fade = 1.0 - smoothstep(1.6, 5.4, length(id * c));
@@ -332,6 +384,12 @@ float scParticles(vec3 p) {
     float s = sdSphere(q, max(r, 0.001));
     if (s < d) { d = s; g_id = 4.0; g_aux = fract(h.z * 3.7); }
   }
+  /* A thin orbital ring and a hot seed give the dust field a centre of
+     gravity; the cloud alone read as random confetti. */
+  float orbit = abs(sdTorus(p.xzy, vec2(3.55 + uBass * 0.18, 0.012))) - 0.004;
+  if (orbit < d) { d = orbit; g_id = 4.0; g_aux = 0.42; }
+  float seed = sdSphere(p, 0.05 + uBeat * 0.018);
+  if (seed < d) { d = seed; g_id = 4.0; g_aux = 0.94; }
   return d;
 }
 
@@ -374,6 +432,8 @@ float scKaleido(vec3 p) {
   if (core < d) { d = core; g_id = 11.0; g_aux = 0.94; }
   float iris = sdSphere(p, 0.095 + uHigh * 0.025 + uBeat * 0.018);
   if (iris < d) { d = iris; g_id = 4.0; g_aux = 0.92; }
+  float frame = max(abs(length(p.xy) - 2.65) - 0.03, abs(p.z + 1.1) - 0.06);
+  if (frame < d) { d = frame; g_id = 6.0; g_aux = 0.35; }
   return d;
 }
 
@@ -392,6 +452,16 @@ float scSpectro(vec3 p) {
   float bounds = max(abs(p.x) - 5.0, abs(p.z) - 4.8);
   float d = max(bin, bounds);
   g_id = 5.0; g_aux = e;
+  float rail = sdBox(p - vec3(0.0, 0.16, 4.96), vec3(5.15, 0.12, 0.08));
+  if (rail < d) { d = rail; g_id = 6.0; g_aux = 0.3; }
+  /* Canyon walls sit just outside the data field and catch the room lights;
+     the field itself stays the subject, but no longer floats in a void. */
+  float leftWall = sdBox(p - vec3(-5.45, 1.25, 0.0), vec3(0.12, 1.9, 5.0));
+  if (leftWall < d) { d = leftWall; g_id = 26.0; g_aux = 0.0; }
+  float rightWall = sdBox(p - vec3(5.45, 1.25, 0.0), vec3(0.12, 1.9, 5.0));
+  if (rightWall < d) { d = rightWall; g_id = 26.0; g_aux = 0.5; }
+  float backWall = sdBox(p - vec3(0.0, 1.25, -5.15), vec3(5.5, 1.9, 0.12));
+  if (backWall < d) { d = backWall; g_id = 26.0; g_aux = 0.75; }
   return d;
 }
 
@@ -437,6 +507,8 @@ float scPlasma(vec3 p) {
   if (cage < d) { d = cage; g_id = 6.0; g_aux = 0.2; }
   float core = sdSphere(p, 0.22 + uBass * 0.18 + uBeat * 0.09);
   if (core < d) { d = core; g_id = 4.0; g_aux = 0.94; }
+  float baseRing = abs(sdTorus(p - vec3(0.0, -1.35, 0.0), vec2(2.3, 0.03))) - 0.006;
+  if (baseRing < d) { d = baseRing; g_id = 1.0; g_aux = 0.4; }
   return d;
 }
 
@@ -495,7 +567,12 @@ float scOrb(vec3 p) {
   if (core < d) { d = core; g_id = 18.0; g_aux = clamp(band, 0.0, 1.0); }
   float ring = abs(sdTorus(p, vec2(1.75 + uBeat * 0.45, 0.012))) - 0.004;
   if (ring < d) { d = ring; g_id = 4.0; g_aux = 0.5; }
-  // The resonant field carries the space around the shell; no podium seam.
+  vec3 rq = p;
+  rq.yz *= rot(0.9 + sin(uTime * 0.16) * 0.08);
+  float ring2 = abs(sdTorus(rq, vec2(1.92 + uBeat * 0.18, 0.012))) - 0.004;
+  if (ring2 < d) { d = ring2; g_id = 4.0; g_aux = 0.36; }
+  float plinth = sdCyl(p - vec3(0.0, -1.35, 0.0), 0.16, 1.25);
+  if (plinth < d) { d = plinth; g_id = 6.0; g_aux = 0.4; }
   return d;
 }
 
@@ -517,6 +594,8 @@ float scFluid(vec3 p) {
   // Structured strip lights in envColor provide the chrome's reflections.
   float ring = abs(sdTorus(p, vec2(2.05, 0.014))) - 0.004;
   if (ring < d) { d = ring; g_id = 4.0; g_aux = 0.4; }
+  float plinth = sdCyl(p - vec3(0.0, -1.62, 0.0), 0.18, 1.2);
+  if (plinth < d) { d = plinth; g_id = 6.0; g_aux = 0.4; }
   return d;
 }
 
@@ -537,7 +616,15 @@ float scTensor(vec3 p) {
   g_id = 6.0; g_aux = 0.3;
   float node = sdSphere(lp, 0.03 + e * 0.06 * uSens + uBeat * 0.018);
   if (node < d) { d = node; g_id = 4.0; g_aux = e; }
+  for (int i = 0; i < 4; i++) {
+    float px = i < 2 ? -2.55 : 2.55;
+    float pz = (i == 0 || i == 3) ? -2.55 : 2.55;
+    float pylon = sdCapsule(p, vec3(px, -1.7, pz), vec3(px, 2.1, pz), 0.03);
+    if (pylon < d) { d = pylon; g_id = 6.0; g_aux = 0.35; }
+  }
   d = max(d, length(p) - 3.4);          // lattice reads as a core, not a wall
+  float dais = sdCyl(p - vec3(0.0, -1.5, 0.0), 0.16, 2.6);
+  if (dais < d) { d = dais; g_id = 6.0; g_aux = 0.3; }
   return d;
 }
 
@@ -574,6 +661,8 @@ float scPrism(vec3 p) {
     float ray = sdCapsule(v, start, tip, 0.075 + e * 0.05);
     if (ray < d) { d = ray; g_id = 17.0; g_aux = t * 0.5 + 0.5; }
   }
+  float table = sdBox(p - vec3(0.0, -1.28, 0.0), vec3(5.0, 0.10, 2.3));
+  if (table < d) { d = table; g_id = 9.0; g_aux = 0.5; }
   return d * fit;
 }
 
@@ -588,6 +677,8 @@ float scVoid(vec3 p) {
   if (photon < d) { d = photon; g_id = 4.0; g_aux = 0.96; }
   float secondary = length(vec2(p.y, length(p.xz) - (horizon + 0.24))) - 0.012;
   if (secondary < d) { d = secondary; g_id = 1.0; g_aux = 0.78; }
+  float outerRing = length(vec2(p.y, length(p.xz) - (horizon + 0.52))) - 0.007;
+  if (outerRing < d) { d = outerRing; g_id = 4.0; g_aux = 0.56; }
   vec3 q = p;
   q.xz *= rot(uTime * 0.35);
   float radius = length(q.xz);
@@ -644,8 +735,16 @@ float scBloom(vec3 p) {
       if (heart < d) { d = heart; g_id = 4.0; g_aux = 0.94; }
     }
   }
-  /* A low glowing pool anchors the three stems; the mirror floor alone left
-     the bottom half of the garden as empty reflection. */
+  /* Fireflies and a low glowing pool anchor the stems; the mirror floor
+     alone left the bottom half of the garden as empty reflection. */
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i);
+    vec3 fp = vec3(sin(uTime * (0.23 + fi * 0.03) + fi * 2.1) * 2.05,
+                   -0.45 + sin(uTime * (0.31 + fi * 0.02) + fi) * 0.5,
+                   -2.2 + cos(uTime * (0.19 + fi * 0.04) + fi * 1.7) * 1.7);
+    float s = sdSphere(p - fp, 0.022 + uHigh * 0.012);
+    if (s < d) { d = s; g_id = 4.0; g_aux = fract(fi * 0.27); }
+  }
   float pool = sdCyl(p - vec3(0.0, -1.76, -2.2), 0.012, 1.85);
   if (pool < d) { d = pool; g_id = 1.0; g_aux = 0.08; }
   float ground = p.y + 1.8;
@@ -674,7 +773,12 @@ float scFractal(vec3 p) {
     z = zr * vec3(sin(th) * cos(ph), sin(ph) * sin(th), cos(th)) + seed;
   }
   g_id = 13.0; g_aux = clamp(trap * 1.4, 0.0, 1.0);
-  return 0.5 * log(max(r, 1e-4)) * r / dr / 0.95;
+  float fractal = 0.5 * log(max(r, 1e-4)) * r / dr / 0.95;
+  float plinth = sdCyl(p - vec3(0.0, -1.35, 0.0), 0.16, 1.1);
+  if (plinth < fractal) { g_id = 6.0; g_aux = 0.4; fractal = plinth; }
+  float ring = abs(sdTorus(p.xzy, vec2(1.65 + uBass * 0.08, 0.015))) - 0.005;
+  if (ring < fractal) { g_id = 4.0; g_aux = 0.4; fractal = ring; }
+  return fractal;
 }
 
 /* 19 radar — top-down phosphor scope with a swept beam and live contacts */
@@ -779,6 +883,12 @@ float scGpu(vec3 p) {
   float nd = sdSphere(p - vec3(cos(na) * 1.82, sin(na * 0.73) * 0.55, sin(na) * 1.82),
                       0.045 + ne * 0.05 * uSens);
   if (nd < d) { d = nd; g_id = 4.0; g_aux = 0.66; }
+  for (int i = 0; i < 4; i++) {
+    float rx = i < 2 ? -4.0 : 4.0;
+    float rz = (i == 0 || i == 3) ? -4.0 : 4.0;
+    float rack = sdBox(p - vec3(rx, -0.4, rz), vec3(0.42, 1.45, 0.42));
+    if (rack < d) { d = rack; g_id = 6.0; g_aux = 0.22; }
+  }
   return d;
 }
 
@@ -796,6 +906,8 @@ float scVinyl(vec3 p) {
   if (arm < disc) { disc = arm; g_id = 25.0; }
   float pivot = sdSphere(p - vec3(2.9, 0.56, 2.9), 0.16);
   if (pivot < disc) { disc = pivot; g_id = 25.0; g_aux = 0.4; }
+  float table = sdBox(p - vec3(0.0, -0.38, 0.0), vec3(3.15, 0.12, 3.15));
+  if (table < disc) { disc = table; g_id = 6.0; g_aux = 0.2; }
   return disc;
 }
 
@@ -808,6 +920,8 @@ float scLavaGlass(vec3 p) {
   float metal = min(cap, base);
   float d = wall;
   if (metal < d) { d = metal; g_id = 6.0; g_aux = 0.25; }
+  float table = sdCyl(p - vec3(0.0, -2.38, 0.0), 0.12, 1.5);
+  if (table < d) { d = table; g_id = 6.0; g_aux = 0.22; }
   return d;
 }
 
@@ -827,25 +941,25 @@ float scChladni(vec3 p) {
 float map(vec3 p) {
   if (uMode == 0)  return scBars(p);
   if (uMode == 1)  return scWaves(p);
-  if (uMode == 2)  return scScope(p);
+  if (uMode == 2)  return addRoom(p, scScope(p), 7.0, 2.8, -2.2);
   if (uMode == 3)  return scParticles(p);
-  if (uMode == 4)  return scKaleido(p);
-  if (uMode == 5)  return scSpectro(p);
+  if (uMode == 4)  return addRoom(p, scKaleido(p), 6.0, 3.0, -1.8);
+  if (uMode == 5)  return addRoom(p, scSpectro(p), 8.0, 2.5, -0.1);
   if (uMode == 6)  return scTunnel(p);
-  if (uMode == 7)  return scPlasma(p);
+  if (uMode == 7)  return addRoom(p, scPlasma(p), 6.0, 3.0, -1.6);
   if (uMode == 8)  return scTerrain(p);
   if (uMode == 9)  return scCity(p);
-  if (uMode == 12) return scOrb(p);
-  if (uMode == 13) return scFluid(p);
-  if (uMode == 14) return scTensor(p);
-  if (uMode == 15) return scPrism(p);
+  if (uMode == 12) return addRoom(p, scOrb(p), 5.5, 3.0, -1.5);
+  if (uMode == 13) return addRoom(p, scFluid(p), 6.5, 3.0, -1.8);
+  if (uMode == 14) return addRoom(p, scTensor(p), 5.5, 3.0, -1.8);
+  if (uMode == 15) return addRoom(p, scPrism(p), 7.0, 3.0, -1.5);
   if (uMode == 16) return scVoid(p);
   if (uMode == 17) return scBloom(p);
-  if (uMode == 18) return scFractal(p);
-  if (uMode == 19) return scRadar(p);
-  if (uMode == 20) return scLavaGlass(p);
-  if (uMode == 21) return scGpu(p);
-  if (uMode == 22) return scVinyl(p);
+  if (uMode == 18) return addRoom(p, scFractal(p), 5.0, 2.8, -1.6);
+  if (uMode == 19) return addRoom(p, scRadar(p), 6.0, 2.5, -0.7);
+  if (uMode == 20) return addRoom(p, scLavaGlass(p), 6.5, 3.5, -2.4);
+  if (uMode == 21) return addRoom(p, scGpu(p), 5.5, 3.0, -2.0);
+  if (uMode == 22) return addRoom(p, scVinyl(p), 5.5, 2.8, -0.8);
   if (uMode == 23) return scChladni(p);
   return sdSphere(p, 1.0);
 }
@@ -1041,12 +1155,24 @@ Mat matOf(float id, float aux, vec3 p) {
        accents, fog and bloom. */
     m.alb = palf(0.28) * 0.055; m.rough = 0.55; m.metal = 0.12;
     m.emis = palf(0.30) * 0.012 * (0.4 + uLevel);
-    /* plasma's cell carries vertical strip lights so the enclosure reads as
-       a room with practicals rather than a painted backdrop */
-    if (uMode == 7 && length(p.xz) > 3.2) {
+    /* Rooms share practical strip lights and a faint horizontal datum so
+       their walls read as built space rather than a painted backdrop. */
+    bool roomMode = uMode == 0 || uMode == 2 || uMode == 4 || uMode == 5 ||
+                    uMode == 7 || uMode == 12 || uMode == 13 || uMode == 14 ||
+                    uMode == 15 || uMode == 18 || uMode == 19 || uMode == 20 ||
+                    uMode == 21 || uMode == 22;
+    if (roomMode && length(p.xz) > 2.0) {
       float strip = smoothstep(0.955, 0.99, sin(atan2s(p.z, p.x) * 6.0))
                   * clamp(p.y * 0.22 + 0.55, 0.0, 1.0);
-      m.emis += palf(0.62) * strip * (0.30 + uBeat * 0.55);
+      float datum = 1.0 - smoothstep(0.015, 0.05, abs(fract(p.y * 0.55) - 0.5));
+      m.emis += palf(0.62) * strip * (0.30 + uBeat * 0.55)
+             + palf(0.45) * datum * 0.025 * (0.4 + uLevel);
+      if (uMode == 2) {
+        vec2 gr = abs(fract(p.xy * 1.55) - 0.5);
+        float grid = (1.0 - smoothstep(0.02, 0.055, gr.x))
+                   + (1.0 - smoothstep(0.02, 0.055, gr.y));
+        m.emis += palf(0.38) * grid * 0.055 * (0.6 + uLevel);
+      }
     }
   } else if (id < 27.5) {               // wet gloss floor
     /* water under kaleido / prism fan. Same trade as above: the look is the
@@ -1127,6 +1253,11 @@ vec3 envBase(vec3 rd) {
     sky += palf(0.58) * band * ripple * (0.16 + uLevel * 0.34)
          + palf(0.28) * band * 0.035;
     sky += starField(rd) * 0.5;
+    /* A small moon anchors the aurora sky and gives the ridges scale. */
+    vec3 moonDir = normalize(vec3(-0.42, 0.34, -0.84));
+    float md = dot(rd, moonDir);
+    sky += palf(0.92) * smoothstep(0.9985, 0.9994, md) * 1.7;
+    sky += palf(0.62) * pow(max(md, 0.0), 180.0) * 0.16;
   }
   if (uMode == 9) {
     /* dusk horizon behind the skyline: without it the towers ended in a
@@ -1436,14 +1567,14 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   else if (uMode == 11) { ro = vec3(sin(t * 0.06) * 2.8, 4.4 + sin(t * 0.1) * 0.7, cos(t * 0.06) * 2.8); ta = vec3(0.0); ap = 0.0; }
   else if (uMode == 12) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.17) * 3.6, 0.8, cos(t * 0.17) * 3.6); ap = 0.03; fov = min(1.5, 1.65 * aspect); }
   else if (uMode == 13) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.15) * 4.2, 1.3, cos(t * 0.15) * 4.2); ap = 0.035; fov = min(1.5, 1.7 * aspect); }
-  else if (uMode == 14) { ro = vec3(sin(t * 0.1) * 3.2, 1.6 + sin(t * 0.07), cos(t * 0.1) * 3.2); ap = 0.04; }
+  else if (uMode == 14) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.09) * 4.1, 2.35 + sin(t * 0.06) * 0.25, cos(t * 0.09) * 4.1); ta = vec3(0.0, 0.2, 0.0); ap = 0.03; fov = min(1.5, 1.6 * aspect); }
   /* a gentle orbit rather than the locked frontal shot: the slab itself
      rotates, so any camera drift now produces real parallax between beam,
      prism and fan instead of one flat diagram */
   else if (uMode == 15) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.12) * 0.3, 0.2, 4.5 + cos(t * 0.12) * 0.1); ap = 0.004; fov = min(1.5, 1.7 * max(aspect, 0.3)); }
   else if (uMode == 16) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.08) * 3.7, 0.48, cos(t * 0.08) * 3.7); ap = 0.004; fov = 1.35 * min(1.0, aspect); }
   else if (uMode == 17) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.07) * 0.6, 0.14 + cos(t * 0.06) * 0.28, 2.25); ta = vec3(0.0, 0.0, -1.9); ap = 0.02; fov = min(1.8, 1.9 * aspect); }
-  else if (uMode == 18) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.12) * 2.4, sin(t * 0.09) * 0.55, cos(t * 0.12) * 2.4); ap = 0.015; fov = min(1.45, 1.5 * aspect); }
+  else if (uMode == 18) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.11) * 3.1, 1.15 + sin(t * 0.08) * 0.35, cos(t * 0.11) * 3.1); ta = vec3(0.0, 0.0, 0.0); ap = 0.02; fov = min(1.5, 1.6 * aspect); }
   else if (uMode == 19) { float aspect = uRes.x / max(uRes.y, 1.0); ro = vec3(sin(t * 0.045) * 0.04, 3.55, cos(t * 0.045) * 0.04); ta = vec3(0.0); ap = 0.0; fov = 1.32 * min(1.0, aspect); }
   else if (uMode == 20) { ro = vec3(0.0, 0.0, 4.65); ap = 0.0; }
   else if (uMode == 21) { ro = vec3(sin(t * 0.12) * 2.9, 1.95, cos(t * 0.12) * 2.9); ta = vec3(0.0, -0.1, 0.0); ap = 0.015; }

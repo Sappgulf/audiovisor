@@ -1,8 +1,15 @@
-# AUDIOVISOR — v8.30.0
+# AUDIOVISOR — v8.31.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Staged-world redesign (v8.31)
+- **Rooms instead of voids** — every sculptural mode now sits inside a real floor/room: Bars gets a back wall, ring portal and side columns; Scope gets a graticule panel and bezel; Spectrogram gets canyon walls; Plasma becomes a reactor chamber; Orb/Fluid/Tensor/Prism/Fractal gain plinths, tables and frames.
+- **More environmental favourites** — the sea under Linear Wave now reflects the ribbons, Terrain gained a moon, Bloom Field gained fireflies and a grounded pool, Particles gained a rotating dust field, orbit ring and seed star, Radar gained a room, Lava a table, GPU server racks, Vinyl a booth table, and Void a second photon ring.
+- **Favourites left intact** — Chladni Field, Radial Tunnel, Neon City and Nebula Clouds keep their existing designs.
+- **Previews regenerated** — all 24 picker stills and animation strips, the OG card and PWA screenshots were rebuilt from the staged scenes.
+- **Performance held** — live bench remains ~60 fps at medium for the stage; the heavier staged modes settle to the low tier only where needed.
 
 ### Fallback & touch polish (v8.30)
 - **Palette-tinted 2D highlights** — the Canvas2D dot and bar sprites no longer cap every hot core at white; highlights lift toward the active palette's hue, so brass stays warm and Neon Cyber stays cyan/magenta instead of every mode reading beige.
