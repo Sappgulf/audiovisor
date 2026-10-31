@@ -6,7 +6,7 @@ import { renderWebGL2 } from './webgl2.js';
 import { isPluginMode } from './plugins.js';
 import {
   shouldEvaluate, nextTier, next2dQualityState, estimateBaseline, baselineOr, relaxBaseline,
-  TIERS, SEVERE, climbCeiling, windowCost,
+  TIERS, SEVERE, OVER_BUDGET, climbCeiling, windowCost, isUsableInterval,
 } from './adaptive.js';
 
 /**
@@ -92,22 +92,58 @@ export function createRenderLoop({
   let severeRun = 0;
   /* frames to ignore after a mode change, while one-time setup settles */
   const SETTLE_AFTER_MODE_CHANGE = 5;
+  /* a playback resume is less invasive than a mode change: the scene is
+     already built, but the GPU and audio graph may have gone cold */
+  const SETTLE_AFTER_RESUME = 3;
   let settleFrames = SETTLE_AFTER_MODE_CHANGE;
+  /* consecutive judged windows that were over budget; the first one is
+     treated as external load rather than evidence about the scene */
+  let overBudgetRun = 0;
+  /* whether the visual stage was idle on the previous frame, so the
+     idle->playing edge can restart the sampler cleanly */
+  let _wasVisualIdle = null;
+  /* the ray stage halves its own idle rate; the Canvas2D fallback has no
+     such throttle, so skip alternate idle frames here */
+  let _idle2dSkip = false;
   let lastFrameTs = performance.now();
   let _frameErrors = 0;
   let fallbackNotified = false;
+  /* rAF is scheduled only while the page is visible and the loop is running.
+     Browsers already throttle hidden tabs, but explicitly cancelling avoids a
+     stale frame timestamp and any work that slips through before throttling. */
+  let rafId = 0;
+  let running = false;
+  let hidden = doc.hidden === true;
 
   /** Change the effective tier and report it, so the UI can show what is
       actually running rather than only the ceiling the user chose. */
   function applyTier(ray, tier) {
     if (tier === ray.quality) return;
     tierSettle = SETTLE_AFTER_TIER_CHANGE;
+    overBudgetRun = 0;
     frameTimes.length = 0;
     ray.setQuality(tier);
     onQualityChange?.(tier);
   }
 
+  function resetSampling(settle = SETTLE_AFTER_RESUME) {
+    frameTimes.length = 0;
+    healthyStreak = 0;
+    severeRun = 0;
+    overBudgetRun = 0;
+    tierSettle = 0;
+    settleFrames = Math.max(settleFrames, settle);
+  }
+
+  function schedule() {
+    if (!running || hidden || rafId) return;
+    rafId = requestAnimationFrame(frame);
+  }
+
   function frame(now) {
+    rafId = 0;
+    hidden = doc.hidden === true;
+    if (hidden) return;
     try {
       frameStep(now);
       _frameErrors = 0;
@@ -122,7 +158,7 @@ export function createRenderLoop({
         toast('Raytrace <b>suspended</b> — the stage kept erroring', { duration: 3600 });
       }
     }
-    requestAnimationFrame(frame);
+    schedule();
   }
 
   const rootEl = doc.documentElement;
@@ -164,6 +200,14 @@ export function createRenderLoop({
     if (visualIdle !== _stageLive) {
       _stageLive = visualIdle;
       doc.documentElement.classList.toggle('stage-live', !visualIdle);
+    }
+    /* Starting playback after an idle spell can follow a cold GPU and a
+       decoder start; the first intervals are not a verdict on the mode. */
+    const resumed = _wasVisualIdle === true && !visualIdle;
+    _wasVisualIdle = visualIdle;
+    if (resumed) {
+      lastFrameTs = now;
+      resetSampling(SETTLE_AFTER_RESUME);
     }
 
     engine.syncExternal();
@@ -235,6 +279,12 @@ export function createRenderLoop({
       const dtMotion = dtMs * (1 - 0.45 * drop);
       ray.render(idle, freq, wave, levels, dtMotion, null, stereoL, stereoR);
     } else {
+      if (idle) {
+        _idle2dSkip = !_idle2dSkip;
+        if (_idle2dSkip) return;
+      } else {
+        _idle2dSkip = false;
+      }
       rayCanvasEl.classList.remove('is-live');
       if (state.modeId === 'gpu') startGpu?.();
       const gpuReady = !!(webgpuState || webgl2State) && !gpuDead;
@@ -335,6 +385,14 @@ export function createRenderLoop({
     // Sources without decoded audio have a still player view. No renderer
     // frame or adaptation sample should run against inaccessible audio.
     if (audioOnly) return;
+    /* Idle is not a quality signal either: the raytrace stage already halves
+       its own idle frame rate, and judging those frames against the playback
+       sampler let an idle detour change the tier that playback then opened at.
+       The idle->playing edge above restarts the sampler with settle frames. */
+    if (idle) {
+      frameTimes.length = 0;
+      return;
+    }
 
     // the interval, not this callback's CPU time — see src/adaptive.js
     rayBaselineEstimate = estimateBaseline(frameTimes, rayBaselineEstimate);
@@ -353,30 +411,37 @@ export function createRenderLoop({
          pipeline being built on first draw (300ms on a real M1 display) —
          acting on it dropped every freshly picked mode to low and recorded
          low as its ceiling. Two in a row is the scene itself. */
-      severeRun = Number.isFinite(frameGap) && frameGap > rayBaseline * SEVERE ? severeRun + 1 : 0;
+      severeRun = isUsableInterval(frameGap) && frameGap > rayBaseline * SEVERE ? severeRun + 1 : 0;
       if (state.raytraceWanted && ray.ok && severeRun >= 2 && TIERS.indexOf(ray.quality) > 0) {
         const { tier } = nextTier(ray.quality, frameGap, state.rayQuality, rayBaseline);
         applyTier(ray, tier);
       }
-    } else if (Number.isFinite(frameGap) && frameGap > 0) frameTimes.push(frameGap);
+    } else if (isUsableInterval(frameGap)) frameTimes.push(frameGap);
     /* Normally this waits for a full window before judging, but that window
        costs more wall-clock the slower things are — on a mode running several
        times over budget that was seconds of stutter before anything happened. shouldEvaluate() acts on a
        short window when every sample in it is severely over budget, which is
        not an ambiguous signal. See src/adaptive.js. */
     if (shouldEvaluate(frameTimes, rayBaseline)) {
-      const avg = windowCost(frameTimes, rayBaseline);
+      const samples = frameTimes;
       /* a window is the natural pace to revisit the baseline: one lucky frame
          can pin the session best below what the display ever achieves again,
          and relaxing per-frame would tie recovery speed to frame timing */
-      rayBaselineEstimate = relaxBaseline(rayBaselineEstimate, frameTimes);
+      rayBaselineEstimate = relaxBaseline(rayBaselineEstimate, samples);
       const relaxed = baselineOr(rayBaselineEstimate);
-      frameTimes.length = 0;
+      /* judge the window on the same baseline it was just relaxed against;
+         mixing the two made a borderline window change verdict between the
+         cost calculation and the tier decision */
+      const avg = windowCost(samples, relaxed);
+      samples.length = 0;
       if (state.raytraceWanted && ray.ok) {
+        overBudgetRun = Number.isFinite(avg) && avg > relaxed * OVER_BUDGET ? overBudgetRun + 1 : 0;
         const allowed = climbCeiling(state.rayQuality, state.rayQualityExplicit);
         const ceiling = climbCap && TIERS.indexOf(climbCap) < TIERS.indexOf(allowed)
           ? climbCap : allowed;
-        const { tier, streak } = nextTier(ray.quality, avg, ceiling, relaxed, healthyStreak);
+        const { tier, streak } = nextTier(
+          ray.quality, avg, ceiling, relaxed, healthyStreak, overBudgetRun,
+        );
         healthyStreak = streak;
         if (TIERS.indexOf(tier) < TIERS.indexOf(ray.quality)) {
           climbCap = tier;
@@ -384,12 +449,37 @@ export function createRenderLoop({
         }
         applyTier(ray, tier);
       } else {
+        overBudgetRun = 0;
         const d2 = next2dQualityState(renderer.quality, avg, relaxed, healthy2d);
         healthy2d = d2.streak;
         renderer.setQuality(d2.quality);
       }
     }
   }
+
+  function onVisibilityChange() {
+    if (doc.hidden) {
+      hidden = true;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      /* whatever window was in flight is no longer representative: the next
+         samples after a hidden spell may include the resume gap and a cold
+         GPU. Keep the learned baseline and tier, drop the evidence. */
+      frameTimes.length = 0;
+      healthyStreak = 0;
+      severeRun = 0;
+      overBudgetRun = 0;
+      tierSettle = 0;
+      return;
+    }
+    hidden = false;
+    lastFrameTs = performance.now();
+    resetSampling(SETTLE_AFTER_RESUME);
+    schedule();
+  }
+  doc.addEventListener?.('visibilitychange', onVisibilityChange);
 
   let resizeRaf = 0;
   function scheduleResize() {
@@ -410,7 +500,14 @@ export function createRenderLoop({
   }
 
   return {
-    start: () => requestAnimationFrame(frame),
+    start: () => {
+      if (running) return;
+      running = true;
+      hidden = doc.hidden === true;
+      if (hidden) return;
+      lastFrameTs = performance.now();
+      schedule();
+    },
     scheduleResize,
     /** A mode change invalidates the tier the last mode adapted to. */
     /** @param {string} [modeId] the mode being switched to */
@@ -419,10 +516,17 @@ export function createRenderLoop({
       healthy2d = 0;
       climbCap = climbCaps.get(modeId) ?? null;
       severeRun = 0;
+      overBudgetRun = 0;
+      tierSettle = 0;
       settleFrames = SETTLE_AFTER_MODE_CHANGE;
       frameTimes.length = 0;
+      lastFrameTs = performance.now();
     },
-    resume: () => { raySuspended = false; },
+    resume: () => {
+      raySuspended = false;
+      lastFrameTs = performance.now();
+      resetSampling(SETTLE_AFTER_RESUME);
+    },
     isSuspended: () => raySuspended,
   };
 }

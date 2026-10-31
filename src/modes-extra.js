@@ -28,16 +28,35 @@ class ExtraModes {
     const maxR = minDim * 0.4 * (0.75 + this.sensitivity * 0.35) * burst;
     const P = this.quality === 'low' ? 28 : 56;
     void dt;
+
     ctx.globalCompositeOperation = 'lighter';
-    const bloomR = minDim * Math.min(0.26, 0.06 + this.sm.bass * 0.06 + this.beat * 0.03);
-    ctx.globalAlpha = 0.42;
-    ctx.drawImage(this._dot(this._color(0)), cx - bloomR, cy - bloomR, bloomR * 2, bloomR * 2);
+    const ambR = minDim * (0.34 + this.sm.bass * 0.08);
+    ctx.globalAlpha = 0.045 + this.sm.level * 0.05 + this.beat * 0.02;
+    ctx.drawImage(this._soft(this._vivid(0)), cx - ambR, cy - ambR, ambR * 2, ambR * 2);
     ctx.globalAlpha = 1;
+
+    /* a sparse dust ring outside the facets adds a second depth plane */
+    for (let i = 0; i < 18; i++) {
+      const ang = (i / 18) * Math.PI * 2 + this.t * 0.055;
+      const rr = maxR * (1.02 + ((i * 37) % 13) / 31);
+      const px = cx + Math.cos(ang) * rr;
+      const py = cy + Math.sin(ang) * rr;
+      const sr = 1 + (i % 3) * 0.7 + this.beat * 0.6;
+      ctx.globalAlpha = 0.10 + 0.10 * (0.5 + 0.5 * Math.sin(this.t * 0.9 + i * 1.7));
+      ctx.drawImage(this._dot(this._loud(i + 1)), px - sr, py - sr, sr * 2, sr * 2);
+    }
+    ctx.globalAlpha = 1;
+
+    const bloomR = minDim * Math.min(0.22, 0.05 + this.sm.bass * 0.05 + this.beat * 0.03);
+    ctx.globalAlpha = 0.30;
+    ctx.drawImage(this._soft(this._loud(0)), cx - bloomR, cy - bloomR, bloomR * 2, bloomR * 2);
+    ctx.globalAlpha = 1;
+
     for (let s = 0; s < slices; s++) {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(s * span + rot);
-      const c = this._color(s);
+      const c = this._loud(s);
       const pts = [];
       for (let i = 0; i <= P; i++) {
         const v = logSample(freq, Math.pow(i / P, 0.55));
@@ -51,20 +70,25 @@ class ExtraModes {
       for (const [px, py] of pts) ctx.lineTo(px, py);
       ctx.closePath();
       const fg = ctx.createRadialGradient(0, 0, inner, 0, 0, inner + maxR);
-      fg.addColorStop(0, hexRgba(c, 0.035));
-      fg.addColorStop(1, hexRgba(c, 0.20));
+      fg.addColorStop(0, hexRgba(c, 0.018));
+      fg.addColorStop(0.62, hexRgba(c, 0.085));
+      fg.addColorStop(1, hexRgba(c, 0.25));
       ctx.fillStyle = fg;
       ctx.fill();
+
       ctx.beginPath();
       for (let i = 0; i < pts.length; i++) {
         if (i === 0) ctx.moveTo(pts[i][0], pts[i][1]);
         else ctx.lineTo(pts[i][0], pts[i][1]);
       }
-      ctx.strokeStyle = hexRgba(c, 0.7);
-      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = hexRgba(c, 0.10);
+      ctx.lineWidth = 4;
       ctx.stroke();
-      if (this.sm.bass > 0.5) {
-        ctx.strokeStyle = hexRgba(this._color(2), 0.4 + this.sm.bass * 0.3);
+      ctx.strokeStyle = hexRgba(c, 0.62);
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+      if (this.sm.bass > 0.45) {
+        ctx.strokeStyle = hexRgba(this._vivid(0), 0.26 + this.sm.bass * 0.22);
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(0, 0);
@@ -73,6 +97,45 @@ class ExtraModes {
       }
       ctx.restore();
     }
+
+    /* dark centre well: the facet tips converge here, and additive strokes
+       otherwise fuse into a white knot instead of a lit crystal core */
+    ctx.globalCompositeOperation = 'source-over';
+    const wellR = inner * 1.7;
+    const well = ctx.createRadialGradient(cx, cy, 0, cx, cy, wellR);
+    well.addColorStop(0, 'rgba(4,4,6,0.92)');
+    well.addColorStop(0.58, 'rgba(4,4,6,0.42)');
+    well.addColorStop(1, 'rgba(4,4,6,0)');
+    ctx.fillStyle = well;
+    ctx.beginPath();
+    ctx.arc(cx, cy, wellR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._loud(0), 0.44 + this.beat * 0.2);
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, inner * 0.86, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = hexRgba(this._loud(1), 0.18 + this.sm.level * 0.14);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, maxR * 0.96, rot * 0.4, rot * 0.4 + Math.PI * 1.55);
+    ctx.stroke();
+    const coreR = inner * (0.30 + this.beat * 0.14);
+    ctx.globalAlpha = 0.62;
+    ctx.drawImage(this._dot(this._vivid(0)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 3; i++) {
+      const ang = this.t * (0.22 + i * 0.04) + (i / 3) * Math.PI * 2;
+      const rr = maxR * (0.34 + i * 0.17);
+      const x = cx + Math.cos(ang) * rr;
+      const y = cy + Math.sin(ang) * rr;
+      const sr = 2.2 + this.beat * 1.4 + i * 0.4;
+      ctx.globalAlpha = 0.34 + 0.18 * Math.sin(this.t * 1.2 + i);
+      ctx.drawImage(this._dot(this._loud(i + 1)), x - sr, y - sr, sr * 2, sr * 2);
+    }
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
 
@@ -83,7 +146,8 @@ class ExtraModes {
        theme color, white-hot only at peaks. Steep gamma + step mapping
        keep quiet audio black, so dynamics read as color silhouette. */
     const stops = [[3, 3, 4]];
-    for (const c of this.theme.colors) {
+    const palette = this._loudColors || this._vividColors || this.theme.colors;
+    for (const c of palette) {
       const n = parseInt(c.slice(1), 16);
       stops.push([(n >> 16) & 255, (n >> 8) & 255, n & 255]);
     }
@@ -92,39 +156,38 @@ class ExtraModes {
        #f5e6d3) drove every upper stop to 255,255,255, so a tenth of the
        waterfall was one flat white with no hue and no gradient left. The
        cap keeps the hot end reading as hot while the channels stay apart. */
-    const CEIL = 232;
+    const CEIL = 198;
     const boosted = [];
     for (let i = 1; i < stops.length; i++) {
       const s = stops[i];
       boosted.push([
-        Math.min(CEIL, s[0] + 22 + i * 6),
-        Math.min(CEIL, s[1] + 22 + i * 6),
-        Math.min(CEIL, s[2] + 22 + i * 6),
+        Math.min(CEIL, s[0] + 6 + i * 3),
+        Math.min(CEIL, s[1] + 6 + i * 3),
+        Math.min(CEIL, s[2] + 6 + i * 3),
       ]);
     }
     stops.push(...boosted);
-    /* Top of the ramp keeps the theme's hue rather than going achromatic —
-       a pure-white cap threw away the colour exactly where the signal is
-       most interesting. True white is left to the very last entries via the
-       gamma curve, so peaks still read as hot. */
+    /* The top of the ramp stays in the palette's own hue family; only its
+       relative value lifts. */
     const top = stops[stops.length - 1];
+    const tm = Math.max(1, top[0], top[1], top[2]);
     stops.push([
-      Math.min(242, Math.round(top[0] * 0.58 + 255 * 0.42)),
-      Math.min(242, Math.round(top[1] * 0.58 + 252 * 0.42)),
-      Math.min(238, Math.round(top[2] * 0.58 + 242 * 0.42)),
+      Math.min(228, Math.round(top[0] * 0.78 + (top[0] / tm) * 255 * 0.22)),
+      Math.min(224, Math.round(top[1] * 0.78 + (top[1] / tm) * 255 * 0.22)),
+      Math.min(220, Math.round(top[2] * 0.78 + (top[2] / tm) * 255 * 0.22)),
     ]);
     const lut = this.specLut = new Uint8Array(256 * 3);
     for (let i = 0; i < 256; i++) {
       /* steep gamma: low+mid values stay near-black, only peaks climb */
-      const v = Math.pow(i / 255, 2.5);
+      const v = Math.pow(i / 255, 3.2);
       const f = v * (stops.length - 1);
       const s = Math.min(stops.length - 2, Math.floor(f));
       const u = f - s;
       const a = stops[s];
       const b = stops[s + 1];
-      lut[i * 3] = a[0] + (b[0] - a[0]) * u;
-      lut[i * 3 + 1] = a[1] + (b[1] - a[1]) * u;
-      lut[i * 3 + 2] = a[2] + (b[2] - a[2]) * u;
+      lut[i * 3] = (a[0] + (b[0] - a[0]) * u) * 0.80;
+      lut[i * 3 + 1] = (a[1] + (b[1] - a[1]) * u) * 0.80;
+      lut[i * 3 + 2] = (a[2] + (b[2] - a[2]) * u) * 0.80;
     }
   }
 
@@ -174,7 +237,7 @@ class ExtraModes {
            the colour ramp and stay distinguishable. */
         const g = (freq[bin] / 255) * this.sensitivity;
         let v = g > 0 ? 1 - Math.exp(-g * 1.15) : 0;
-        v = v < 0.04 ? 0 : v;
+        v = v < 0.06 ? 0 : v;
         /* onsets print brighter: the fresh column carries the beat, so kick
            drums land in the waterfall as bright stripes instead of the
            history showing no trace of the rhythm */
@@ -189,6 +252,29 @@ class ExtraModes {
       this.specCtx.putImageData(img, W - colW, 0);
     }
     ctx.drawImage(this.specCv, 0, 0, w, h);
+
+    /* calibration grid and edge shade turn the waterfall into an instrument
+       panel instead of a full-bleed texture */
+    ctx.strokeStyle = hexRgba(this._color(0), 0.075);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 1; i < 6; i++) {
+      const gy = (h * i) / 6;
+      ctx.moveTo(0, gy); ctx.lineTo(w, gy);
+    }
+    for (let i = 1; i < 8; i++) {
+      const gx = (w * i) / 8;
+      ctx.moveTo(gx, 0); ctx.lineTo(gx, h);
+    }
+    ctx.stroke();
+    const shade = ctx.createLinearGradient(0, 0, 0, h);
+    shade.addColorStop(0, 'rgba(5,5,6,0.34)');
+    shade.addColorStop(0.16, 'rgba(5,5,6,0)');
+    shade.addColorStop(0.84, 'rgba(5,5,6,0)');
+    shade.addColorStop(1, 'rgba(5,5,6,0.30)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(0, 0, w, h);
+
     const scanX = w - ((this.t * 140) % (w + 80));
     ctx.globalCompositeOperation = 'lighter';
     const beam = ctx.createLinearGradient(scanX - 30, 0, scanX, 0);
@@ -219,19 +305,17 @@ class ExtraModes {
     const maxR = minDim * 0.46;
     while (this.history.length < rings) this.history.push(0);
     ctx.globalCompositeOperation = 'lighter';
-    const glowR = maxR * Math.min(0.28, 0.11 + this.sm.bass * 0.11 + this.beat * 0.06);
-    ctx.globalAlpha = 0.55;
-    ctx.drawImage(this._dot(this._color(0)), cx - glowR, cy - glowR, glowR * 2, glowR * 2);
+    const glowR = maxR * Math.min(0.30, 0.12 + this.sm.bass * 0.12 + this.beat * 0.06);
+    ctx.globalAlpha = 0.18 + this.sm.bass * 0.12;
+    ctx.drawImage(this._soft(this._loud(0)), cx - glowR, cy - glowR, glowR * 2, glowR * 2);
     ctx.globalAlpha = 1;
     const SEG = this.quality === 'low' ? 28 : 44;
     for (let i = 0; i < rings; i++) {
       const baseR = maxR * Math.pow((i + 1) / rings, 1.15);
       const pulse = this.history[this.history.length - 1 - i] * maxR * 0.3 * this.sensitivity;
-      const alpha = 0.8 - (i / rings) * 0.62;
-      const c = this._color(Math.floor(i / 4.0) + Math.floor(this.t * 0.06));
-      ctx.strokeStyle = hexRgba(c, alpha);
+      const alpha = 0.48 - (i / rings) * 0.34 + (i % 5 === 0 ? 0.05 : 0);
+      const c = this._loud(Math.floor(i / 4.0) + Math.floor(this.t * 0.06));
       const tilt = Math.sin(i * 0.9 + this.t * 0.9) * 0.05;
-      ctx.lineWidth = Math.max(0.6, 2.4 - (i / rings) * 1.6);
       ctx.beginPath();
       for (let s = 0; s <= SEG; s++) {
         const ang = (s / SEG) * Math.PI * 2;
@@ -247,14 +331,63 @@ class ExtraModes {
         else ctx.lineTo(x, y);
       }
       ctx.closePath();
+      if (i % 4 === 0) {
+        ctx.strokeStyle = hexRgba(c, alpha * 0.18);
+        ctx.lineWidth = 4.2;
+        ctx.stroke();
+      }
+      ctx.strokeStyle = hexRgba(c, alpha);
+      ctx.lineWidth = Math.max(0.55, 2.1 - (i / rings) * 1.5);
       ctx.stroke();
     }
+
+    /* warp dust beyond the mouth of the tunnel */
+    for (let i = 0; i < 18; i++) {
+      const ang = (i / 18) * Math.PI * 2 + 0.3;
+      const r0 = maxR * (1.02 + ((i * 29) % 9) / 26);
+      const r1 = r0 + maxR * (0.05 + 0.05 * (0.5 + 0.5 * Math.sin(this.t * 0.7 + i)));
+      ctx.strokeStyle = hexRgba(this._loud(i), 0.035 + this.sm.level * 0.045);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
+      ctx.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+      ctx.stroke();
+    }
+
+    /* the opening is a dark eye with a lit rim, not an additive white dot */
+    ctx.globalCompositeOperation = 'source-over';
+    const wellR = maxR * (0.105 + this.sm.bass * 0.018);
+    const well = ctx.createRadialGradient(cx, cy, 0, cx, cy, wellR);
+    well.addColorStop(0, 'rgba(3,3,5,0.92)');
+    well.addColorStop(0.62, 'rgba(3,3,5,0.46)');
+    well.addColorStop(1, 'rgba(3,3,5,0)');
+    ctx.fillStyle = well;
+    ctx.beginPath();
+    ctx.arc(cx, cy, wellR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.40 + this.beat * 0.18);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, wellR * 0.94, 0, Math.PI * 2);
+    ctx.stroke();
+    const irisR = wellR * (0.34 + this.beat * 0.10);
+    ctx.globalAlpha = 0.62;
+    ctx.drawImage(this._dot(this._vivid(0)), cx - irisR, cy - irisR, irisR * 2, irisR * 2);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = hexRgba(this._loud(0), 0.13 + this.sm.level * 0.10);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, maxR * 0.54, this.t * 0.3, this.t * 0.3 + Math.PI * 1.2);
+    ctx.arc(cx, cy, maxR * 0.72, -this.t * 0.2, -this.t * 0.2 + Math.PI * 0.8);
+    ctx.stroke();
+
     const rays = 9;
     ctx.lineWidth = 1.2;
     for (let i = 0; i < rays; i++) {
       const ang = this.t * (0.25 + i * 0.02) + (i / rays) * Math.PI * 2;
       const r0 = maxR * 0.2, r1 = maxR * 0.85;
-      ctx.strokeStyle = hexRgba(this._color(i % this.theme.colors.length), 0.06 + this.sm.level * 0.08);
+      ctx.strokeStyle = hexRgba(this._loud(i), 0.06 + this.sm.level * 0.08);
       ctx.beginPath();
       ctx.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
       ctx.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
@@ -283,39 +416,74 @@ class ExtraModes {
     const P = this.quality === 'low' ? 44 : 80;
     void dt;
     ctx.globalCompositeOperation = 'lighter';
+
+    const ambR = minDim * (0.38 + this.sm.bass * 0.08);
+    ctx.globalAlpha = 0.05 + this.sm.level * 0.05 + this.beat * 0.02;
+    ctx.drawImage(this._soft(this._vivid(0)), cx - ambR, cy - ambR, ambR * 2, ambR * 2);
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 20; i++) {
+      const ang = (i / 20) * Math.PI * 2 + this.t * 0.03;
+      const rr = minDim * (0.32 + ((i * 43) % 19) / 38);
+      const x = cx + Math.cos(ang) * rr;
+      const y = cy + Math.sin(ang) * rr * 0.72;
+      const sr = 1 + (i % 3) * 0.55;
+      ctx.globalAlpha = 0.08 + 0.10 * (0.5 + 0.5 * Math.sin(this.t * 0.7 + i * 1.9));
+      ctx.drawImage(this._dot(this._loud(i)), x - sr, y - sr, sr * 2, sr * 2);
+    }
+    ctx.globalAlpha = 1;
+
     for (let r = 0; r < rings; r++) {
-      const baseR = minDim * (0.1 + r * 0.15);
+      const baseR = minDim * (0.11 + r * 0.145);
       const spin = this.sceneTime * (0.14 + r * 0.08) * (r % 2 ? -1 : 1);
-      const sprite = this._dot(this._color(r));
-      const trail = [];
-      for (let i = 0; i < P; i++) {
+      const c = this._loud(r);
+      ctx.beginPath();
+      for (let i = 0; i <= P; i++) {
         const ang = (i / P) * Math.PI * 2 + spin;
         const slot = ((i * 7 + Math.floor(this.t * 3) * 3) % P) / P;
         const v = logSample(freq, Math.pow(slot, 0.55));
-        const mod = Math.sin(ang * (2 + r * 2) - this.t * 1.4) * this.sm.mid * 0.4 + Math.cos(ang * 3 + this.t * 1.1) * this.sm.high * 0.5;
-        const rad = baseR * (1 + v * 0.5 * this.sensitivity + mod) + this.beat * baseR * 0.06;
+        const mod = Math.sin(ang * (2 + r * 2) - this.t * 1.4) * this.sm.mid * 0.22
+          + Math.cos(ang * 3 + this.t * 1.1) * this.sm.high * 0.26;
+        const rad = baseR * (1 + v * 0.46 * this.sensitivity + mod) + this.beat * baseR * 0.05;
         const x = cx + Math.cos(ang) * rad;
         const y = cy + Math.sin(ang) * rad;
-        const s = 7 + v * 6;
-        /* additive sprites that overlap along each arm; 0.85 each stacked
-           past white wherever two arms crossed */
-        ctx.globalAlpha = clamp(0.14 + v * 0.40, 0.04, 0.58);
-        ctx.drawImage(sprite, x - s, y - s, s * 2, s * 2);
-        trail.push([x, y]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
       }
-      if (trail.length > 4) {
-        ctx.beginPath();
-        ctx.moveTo(trail[0][0], trail[0][1]);
-        for (let i = 1; i < trail.length; i += 2) ctx.lineTo(trail[i][0], trail[i][1]);
-        ctx.strokeStyle = hexRgba(this._color(r), 0.12 + this.sm.level * 0.12);
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
+      ctx.closePath();
+      const fg = ctx.createRadialGradient(cx, cy, baseR * 0.55, cx, cy, baseR * 1.55);
+      fg.addColorStop(0, hexRgba(c, 0.012));
+      fg.addColorStop(0.62, hexRgba(c, 0.05));
+      fg.addColorStop(1, hexRgba(c, 0.16));
+      ctx.fillStyle = fg;
+      ctx.fill();
+      ctx.strokeStyle = hexRgba(c, 0.07 + this.sm.level * 0.05);
+      ctx.lineWidth = 4.5;
+      ctx.stroke();
+      ctx.strokeStyle = hexRgba(c, 0.30 + this.sm.level * 0.16);
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      for (let k = 0; k < 12; k++) {
+        const i = (k / 12) * P;
+        const ang = (i / P) * Math.PI * 2 + spin;
+        const slot = ((i * 7 + Math.floor(this.t * 3) * 3) % P) / P;
+        const v = logSample(freq, Math.pow(slot, 0.55));
+        const mod = Math.sin(ang * (2 + r * 2) - this.t * 1.4) * this.sm.mid * 0.22
+          + Math.cos(ang * 3 + this.t * 1.1) * this.sm.high * 0.26;
+        const rad = baseR * (1 + v * 0.46 * this.sensitivity + mod) + this.beat * baseR * 0.05;
+        const x = cx + Math.cos(ang) * rad;
+        const y = cy + Math.sin(ang) * rad;
+        const s = 2 + v * 4.5 + this.beat * 1.2;
+        ctx.globalAlpha = clamp(0.20 + v * 0.45, 0.12, 0.62);
+        ctx.drawImage(this._dot(c), x - s, y - s, s * 2, s * 2);
       }
+      ctx.globalAlpha = 1;
     }
+
     if (this.beat > 0.25) {
       const br = minDim * 0.5 * this.beat;
-      ctx.lineWidth = 1.6;
-      ctx.strokeStyle = hexRgba(this._color(0), this.beat * 0.5);
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = hexRgba(this._vivid(0), this.beat * 0.34);
       ctx.beginPath();
       ctx.moveTo(cx - br, cy); ctx.lineTo(cx + br, cy);
       ctx.moveTo(cx, cy - br); ctx.lineTo(cx, cy + br);
@@ -323,10 +491,32 @@ class ExtraModes {
       ctx.moveTo(cx + br * 0.62, cy - br * 0.62); ctx.lineTo(cx - br * 0.62, cy + br * 0.62);
       ctx.stroke();
     }
-    const haloR = minDim * 0.05 * (1 + this.sm.bass * 1.4 + this.beat * 0.8);
-    ctx.globalAlpha = 0.8;
-    ctx.drawImage(this._dot(this._color(0)), cx - haloR, cy - haloR, haloR * 2, haloR * 2);
+
+    ctx.globalCompositeOperation = 'source-over';
+    const wellR = minDim * (0.070 + this.sm.bass * 0.012);
+    const well = ctx.createRadialGradient(cx, cy, 0, cx, cy, wellR);
+    well.addColorStop(0, 'rgba(3,3,5,0.90)');
+    well.addColorStop(0.6, 'rgba(3,3,5,0.40)');
+    well.addColorStop(1, 'rgba(3,3,5,0)');
+    ctx.fillStyle = well;
+    ctx.beginPath();
+    ctx.arc(cx, cy, wellR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.42 + this.beat * 0.16);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, wellR * 0.92, 0, Math.PI * 2);
+    ctx.stroke();
+    const coreR = wellR * (0.34 + this.beat * 0.16);
+    ctx.globalAlpha = 0.58;
+    ctx.drawImage(this._dot(this._vivid(1)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
     ctx.globalAlpha = 1;
+    ctx.strokeStyle = hexRgba(this._loud(0), 0.12 + this.sm.level * 0.10);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, minDim * 0.40, this.t * 0.12, this.t * 0.12 + Math.PI * 1.1);
+    ctx.stroke();
     ctx.globalCompositeOperation = 'source-over';
   }
   /* ---------------- SUNSET TERRAIN — stars + meteor ---------------- */
@@ -360,10 +550,18 @@ class ExtraModes {
         ph: Math.random() * Math.PI * 2,
       }));
     }
+    const skyBase = ctx.createLinearGradient(0, 0, 0, horizon);
+    skyBase.addColorStop(0, 'rgba(4,5,8,0.62)');
+    skyBase.addColorStop(0.55, this._shadow(this._color(0), 0.14, 6));
+    skyBase.addColorStop(1, this._shadow(this._color(1), 0.26, 5));
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = skyBase;
+    ctx.fillRect(0, 0, w, horizon);
+
     ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = this._loud(0);
     for (const s of this.stars) {
-      ctx.globalAlpha = 0.10 + 0.30 * (0.5 + 0.5 * Math.sin(this.t * 0.9 + s.ph));
+      ctx.globalAlpha = 0.08 + 0.26 * (0.5 + 0.5 * Math.sin(this.t * 0.9 + s.ph));
       ctx.fillRect(s.x, s.y, s.r, s.r);
     }
     ctx.globalAlpha = 1;
@@ -372,7 +570,7 @@ class ExtraModes {
       const ah = depth * (0.24 + i * 0.1);
       const aur = ctx.createLinearGradient(0, horizon - ah, 0, horizon);
       aur.addColorStop(0, 'rgba(0,0,0,0)');
-      aur.addColorStop(1, hexRgba(this._color(1 + i), 0.10 + this.sm.level * 0.06 + this.beat * 0.04));
+      aur.addColorStop(1, hexRgba(this._loud(1 + i), 0.08 + this.sm.level * 0.05 + this.beat * 0.03));
       ctx.fillStyle = aur;
       ctx.fillRect(ax, horizon - ah, w * 0.34, ah);
     }
@@ -382,8 +580,8 @@ class ExtraModes {
       m.x += 9; m.y += 2.2;
       const tailR = 30;
       const streak = ctx.createLinearGradient(m.x - tailR, m.y - tailR * 0.2, m.x, m.y);
-      streak.addColorStop(0, hexRgba(this._color(1), 0));
-      streak.addColorStop(1, hexRgba(this._color(1), 0.9));
+      streak.addColorStop(0, hexRgba(this._vivid(0), 0));
+      streak.addColorStop(1, hexRgba(this._vivid(0), 0.9));
       ctx.strokeStyle = streak;
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -393,23 +591,83 @@ class ExtraModes {
     } else this._meteor = null;
     const sunR = Math.min(w, h) * (0.075 + this.sm.bass * 0.02 + this.beat * 0.01);
     const sunY = horizon - Math.min(w, h) * 0.16;
-    ctx.globalAlpha = 0.7;
-    ctx.drawImage(this._dot(this._color(1)), w / 2 - sunR, sunY - sunR, sunR * 2, sunR * 2);
+    ctx.globalAlpha = 0.14 + this.sm.bass * 0.08;
+    ctx.drawImage(this._soft(this._loud(0)), w / 2 - sunR * 2.8, sunY - sunR * 2.8, sunR * 5.6, sunR * 5.6);
     ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    const sun = ctx.createRadialGradient(w / 2 - sunR * 0.26, sunY - sunR * 0.30, sunR * 0.06, w / 2, sunY, sunR);
+    sun.addColorStop(0, this._tint(this._vivid(0), -0.02));
+    sun.addColorStop(0.55, this._tint(this._vivid(0), -0.20));
+    sun.addColorStop(0.88, this._tint(this._vivid(0), -0.34));
+    sun.addColorStop(1, this._tint(this._vivid(0), -0.46));
+    ctx.globalAlpha = 0.94;
+    ctx.fillStyle = sun;
+    ctx.beginPath();
+    ctx.arc(w / 2, sunY, sunR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    const bandColor = this._shadow(this._color(0), 0.1, 4);
+    ctx.fillStyle = bandColor;
+    for (let b = 0; b < 4; b++) {
+      ctx.globalAlpha = 0.52 - b * 0.09;
+      ctx.fillRect(w / 2 - sunR * 1.06, sunY + sunR * (0.02 + b * 0.23), sunR * 2.12, sunR * (0.028 + b * 0.013));
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'lighter';
     const sky = ctx.createLinearGradient(0, horizon - depth * 0.45, 0, horizon);
-    sky.addColorStop(0, hexRgba(this._color(0), this.beat * 0.08));
-    sky.addColorStop(0.55, hexRgba(this._color(0), 0.05 + this.sm.level * 0.05));
-    sky.addColorStop(1, hexRgba(this._color(0), 0.10 + this.sm.bass * 0.10 + this.beat * 0.10));
+    sky.addColorStop(0, hexRgba(this._color(0), this.beat * 0.05));
+    sky.addColorStop(0.55, hexRgba(this._color(0), 0.025 + this.sm.level * 0.03));
+    sky.addColorStop(1, hexRgba(this._color(0), 0.035 + this.sm.bass * 0.045 + this.beat * 0.04));
     ctx.fillStyle = sky;
     ctx.fillRect(0, horizon - depth * 0.45, w, depth * 0.45);
+    ctx.fillStyle = hexRgba(this._vivid(0), 0.13 + this.beat * 0.10);
+    ctx.fillRect(0, horizon - 1, w, 1);
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, horizon, w, depth);
     ctx.clip();
     ctx.translate(w / 2, horizon);
+    const ground = ctx.createLinearGradient(0, 0, 0, depth);
+    ground.addColorStop(0, this._shadow(this._color(0), 0.10, 4));
+    ground.addColorStop(0.45, this._shadow(this._color(1), 0.07, 3));
+    ground.addColorStop(1, this._shadow(this._color(0), 0.12, 5));
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = ground;
+    ctx.fillRect(-w * 0.7, 0, w * 1.4, depth);
     ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.05 + this.sm.level * 0.04;
+    ctx.drawImage(this._soft(this._loud(0)), -w * 0.55, -depth * 0.06, w * 1.1, depth * 0.55);
+    ctx.globalAlpha = 1;
     ctx.lineWidth = 1.1;
     const ampBase = depth * 0.42;
+
+    /* two silhouetted ranges sit behind the lit mesh, so the scene has a
+       foreground, a middle distance and a sky rather than one beige field */
+    ctx.globalCompositeOperation = 'source-over';
+    const drawRidge = (baseY, rAmp, tint, alpha) => {
+      ctx.beginPath();
+      ctx.moveTo(-w * 0.7, baseY + rAmp * 1.6);
+      for (let i = 0; i <= COLS; i++) {
+        const u = i / COLS;
+        const x = (u - 0.5) * w * 1.4;
+        const yy = baseY - (Math.sin(u * 7.2 + 1.1) * 0.55
+          + Math.sin(u * 3.1 - 0.6) * 0.45 + 0.35) * rAmp;
+        ctx.lineTo(x, yy);
+      }
+      ctx.lineTo(w * 0.7, baseY + rAmp * 1.6);
+      ctx.closePath();
+      ctx.fillStyle = tint;
+      ctx.globalAlpha = alpha;
+      ctx.fill();
+    };
+    drawRidge(depth * 0.20, depth * 0.10, this._shadow(this._color(1), 0.10, 4), 0.82);
+    drawRidge(depth * 0.34, depth * 0.08, this._shadow(this._color(0), 0.12, 3), 0.90);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.055 + this.sm.level * 0.045;
+    ctx.drawImage(this._soft(this._loud(0)), -w * 0.6, -depth * 0.16, w * 1.2, depth * 0.32);
+    ctx.globalAlpha = 1;
+
     /* parallax halo ridge behind the mesh — same displacement, dimmed,
        shifted slowly sideways so the range never looks frozen */
     {
@@ -418,21 +676,20 @@ class ExtraModes {
       for (let i = 0; i <= COLS; i++) {
         const ci = Math.min(COLS - 1, i);
         const x = ((ci / COLS) - 0.5) * w * 1.3 + drift;
-        const yy = depth * 0.06 - this.terrainRows[Math.min(this.terrainRows.length - 1, 2)]?.[ci] * ampBase * 0.5;
+        const yy = depth * 0.06 - this.terrainRows[this.terrainRows.length - 1]?.[ci] * ampBase * 0.5;
         if (i === 0) ctx.moveTo(x, yy);
         else ctx.lineTo(x, yy);
       }
-      ctx.strokeStyle = hexRgba(this._color(3), 0.035 + this.sm.level * 0.04);
+      ctx.strokeStyle = hexRgba(this._loud(1), 0.035 + this.sm.level * 0.04);
       ctx.lineWidth = 3;
       ctx.stroke();
     }
     for (let r = ROWS - 1; r >= 0; r--) {
       const row = this.terrainRows[r];
-      const u = (r + 1) / ROWS;
-      const persp = 1 - u * u;
+      const u = (ROWS - r) / ROWS;
       const y = depth * u * u;
-      const spread = 0.22 + 1.9 * persp * persp;
-      const amp = ampBase * persp * (0.5 + this.sm.level * 1.1);
+      const spread = 0.16 + 1.86 * u * u;
+      const amp = ampBase * (0.18 + 0.82 * u) * (0.5 + this.sm.level * 1.1);
       ctx.beginPath();
       for (let i = 0; i <= COLS; i++) {
         const ci = Math.min(COLS - 1, i);
@@ -441,12 +698,17 @@ class ExtraModes {
         if (i === 0) ctx.moveTo(x, yy);
         else ctx.lineTo(x, yy);
       }
-      const c = this._color(r % this.theme.colors.length);
+      const c = this._loud(r);
       /* front rows get the beat light */
       const isFront = r < 3;
-      ctx.strokeStyle = hexRgba(isFront ? this._color(0) : c,
-        (isFront ? 0.55 + this.beat * 0.45 : 0.28 + u * 0.42));
-      ctx.lineWidth = isFront ? 1.6 : 0.7 + u * 0.6;
+      const lineA = isFront ? 0.32 + this.beat * 0.24 : 0.07 + u * 0.28;
+      if (r % 5 === 0) {
+        ctx.strokeStyle = hexRgba(isFront ? this._vivid(0) : c, lineA * 0.20);
+        ctx.lineWidth = isFront ? 4 : 2.6;
+        ctx.stroke();
+      }
+      ctx.strokeStyle = hexRgba(isFront ? this._vivid(0) : c, lineA);
+      ctx.lineWidth = isFront ? 1.4 : 0.5 + u * 0.6;
       ctx.stroke();
       if (isFront && this.beat > 0.4) {
         /* peak glints along the lit ridge */
@@ -455,24 +717,38 @@ class ExtraModes {
             const gx = ((i / COLS) - 0.5) * w * spread;
             const gy = y - row[i] * amp;
             const gr = 1.5 + row[i] * 2.2;
-            ctx.globalAlpha = (this.beat - 0.4) * 0.9;
-            ctx.drawImage(this._dot(this._color(1)), gx - gr, gy - gr, gr * 2, gr * 2);
+            ctx.globalAlpha = (this.beat - 0.4) * 0.5;
+            ctx.drawImage(this._dot(this._vivid(0)), gx - gr, gy - gr, gr * 2, gr * 2);
           }
         }
         ctx.globalAlpha = 1;
       }
       if (r > 0) {
-        const uPrev = r / ROWS;
+        const uPrev = (ROWS - (r - 1)) / ROWS;
         const yPrev = depth * uPrev * uPrev;
-        ctx.lineTo(((COLS - 1) / COLS - 0.5) * w * (0.22 + 1.9 * Math.pow(1 - uPrev, 2)), yPrev + 2);
-        ctx.lineTo((-0.5) * w * (0.22 + 1.9 * Math.pow(1 - uPrev, 2)), yPrev + 2);
+        const spreadPrev = 0.16 + 1.86 * uPrev * uPrev;
+        ctx.lineTo(((COLS - 1) / COLS - 0.5) * w * spreadPrev, yPrev + 2);
+        ctx.lineTo((-0.5) * w * spreadPrev, yPrev + 2);
         ctx.closePath();
-        ctx.fillStyle = hexRgba(c, 0.03 + persp * 0.09);
+        ctx.fillStyle = hexRgba(c, 0.012 + u * 0.062);
         ctx.fill();
       }
     }
     ctx.restore();
     ctx.globalCompositeOperation = 'source-over';
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let i = 0; i <= 24; i++) {
+      const u = i / 24;
+      const y = h - h * (0.010 + 0.020 * (0.5 + 0.5 * Math.sin(u * 9 + 1.7)));
+      ctx.lineTo(u * w, y);
+    }
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = this._shadow(this._color(0), 0.16, 3);
+    ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
   /* ---------------- NEON CITY DUSK ---------------- */
@@ -494,8 +770,23 @@ class ExtraModes {
         ph: Math.random() * Math.PI * 2,
       }));
     }
+    const sky = ctx.createLinearGradient(0, 0, 0, baseline);
+    sky.addColorStop(0, 'rgba(4,5,8,0.66)');
+    sky.addColorStop(0.58, this._shadow(this._color(0), 0.13, 6));
+    sky.addColorStop(1, this._shadow(this._color(1), 0.22, 5));
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, baseline);
+
+    const moonR = Math.min(w, h) * (0.045 + this.sm.bass * 0.008);
     ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.16 + this.sm.bass * 0.10;
+    ctx.drawImage(this._soft(this._vivid(0)), w * 0.78 - moonR * 2.8, baseline * 0.24 - moonR * 2.8, moonR * 5.6, moonR * 5.6);
+    ctx.globalAlpha = 0.52;
+    ctx.drawImage(this._dot(this._vivid(0)), w * 0.78 - moonR, baseline * 0.24 - moonR, moonR * 2, moonR * 2);
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = this._loud(0);
     for (const s of this.stars) {
       ctx.globalAlpha = 0.05 + 0.22 * (0.5 + 0.5 * Math.sin(this.t * 0.8 + s.ph));
       ctx.fillRect(s.x, s.y, s.r, s.r);
@@ -510,7 +801,7 @@ class ExtraModes {
         if (x === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
-      ctx.strokeStyle = hexRgba(this._color(1 + i), 0.12 + this.sm.level * 0.08 + this.beat * 0.05);
+      ctx.strokeStyle = hexRgba(this._loud(1 + i), 0.12 + this.sm.level * 0.08 + this.beat * 0.05);
       ctx.stroke();
     }
     ctx.globalCompositeOperation = 'source-over';
@@ -534,6 +825,13 @@ class ExtraModes {
       c.v += (target - c.v) * (target > c.v ? Math.min(1, dt60 * 0.55) : fall);
       c.peak = Math.max(c.peak * fallPeak, c.v);
     }
+    /* a farther, darker rank of towers gives the skyline real parallax */
+    ctx.fillStyle = this._shadow(this._color(1), 0.052, 4);
+    for (let i = 0; i < N; i += 3) {
+      const src = this.cityCols[(i * 5 + 2) % N];
+      const bh = maxH * (0.10 + ((src.seed % 89) / 89) * 0.20 + src.v * 0.12);
+      ctx.fillRect(i * bw - bw * 0.16, baseline - bh, bw * 0.88, bh);
+    }
     ctx.fillStyle = this._shadow(this._color(0), 0.07, 5);
     for (let i = 0; i < N; i += 2) {
       const src = this.cityCols[(i * 7 + 3) % N];
@@ -554,7 +852,7 @@ class ExtraModes {
       const bodyW = bw * 0.68;
       const x = i * bw + (bw - bodyW) / 2;
       const y = baseline - bh;
-      const c = colors[i % colors.length];
+      const c = this._loud(i);
       ctx.fillStyle = this._shadow(this._color(0));
       ctx.fillRect(x, y, bodyW, bh);
       ctx.globalAlpha = 0.1;
@@ -578,15 +876,30 @@ class ExtraModes {
           const flick = 0.78 + 0.22 * Math.sin(this.t * (0.8 + hsh * 2.2) + col.seed + wx);
           const a = (0.14 + 0.6 * col.v) * (0.3 + 0.7 * hsh) * flick;
           if (a < 0.06) continue;
-          ctx.fillStyle = hexRgba(c, a);
+          const wc = (wx + wy * 2 + i) % 5 === 0 ? colors[(i + 2) % colors.length] : c;
+          ctx.fillStyle = hexRgba(wc, a);
           ctx.fillRect(x + 3 + wx * 5, y + 7 + wy * 10, 2.5, 3.5);
         }
       }
       tall.push({ x: x + bodyW / 2, y: y });
     }
     tall.sort((a, b) => b.y - a.y);
-    const beaconC = this._color(0);
+
+    /* wet asphalt: long vertical smears anchor the towers to the street */
     ctx.globalCompositeOperation = 'lighter';
+    for (let k = 0; k < Math.min(7, tall.length); k++) {
+      const tb = tall[(k * 5) % tall.length];
+      const c = this._loud(k + 1);
+      const rr = ctx.createLinearGradient(0, baseline, 0, h);
+      rr.addColorStop(0, hexRgba(c, 0.13 + this.sm.level * 0.08));
+      rr.addColorStop(1, hexRgba(c, 0));
+      ctx.fillStyle = rr;
+      const rw = Math.max(2, bw * (0.14 + ((k * 7) % 5) * 0.045));
+      ctx.fillRect(tb.x - rw / 2, baseline, rw, h - baseline);
+    }
+    ctx.fillStyle = hexRgba(this._color(0), 0.32 + this.beat * 0.18);
+    ctx.fillRect(0, baseline - 0.5, w, 1);
+    const beaconC = this._vivid(0);
     for (let k = 0; k < Math.min(3, tall.length); k++) {
       const tb = tall[k];
       const pulse = Math.max(0, Math.sin(this.t * 2.4 + k * 2.1)) ** 2;
@@ -609,7 +922,7 @@ class ExtraModes {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h / 2;
     const minDim = Math.min(w, h);
-    const N = this.quality === 'low' ? 5 : 10;
+    const N = this.quality === 'low' ? 4 : 7;
     if (!this.nebula || this.nebula.length !== N) {
       this.nebula = Array.from({ length: N }, (_, i) => ({
         ax: 0.16 + ((i * 37) % 11) / 34,
@@ -622,10 +935,27 @@ class ExtraModes {
         band: i % 3,
       }));
     }
-    ctx.globalCompositeOperation = 'lighter';
     const bands = this._nebulaBands || (this._nebulaBands = [0, 0, 0]);
     bands[0] = this.sm.bass; bands[1] = this.sm.mid; bands[2] = this.sm.high;
     const swirl = this.sceneTime * 0.15;
+
+    const sky = ctx.createRadialGradient(cx, cy * 0.92, minDim * 0.04, cx, cy, minDim * 0.92);
+    sky.addColorStop(0, this._shadow(this._color(1), 0.22, 5));
+    sky.addColorStop(0.58, this._shadow(this._color(0), 0.12, 4));
+    sky.addColorStop(1, '#050507');
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.globalCompositeOperation = 'lighter';
+    /* distant gas establishes a background plane before the bright clouds */
+    for (let i = 0; i < 2; i++) {
+      const gx = cx + Math.sin(this.t * 0.035 + i * 1.9) * w * (0.18 + i * 0.05);
+      const gy = cy + Math.cos(this.t * 0.028 + i * 1.3) * h * (0.12 + i * 0.035);
+      const gr = minDim * (0.30 + i * 0.055);
+      ctx.globalAlpha = 0.025 + this.sm.level * 0.02;
+      ctx.drawImage(this._soft(this._loud(i + 1)), gx - gr, gy - gr, gr * 2, gr * 2);
+    }
 
     /* galactic disc — a stretched, tilted swirl of soft pools */
     const discTilt = -0.3 + Math.sin(this.t * 0.05) * 0.06;
@@ -634,8 +964,8 @@ class ExtraModes {
     ctx.translate(cx, cy);
     ctx.rotate(discTilt);
     ctx.scale(1, 0.36);
-    ctx.globalAlpha = clamp(0.10 + this.sm.level * 0.16, 0.04, 0.30);
-    ctx.drawImage(this._soft(this._color(1)), -coreGlow, -coreGlow, coreGlow * 2, coreGlow * 2);
+    ctx.globalAlpha = clamp(0.08 + this.sm.level * 0.13, 0.03, 0.24);
+    ctx.drawImage(this._soft(this._vivid(0)), -coreGlow, -coreGlow, coreGlow * 2, coreGlow * 2);
     ctx.restore();
 
     for (let i = 0; i < N; i++) {
@@ -650,29 +980,29 @@ class ExtraModes {
       const tv = Math.max(bandV, rip * 0.9);
       const r = Math.min(minDim * 0.20, minDim * b.sz * (0.75 + bandV * 1.4 * this.sensitivity + this.beat * 0.18));
       const ci = Math.floor(this.t * 0.05 + i * 0.8);
-      const sprite = this._soft(this._color(ci));
+      const sprite = this._soft(this._loud(ci));
       /* soft gas */
-      ctx.globalAlpha = clamp(0.08 + bandV * 0.22 * this.sensitivity, 0.04, 0.26);
+      ctx.globalAlpha = clamp(0.055 + bandV * 0.18 * this.sensitivity, 0.03, 0.21);
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(swirl * (i % 2 ? 1 : -1));
-      ctx.drawImage(sprite, -r * 1.6, -r * 1.6, r * 3.2, r * 3.2);
+      ctx.drawImage(sprite, -r * 1.5, -r * 1.5, r * 3.0, r * 3.0);
       /* dense line-swept filament crossing the gas */
-      ctx.strokeStyle = hexRgba(this._color(ci), 0.22 + tv * 0.35 * this.sensitivity);
-      ctx.lineWidth = 1 + tv * 1.6;
+      ctx.strokeStyle = hexRgba(this._loud(ci), 0.16 + tv * 0.28 * this.sensitivity);
+      ctx.lineWidth = 0.9 + tv * 1.4;
       ctx.beginPath();
       const fr = r * 2.1;
       ctx.moveTo(-fr, 0);
       ctx.quadraticCurveTo(0, -r * 0.9 + Math.sin(this.t * 0.9 + i) * r * 0.3, fr, 0);
       ctx.stroke();
       /* hot star core at filament center */
-      const hr = Math.max(1.4, r * 0.16 * (0.55 + tv * 1.2));
-      ctx.globalAlpha = clamp(0.35 + tv * 0.6, 0, 0.9);
-      ctx.drawImage(this._dot(this._color(ci)), -hr, -hr, hr * 2, hr * 2);
+      const hr = Math.max(1.2, r * 0.13 * (0.55 + tv * 1.1));
+      ctx.globalAlpha = clamp(0.26 + tv * 0.42, 0, 0.72);
+      ctx.drawImage(this._dot(this._loud(ci)), -hr, -hr, hr * 2, hr * 2);
       ctx.restore();
     }
     /* starfield — twinkles over the gas */
-    for (let i = 0; i < 34; i++) {
+    for (let i = 0; i < 28; i++) {
       const fx = ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1;
       const fy = ((Math.sin(i * 78.233) * 12543.123) % 1 + 1) % 1;
       const px = fx * w + Math.sin(this.t * 0.18 + i * 1.7) * 18;
@@ -680,7 +1010,24 @@ class ExtraModes {
       const a = 0.14 + 0.30 * (0.5 + 0.5 * Math.sin(this.t * 1.1 + i * 1.1));
       const rr = 0.9 + ((i * 7919) % 7) * 0.2;
       ctx.globalAlpha = a;
-      ctx.drawImage(this._dot(this._color(i % this.theme.colors.length)), px - rr, py - rr, rr * 2, rr * 2);
+      ctx.drawImage(this._dot(this._loud(i)), px - rr, py - rr, rr * 2, rr * 2);
+    }
+    /* a handful of foreground stars with cross glints */
+    for (let i = 0; i < 5; i++) {
+      const fx = ((Math.sin((i + 41) * 12.9898) * 43758.5453) % 1 + 1) % 1;
+      const fy = ((Math.sin((i + 41) * 78.233) * 12543.123) % 1 + 1) % 1;
+      const px = fx * w + Math.sin(this.t * 0.11 + i * 2.1) * 9;
+      const py = fy * h + Math.cos(this.t * 0.09 + i * 1.6) * 7;
+      const sr = 1.3 + (i % 3) * 0.7 + this.beat * 0.5;
+      const c = this._vivid(i);
+      ctx.globalAlpha = 0.30 + 0.14 * Math.sin(this.t * 1.3 + i);
+      ctx.strokeStyle = hexRgba(c, 0.22);
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(px - sr * 3.4, py); ctx.lineTo(px + sr * 3.4, py);
+      ctx.moveTo(px, py - sr * 3.4); ctx.lineTo(px, py + sr * 3.4);
+      ctx.stroke();
+      ctx.drawImage(this._dot(c), px - sr, py - sr, sr * 2, sr * 2);
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
@@ -696,24 +1043,73 @@ class ExtraModes {
     const rot = this.sceneTime * 0.28 - this.beat * 0.08;
     const inner = minDim * 0.03;
     const outer = minDim * 0.44;
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 16; i++) {
-      const ang = this.t * (0.05 + i * 0.007) * (i % 2 ? 1 : -1) + i * 1.7;
-      const r = inner + ((i * 37) % 96) / 96 * (outer * 0.82);
-      const x = cx + Math.cos(ang) * r;
-      const y = cy + Math.sin(ang) * r * 0.6;
-      const rr = 1 + (i % 3) * 0.7;
-      ctx.globalAlpha = 0.14 + 0.2 * (0.5 + 0.5 * Math.sin(this.t * 1.3 + i));
-      ctx.drawImage(this._dot(this._color((i + 1) % this.theme.colors.length)), x - rr, y - rr, rr * 2, rr * 2);
-    }
-    ctx.globalAlpha = 1;
-    const coreR = minDim * (0.07 + this.sm.bass * 0.09 + this.beat * 0.02);
-    ctx.globalAlpha = 0.9;
-    ctx.drawImage(this._dot(this._color(1)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
+
+    const bg = ctx.createRadialGradient(cx, cy, minDim * 0.02, cx, cy, minDim * 0.72);
+    bg.addColorStop(0, this._shadow(this._color(1), 0.18, 5));
+    bg.addColorStop(0.55, this._shadow(this._color(0), 0.10, 4));
+    bg.addColorStop(1, 'rgba(5,5,7,0)');
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    /* dark dust lanes sit under the luminous arms */
+    ctx.strokeStyle = 'rgba(4,4,6,0.32)';
+    ctx.lineWidth = Math.max(3, minDim * 0.022);
     for (let a = 0; a < arms; a++) {
       const baseAng = (a / arms) * Math.PI * 2;
       const dir = a % 2 ? 1 : -1;
-      const c = this._color(a);
+      ctx.beginPath();
+      for (let i = 0; i <= PTS; i += 2) {
+        const tt = i / PTS;
+        const theta = baseAng + 0.34 + tt * 4.6 * dir + rot * (1 - tt * 0.35);
+        const r = inner + Math.pow(tt, 1.35) * outer;
+        const x = cx + Math.cos(theta) * r;
+        const y = cy + Math.sin(theta) * r;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 28; i++) {
+      const ang = this.t * (0.05 + (i % 8) * 0.007) * (i % 2 ? 1 : -1) + i * 1.7;
+      const r = inner + ((i * 37) % 96) / 96 * (outer * 0.82);
+      const x = cx + Math.cos(ang) * r;
+      const y = cy + Math.sin(ang) * r * 0.6;
+      const rr = 0.8 + (i % 3) * 0.55;
+      ctx.globalAlpha = 0.10 + 0.16 * (0.5 + 0.5 * Math.sin(this.t * 1.3 + i));
+      ctx.drawImage(this._dot(this._loud(i + 1)), x - rr, y - rr, rr * 2, rr * 2);
+    }
+    ctx.globalAlpha = 1;
+
+    const coreR = minDim * (0.045 + this.sm.bass * 0.018 + this.beat * 0.012);
+    const coreGlow = coreR * (3.4 + this.sm.bass);
+    ctx.globalAlpha = 0.16 + this.sm.bass * 0.10;
+    ctx.drawImage(this._soft(this._vivid(0)), cx - coreGlow, cy - coreGlow, coreGlow * 2, coreGlow * 2);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    const eye = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+    eye.addColorStop(0, 'rgba(4,4,6,0.92)');
+    eye.addColorStop(0.62, 'rgba(4,4,6,0.44)');
+    eye.addColorStop(1, 'rgba(4,4,6,0)');
+    ctx.fillStyle = eye;
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._loud(0), 0.52 + this.beat * 0.18);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreR * 0.92, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.58;
+    ctx.drawImage(this._dot(this._vivid(1)), cx - coreR * 0.32, cy - coreR * 0.32, coreR * 0.64, coreR * 0.64);
+    ctx.globalAlpha = 1;
+    for (let a = 0; a < arms; a++) {
+      const baseAng = (a / arms) * Math.PI * 2;
+      const dir = a % 2 ? 1 : -1;
+      const c = this._loud(a);
       const pt = (i) => {
         const tt = i / PTS;
         const theta = baseAng + tt * 4.6 * dir + rot * (1 - tt * 0.35);
@@ -726,8 +1122,11 @@ class ExtraModes {
         if (i === 0) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
       }
-      ctx.strokeStyle = hexRgba(c, 0.3 + this.sm.level * 0.25);
-      ctx.lineWidth = Math.max(1.2, minDim * 0.007 * (1 + this.sm.bass));
+      ctx.strokeStyle = hexRgba(c, 0.08 + this.sm.level * 0.06);
+      ctx.lineWidth = Math.max(4, minDim * 0.016 * (1 + this.sm.bass));
+      ctx.stroke();
+      ctx.strokeStyle = hexRgba(c, 0.26 + this.sm.level * 0.18);
+      ctx.lineWidth = Math.max(1.1, minDim * 0.006 * (1 + this.sm.bass));
       ctx.stroke();
       for (let i = 0; i < PTS; i++) {
         const p = pt(i);
@@ -740,9 +1139,9 @@ class ExtraModes {
         /* capped: at max sensitivity an uncapped sprite reaches 27px
            half-size and the arm dissolves into overlapping blobs — structure
            first, glow second */
-        const size = Math.min(15, 3 + v * 10 * this.sensitivity + (1 - p.tt) * 4);
-        const sprite = this._dot(this._color(a + Math.floor(p.tt * 2)));
-        ctx.globalAlpha = clamp((0.42 + v * 0.5) * (1 - p.tt * 0.45), 0.18, 0.9);
+        const size = Math.min(14, 2.6 + v * 9 * this.sensitivity + (1 - p.tt) * 3.6);
+        const sprite = this._dot(this._loud(a + Math.floor(p.tt * 2)));
+        ctx.globalAlpha = clamp((0.30 + v * 0.40) * (1 - p.tt * 0.42), 0.14, 0.76);
         ctx.drawImage(sprite, x - size, y - size, size * 2, size * 2);
       }
     }
@@ -810,14 +1209,22 @@ class ExtraModes {
       const r = baseR * (1 + rip * 0.42 * this.sensitivity + harm1 + harm2 + this.beat * 0.08);
       pts.push([cx + Math.cos(ang) * r, cy + Math.sin(ang) * r]);
     }
+    /* ground shadow keeps the sphere sitting in the frame */
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 0.16 + this.beat * 0.06;
+    ctx.drawImage(this._soft(this._loud(0)), cx - baseR * 1.9, cy + baseR * 0.94, baseR * 3.8, baseR * 0.52);
+    ctx.globalAlpha = 1;
+
     const glowR = baseR * 1.55;
     const g = ctx.createRadialGradient(cx, cy, baseR * 0.3, cx, cy, glowR);
-    g.addColorStop(0, hexRgba(this._color(0), 0.18 + this.beat * 0.12));
+    g.addColorStop(0, hexRgba(this._vivid(0), 0.07 + this.beat * 0.05));
     g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
     ctx.fill();
+
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
     for (let i = 1; i < pts.length; i++) {
@@ -826,17 +1233,43 @@ class ExtraModes {
       ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
     }
     ctx.closePath();
-    const fg = ctx.createRadialGradient(cx, cy, baseR * 0.2, cx, cy, baseR * 1.2);
-    fg.addColorStop(0, hexRgba(this._color(1), 0.26));
-    fg.addColorStop(1, hexRgba(this._color(0), 0.06));
+    ctx.globalCompositeOperation = 'source-over';
+    const fg = ctx.createRadialGradient(
+      cx - baseR * 0.34, cy - baseR * 0.38, baseR * 0.06,
+      cx, cy, baseR * 1.18,
+    );
+    fg.addColorStop(0, this._tint(this._vivid(0), -0.04));
+    fg.addColorStop(0.30, this._tint(this._vivid(0), -0.28));
+    fg.addColorStop(0.76, this._tint(this._vivid(1), -0.52));
+    fg.addColorStop(1, this._shadow(this._loud(0), 0.14, 4));
     ctx.fillStyle = fg;
     ctx.fill();
-    ctx.strokeStyle = this._color(0);
-    ctx.lineWidth = 1.8;
-    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.62);
+    ctx.lineWidth = 1.5;
     ctx.stroke();
+
+    ctx.save();
+    ctx.clip();
+    ctx.globalAlpha = 0.22 + this.sm.level * 0.10;
+    ctx.drawImage(this._soft(this._vivid(1)), cx - baseR * 0.72, cy - baseR * 0.78, baseR * 1.05, baseR * 1.05);
     ctx.globalAlpha = 1;
-    ctx.strokeStyle = hexRgba(this._color(2), 0.14 + this.sm.level * 0.12);
+    ctx.strokeStyle = hexRgba(this._loud(1), 0.10 + this.sm.level * 0.07);
+    ctx.lineWidth = 1;
+    for (let r = 0; r < 3; r++) {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - baseR * 0.12 + r * baseR * 0.24, baseR * 0.84, baseR * 0.17, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = hexRgba(this._loud(0), 0.10);
+    for (let r = 0; r < 2; r++) {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, baseR * (0.20 + r * 0.24), baseR * 0.92, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._loud(1), 0.14 + this.sm.level * 0.12);
     ctx.lineWidth = 1;
     for (let r = 0; r < 2; r++) {
       const rr = baseR * (1.35 + r * 0.22);
@@ -844,14 +1277,14 @@ class ExtraModes {
       ctx.ellipse(cx, cy, rr, rr * 0.52, this.t * (0.12 + r * 0.07) * (r % 2 ? -1 : 1), 0, Math.PI * 2);
       ctx.stroke();
     }
-    const coreR = minDim * 0.04 * (1 + this.beat * 1.4 + this.sm.bass * 0.5);
-    ctx.globalAlpha = 0.95;
-    ctx.drawImage(this._dot(this._color(1)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
+    const coreR = minDim * (0.013 + this.beat * 0.013 + this.sm.bass * 0.005);
+    ctx.globalAlpha = 0.30;
+    ctx.drawImage(this._dot(this._vivid(1)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
     ctx.globalAlpha = 1;
     for (const s of this.orbSat) {
       const x = cx + Math.cos(s.ang) * s.dist;
       const y = cy + Math.sin(s.ang) * s.dist * 0.58;
-      const col = this._color(s.c);
+      const col = this._loud(s.c);
       const sr = 2.8 + s.life * 3.2;
       ctx.globalAlpha = clamp(s.life * 0.78, 0, 0.85);
       ctx.drawImage(this._dot(col), x - sr, y - sr, sr * 2, sr * 2);
@@ -906,13 +1339,21 @@ class ExtraModes {
     }
     surf.set(smoothed);
 
+    /* the furnace behind the pour lights the far edge of the liquid */
+    ctx.globalCompositeOperation = 'lighter';
+    const furnaceR = Math.min(w, h) * (0.36 + this.sm.level * 0.12);
+    ctx.globalAlpha = 0.05 + this.sm.bass * 0.055;
+    ctx.drawImage(this._soft(this._vivid(0)), w / 2 - furnaceR, surfaceY - furnaceR * 0.72, furnaceR * 2, furnaceR * 1.2);
+    ctx.globalAlpha = 1;
+
     /* the mass below the surface — source-over, so it is an opaque body with
        real value contrast rather than one more additive glow */
     ctx.globalCompositeOperation = 'source-over';
     const body = ctx.createLinearGradient(0, surfaceY - amp * 1.6, 0, h);
-    body.addColorStop(0, hexRgba(this._color(0), 0.62));
-    body.addColorStop(0.35, hexRgba(this._color(1), 0.34));
-    body.addColorStop(1, this._shadow(this._color(1), 0.16, 4));
+    body.addColorStop(0, this._tint(this._vivid(0), 0.02));
+    body.addColorStop(0.22, this._tint(this._vivid(0), -0.24));
+    body.addColorStop(0.68, this._tint(this._vivid(1), -0.40));
+    body.addColorStop(1, this._shadow(this._vivid(1), 0.18, 3));
     ctx.fillStyle = body;
     ctx.beginPath();
     ctx.moveTo(0, h);
@@ -922,7 +1363,23 @@ class ExtraModes {
     ctx.closePath();
     ctx.fill();
 
+    /* a soft shadow under the crest gives the surface thickness */
+    ctx.beginPath();
+    ctx.moveTo(0, surf[0] + 7);
+    for (let i = 1; i <= cols; i += 2) ctx.lineTo(i * step, surf[i] + 7);
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+
     ctx.globalCompositeOperation = 'lighter';
+
+    /* wide crest bloom first, then the hard specular glints on top */
+    ctx.beginPath();
+    ctx.moveTo(0, surf[0]);
+    for (let i = 1; i <= cols; i++) ctx.lineTo(i * step, surf[i]);
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.08 + this.sm.level * 0.05);
+    ctx.lineWidth = 5;
+    ctx.stroke();
 
     /* specular crest: brightest where the surface is flattest, which is what
        makes a liquid read as metal rather than as a coloured shape */
@@ -930,19 +1387,27 @@ class ExtraModes {
       const slope = Math.abs(surf[i + 1] - surf[i - 1]) / (step * 2);
       const flat = clamp(1 - slope * 2.4, 0, 1);
       if (flat <= 0.02) continue;
-      ctx.strokeStyle = hexRgba(this._color(2), clamp(flat * (0.32 + this.sm.level * 0.34), 0, 0.72));
+      ctx.strokeStyle = hexRgba(this._vivid(0), clamp(flat * (0.24 + this.sm.level * 0.26), 0, 0.58));
       ctx.lineWidth = 1 + flat * 2.2;
       ctx.beginPath();
       ctx.moveTo((i - 1) * step, surf[i - 1]);
       ctx.lineTo((i + 1) * step, surf[i + 1]);
       ctx.stroke();
+      if (flat > 0.55) {
+        ctx.strokeStyle = hexRgba(this._vivid(1), clamp(flat * (0.14 + this.sm.high * 0.18), 0, 0.38));
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        ctx.moveTo((i - 1) * step, surf[i - 1] - 0.6);
+        ctx.lineTo((i + 1) * step, surf[i + 1] - 0.6);
+        ctx.stroke();
+      }
     }
 
     /* a soft sheen sitting on the metal, drifting out of step with the waves */
     const sheenX = w * (0.5 + 0.34 * Math.sin(this.t * 0.21));
     const sheenR = Math.min(w, h) * (0.26 + this.sm.level * 0.10);
     ctx.globalAlpha = 0.10 + this.sm.level * 0.10;
-    ctx.drawImage(this._soft(this._color(2)), sheenX - sheenR, surfaceY - sheenR * 0.7, sheenR * 2, sheenR * 1.05);
+    ctx.drawImage(this._soft(this._vivid(1)), sheenX - sheenR, surfaceY - sheenR * 0.7, sheenR * 2, sheenR * 1.05);
 
     /* droplets thrown off the crest on beats, falling back under gravity.
        Spawn probability is per-second, not per-frame: gating on the beat
@@ -968,13 +1433,20 @@ class ExtraModes {
       const d = this.fluidDrops[k];
       /* fixed-step ballistics scaled by frame time: the 0.016 below is one
          60Hz step, so motion matches at any refresh rate */
+      const ox = d.x, oy = d.y;
       d.vy += g * 0.016 * dt60;
       d.x += d.vx * 0.016 * dt60;
       d.y += d.vy * 0.016 * dt60;
       const si = clamp(Math.round(d.x / step), 0, cols);
       if (d.y >= surf[si] || d.x < -20 || d.x > w + 20) { this.fluidDrops.splice(k, 1); continue; }
-      ctx.globalAlpha = 0.55;
-      ctx.drawImage(this._dot(this._color(d.c)), d.x - d.r, d.y - d.r, d.r * 2, d.r * 2);
+      ctx.strokeStyle = hexRgba(this._loud(d.c), 0.20);
+      ctx.lineWidth = Math.max(1, d.r * 0.8);
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      ctx.lineTo(d.x, d.y);
+      ctx.stroke();
+      ctx.globalAlpha = 0.50;
+      ctx.drawImage(this._dot(this._loud(d.c)), d.x - d.r, d.y - d.r, d.r * 2, d.r * 2);
     }
 
     ctx.globalAlpha = 1;
@@ -1019,6 +1491,18 @@ class ExtraModes {
     };
 
     ctx.globalCompositeOperation = 'lighter';
+    /* the vanishing point is the light source for the whole lattice */
+    const vpY = rowY(0);
+    const vpR = Math.min(w, h) * (0.32 + this.sm.bass * 0.06);
+    ctx.globalAlpha = 0.07 + this.sm.level * 0.055 + this.beat * 0.02;
+    ctx.drawImage(this._soft(this._vivid(0)), w / 2 - vpR, vpY - vpR * 0.55, vpR * 2, vpR * 1.1);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.22 + this.beat * 0.12);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.08, vpY); ctx.lineTo(w * 0.92, vpY);
+    ctx.stroke();
+
     /* horizontal wires with frequency displacement */
     for (let y = 0; y <= rows; y++) {
       ctx.beginPath();
@@ -1034,7 +1518,12 @@ class ExtraModes {
         else ctx.lineTo(px + pull, py + off);
       }
       const depth = y / rows;
-      ctx.strokeStyle = hexRgba(this._color(y % this.theme.colors.length), 0.16 + depth * 0.22);
+      if (y % 3 === 0) {
+        ctx.strokeStyle = hexRgba(this._loud(y), 0.035 + depth * 0.04);
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+      }
+      ctx.strokeStyle = hexRgba(this._loud(y), 0.13 + depth * 0.20);
       ctx.lineWidth = 0.7 + depth * 0.9;
       ctx.stroke();
     }
@@ -1051,12 +1540,34 @@ class ExtraModes {
         if (y === 0) ctx.moveTo(px + pull, py + off);
         else ctx.lineTo(px + pull, py + off);
       }
-      ctx.strokeStyle = hexRgba(this._color(x % this.theme.colors.length), 0.12);
+      ctx.strokeStyle = hexRgba(this._loud(x), 0.10);
       ctx.lineWidth = 1.0;
       ctx.stroke();
     }
+
+    /* a few data packets travel the near wires */
+    for (let k = 0; k < 7; k++) {
+      const gy = 3 + ((k * 3) % Math.max(1, rows - 5));
+      const u = (this.t * (0.07 + k * 0.008) + k * 0.159) % 1;
+      const v = freq ? logSample(freq, u) : 0.4;
+      const px = u * w;
+      const py = rowY(gy) + Math.sin(u * 6 + this.t * 1.4 + gy * 0.22) * v * 26 * this.sensitivity;
+      const pull = (px - w / 2) * (1 - spread(gy));
+      const c = this._loud(k + 1);
+      const pr = 2 + v * 3.4 + this.beat * 1.1;
+      ctx.strokeStyle = hexRgba(c, 0.16 + v * 0.2);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px + pull - pr * 4, py);
+      ctx.lineTo(px + pull - pr, py);
+      ctx.stroke();
+      ctx.globalAlpha = 0.38 + v * 0.34;
+      ctx.drawImage(this._dot(c), px + pull - pr, py - pr, pr * 2, pr * 2);
+    }
+    ctx.globalAlpha = 1;
+
     /* node lattice — always on, amplitude-lit */
-    const nodeR = 1.6 + this.sm.level * 2.2;
+    const nodeR = 1.5 + this.sm.level * 2.0;
     for (let gy = 1; gy < rows; gy++) {
       for (let gx = 1; gx < cols; gx++) {
         const u = gx / cols;
@@ -1065,14 +1576,19 @@ class ExtraModes {
         const py = rowY(gy);
         const off = Math.sin(u * 6 + this.t * 1.4 + gy * 0.22) * v * 26 * this.sensitivity;
         const pull = (px - w / 2) * (1 - spread(gy));
-        const a = clamp(0.08 + v * 0.40 + this.beat * v * 0.35, 0, 0.62);
-        const r = nodeR + v * 2.6 + this.beat * 1.2;
+        const a = clamp(0.06 + v * 0.32 + this.beat * v * 0.30, 0, 0.54);
+        const r = nodeR + v * 2.3 + this.beat * 1.1;
         ctx.globalAlpha = a;
-        ctx.drawImage(this._dot(this._color((gx + gy) % this.theme.colors.length)), px + pull - r, py + off - r, r * 2, r * 2);
+        ctx.drawImage(this._dot(this._loud(gx + gy)), px + pull - r, py + off - r, r * 2, r * 2);
       }
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
+    const feet = ctx.createLinearGradient(0, h * 0.86, 0, h);
+    feet.addColorStop(0, 'rgba(4,4,6,0)');
+    feet.addColorStop(1, 'rgba(4,4,6,0.62)');
+    ctx.fillStyle = feet;
+    ctx.fillRect(0, h * 0.86, w, h * 0.14);
   }
 
   /* ---------------- PRISM RAY — dispersion ---------------- */
@@ -1085,11 +1601,18 @@ class ExtraModes {
     const bx = cx - sz * 0.86, by = cy + sz * 0.5;
     const qx = cx + sz * 0.86, qy = cy + sz * 0.5;
 
-    /* glass slab fill */
     ctx.globalCompositeOperation = 'lighter';
+    const ambR = Math.min(w, h) * (0.34 + this.sm.level * 0.06);
+    ctx.globalAlpha = 0.055 + this.sm.bass * 0.055 + this.beat * 0.02;
+    ctx.drawImage(this._soft(this._vivid(0)), cx - ambR, cy - ambR * 0.8, ambR * 2, ambR * 1.6);
+    ctx.globalAlpha = 1;
+
+    /* glass slab fill, drawn as a solid object rather than more glow */
+    ctx.globalCompositeOperation = 'source-over';
     const ig = ctx.createLinearGradient(0, ay, 0, by);
-    ig.addColorStop(0, hexRgba(this._color(1), 0.16 + this.sm.bass * 0.22));
-    ig.addColorStop(1, hexRgba(this._color(0), 0.05));
+    ig.addColorStop(0, hexRgba(this._vivid(0), 0.34 + this.sm.bass * 0.20));
+    ig.addColorStop(0.55, hexRgba(this._loud(0), 0.18));
+    ig.addColorStop(1, hexRgba(this._loud(0), 0.08));
     ctx.fillStyle = ig;
     ctx.beginPath();
     ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(qx, qy);
@@ -1097,8 +1620,8 @@ class ExtraModes {
     ctx.fill();
 
     /* second face offset — extra-triangular echo for volume */
-    ctx.globalAlpha = 0.55;
-    ctx.fillStyle = hexRgba(this._color(2), 0.10 + this.sm.mid * 0.16);
+    ctx.globalAlpha = 0.50;
+    ctx.fillStyle = hexRgba(this._vivid(1), 0.14 + this.sm.mid * 0.16);
     ctx.beginPath();
     ctx.moveTo(ax, ay + sz * 0.08); ctx.lineTo(bx - sz * 0.05, by); ctx.lineTo(qx + sz * 0.05, qy);
     ctx.closePath();
@@ -1106,10 +1629,11 @@ class ExtraModes {
     ctx.globalAlpha = 1;
 
     /* incoming beam from top */
+    ctx.globalCompositeOperation = 'lighter';
     const inLen = h * 0.34;
     const inGrad = ctx.createLinearGradient(ax, ay - inLen, ax, ay);
-    inGrad.addColorStop(0, hexRgba(this._color(2), 0));
-    inGrad.addColorStop(1, hexRgba(this._color(2), 0.6 + this.sm.level * 0.3));
+    inGrad.addColorStop(0, hexRgba(this._vivid(0), 0));
+    inGrad.addColorStop(1, hexRgba(this._vivid(0), 0.55 + this.sm.level * 0.25));
     ctx.strokeStyle = inGrad;
     ctx.lineWidth = 2.2 + this.sm.level * 2;
     ctx.beginPath();
@@ -1119,20 +1643,20 @@ class ExtraModes {
     /* beam glint where it enters the glass */
     const br = 2.6 + this.sm.mid * 4;
     ctx.globalAlpha = 0.9;
-    ctx.drawImage(this._dot(this._color(2)), ax - br, ay - br, br * 2, br * 2);
+    ctx.drawImage(this._dot(this._vivid(1)), ax - br, ay - br, br * 2, br * 2);
     ctx.globalAlpha = 1;
 
     /* frame — bright edges, hazy on loud */
-    ctx.strokeStyle = hexRgba(this._color(1), 0.92);
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(qx, qy);
-    ctx.closePath();
-    ctx.stroke();
-    ctx.strokeStyle = hexRgba(this._color(0), 0.25 + this.sm.level * 0.2);
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.20 + this.sm.level * 0.16);
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(ax + 4, ay); ctx.lineTo(bx + 4, by); ctx.lineTo(qx + 4, qy);
+    ctx.moveTo(ax + 3, ay); ctx.lineTo(bx + 3, by); ctx.lineTo(qx + 3, qy);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.strokeStyle = hexRgba(this._loud(0), 0.80);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(qx, qy);
     ctx.closePath();
     ctx.stroke();
 
@@ -1151,7 +1675,7 @@ class ExtraModes {
       const y2 = y1 + Math.sin(ang) * len * 0.20;
       const xm = (x1 + x2) / 2 + Math.sin(ang) * len * 0.16;
       const ym = (y1 + y2) / 2 - len * 0.06;
-      const col = this._color(i);
+      const col = this._loud(i);
       const g = ctx.createLinearGradient(x1, y1, x2, y2);
       g.addColorStop(0, hexRgba(col, 0.7 + v * 0.3));
       g.addColorStop(0.6, hexRgba(col, 0.22 + v * 0.2));
@@ -1170,15 +1694,43 @@ class ExtraModes {
       const gx = bx + (qx - bx) * (0.5 + 0.4 * Math.sin(this.t * 2.2));
       const gy = by - sz * 0.28 * Math.abs(Math.sin(this.t * 1.7));
       ctx.globalAlpha = clamp(this.beat * 0.8, 0, 0.85);
-      ctx.drawImage(this._dot(this._color(0)), gx - glintR, gy - glintR, glintR * 2, glintR * 2);
+      ctx.drawImage(this._dot(this._vivid(0)), gx - glintR, gy - glintR, glintR * 2, glintR * 2);
       ctx.globalAlpha = 1;
-      ctx.fillStyle = hexRgba(this._color(2), this.beat * 0.7);
+      ctx.fillStyle = hexRgba(this._vivid(1), this.beat * 0.7);
       for (let i = 0; i < 8; i++) {
         const sx = cx + (Math.sin(i * 91.7 + this.t * 3) * sz * 0.9);
         const sy = cy + sz * 0.5 + this.beat * 7 + ((i % 3) * 6);
         ctx.fillRect(sx, sy, 2, 2);
       }
     }
+
+    /* reflected triangle and caustic pool give the glass a floor to stand on */
+    ctx.globalCompositeOperation = 'source-over';
+    const poolY = by + sz * 1.55;
+    ctx.globalAlpha = 0.18 + this.sm.bass * 0.12;
+    ctx.drawImage(this._soft(this._vivid(0)), cx - sz * 1.15, poolY - sz * 0.20, sz * 2.3, sz * 0.40);
+    ctx.globalAlpha = 1;
+    const ref = ctx.createLinearGradient(0, by, 0, poolY);
+    ref.addColorStop(0, hexRgba(this._vivid(0), 0.16));
+    ref.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = ref;
+    ctx.beginPath();
+    ctx.moveTo(ax, by + (by - ay));
+    ctx.lineTo(bx, by);
+    ctx.lineTo(qx, qy);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 10; i++) {
+      const u = ((i * 0.137 + this.t * 0.03) % 1);
+      const px = ax + Math.sin(i * 2.3 + this.t * 1.2) * sz * 0.10;
+      const py = ay - inLen + u * inLen;
+      const rr = 0.8 + (i % 3) * 0.6 + this.beat * 0.5;
+      ctx.globalAlpha = 0.18 + 0.22 * (1 - u);
+      ctx.drawImage(this._dot(this._vivid(1)), px - rr, py - rr, rr * 2, rr * 2);
+    }
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
 
@@ -1191,6 +1743,21 @@ class ExtraModes {
     /* the horizon tightens as the drop lands — collapse, not just throb */
     const base = Math.min(w, h) * 0.11 * (1 + this.sm.bass * 0.3 - drop * 0.18);
     ctx.globalCompositeOperation = 'lighter';
+
+    for (let i = 0; i < 44; i++) {
+      const fx = ((Math.sin(i * 12.9898 + 3.1) * 43758.5453) % 1 + 1) % 1;
+      const fy = ((Math.sin(i * 78.233 + 1.7) * 12543.123) % 1 + 1) % 1;
+      const px = fx * w;
+      const py = fy * h;
+      const sr = 0.7 + (i % 4) * 0.35;
+      ctx.globalAlpha = 0.10 + 0.22 * (0.5 + 0.5 * Math.sin(this.t * 0.9 + i * 1.3));
+      ctx.drawImage(this._dot(this._loud(i)), px - sr, py - sr, sr * 2, sr * 2);
+    }
+    const lensR = base * (5.2 + this.sm.bass * 0.8);
+    ctx.globalAlpha = 0.06 + this.sm.bass * 0.05;
+    ctx.drawImage(this._soft(this._vivid(0)), cx - lensR, cy - lensR, lensR * 2, lensR * 2);
+    ctx.globalAlpha = 1;
+
     const rings = this.quality === 'low' ? 22 : 36;
     for (let i = 0; i < rings; i++) {
       const t = i / rings;
@@ -1205,7 +1772,7 @@ class ExtraModes {
          burned out the centre. Fade the alpha in toward the middle, where
          the crowding is, instead of paying it flat across every ring. */
       const crowd = 0.45 + 0.55 * Math.min(1, t * 2.2);
-      ctx.strokeStyle = hexRgba(this._color(Math.floor(t * 4)), (0.22 + v * 0.34) * crowd);
+      ctx.strokeStyle = hexRgba(this._loud(Math.floor(t * 4)), (0.22 + v * 0.34) * crowd);
       ctx.lineWidth = 1.1 + v * 1.4;
       ctx.beginPath();
       // wobble can exceed the radius on the innermost ring — a negative
@@ -1222,11 +1789,23 @@ class ExtraModes {
     ctx.beginPath();
     ctx.arc(cx, cy, base, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = hexRgba(this._color(0), 0.85 + this.beat * 0.2 + drop * 0.15);
+    ctx.strokeStyle = hexRgba(this._loud(0), 0.72 + this.beat * 0.2 + drop * 0.12);
     ctx.lineWidth = 1.8;
     ctx.beginPath();
     ctx.arc(cx, cy, base * 1.02, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.22 + this.sm.level * 0.18);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, base * 1.32, base * 0.46, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.30 + this.beat * 0.20);
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(cx, cy, base * 1.06, -0.6 + this.t * 0.2, 0.7 + this.t * 0.2);
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   /* ---------------- BLOOM FIELD MESH ---------------- */
@@ -1238,9 +1817,23 @@ class ExtraModes {
     const rows = this.quality === 'low' ? 6 : 9;
     const cw = w / cols;
     const rh = h / rows;
+
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, 'rgba(4,4,6,0.58)');
+    bg.addColorStop(0.52, this._shadow(this._color(0), 0.09, 4));
+    bg.addColorStop(1, 'rgba(4,4,6,0.34)');
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'lighter';
+    const ambR = Math.min(w, h) * (0.42 + this.sm.level * 0.07);
+    ctx.globalAlpha = 0.045 + this.sm.bass * 0.05;
+    ctx.drawImage(this._soft(this._vivid(0)), w / 2 - ambR, h / 2 - ambR * 0.7, ambR * 2, ambR * 1.4);
+    ctx.globalAlpha = 1;
+
     if (this.quality !== 'low') {
       ctx.globalCompositeOperation = 'lighter';
-      const meshA = 0.05 + this.sm.level * 0.06 + drop * 0.03;
+      const meshA = 0.032 + this.sm.level * 0.035 + drop * 0.02;
       /* Spread the grid across the whole spectrum instead of cycling the
          same 64 positions every few cells: the field then shows real
          spectral structure rather than 144 cells all lit the same. */
@@ -1250,10 +1843,11 @@ class ExtraModes {
           const a1 = dotAt(x, y);
           const cx1 = x * cw + cw / 2;
           const cy1 = y * rh + rh / 2;
+          const rowDepth = 0.55 + (y / Math.max(1, rows - 1)) * 0.65;
           if (x < cols - 1) {
             const a2 = dotAt(x + 1, y);
-            ctx.strokeStyle = hexRgba(this._color(x % this.theme.colors.length), meshA * (a1 + a2));
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = hexRgba(this._loud(x), meshA * (a1 + a2) * rowDepth);
+            ctx.lineWidth = 0.8 + rowDepth * 0.4;
             ctx.beginPath();
             ctx.moveTo(cx1, cy1);
             ctx.lineTo((x + 1) * cw + cw / 2, cy1);
@@ -1261,8 +1855,8 @@ class ExtraModes {
           }
           if (y < rows - 1) {
             const a2 = dotAt(x, y + 1);
-            ctx.strokeStyle = hexRgba(this._color((x + 1) % this.theme.colors.length), meshA * (a1 + a2));
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = hexRgba(this._loud(x + 1), meshA * (a1 + a2) * rowDepth);
+            ctx.lineWidth = 0.8 + rowDepth * 0.4;
             ctx.beginPath();
             ctx.moveTo(cx1, cy1);
             ctx.lineTo(cx1, (y + 1) * rh + rh / 2);
@@ -1276,62 +1870,95 @@ class ExtraModes {
       for (let x = 0; x < cols; x++) {
         const idx = y * cols + x;
         const amp = freq ? logSample(freq, idx / (cols * rows - 1)) : 0.5;
-        const px = x * cw + cw / 2 + Math.sin(this.t * 0.6 + idx) * 4;
-        const py = y * rh + rh / 2 + Math.cos(this.t * 0.5 + idx * 1.3) * 4;
-        /* Bound the bloom to its cell. Radius scaled with amplitude and
-           sensitivity unbounded, so at full energy one sprite spanned most
-           of the frame; 144 of them in additive mode then merged into a
-           flat sheet of white. The old quadratic frequency mapping hid this
-           by keeping most cells near silent — with a real log mapping every
-           cell carries signal and the field blew out. */
-        const cell = Math.min(cw, rh);
-        const s = Math.min(cell * 1.25, 10 + amp * 22 * this.sensitivity + this.beat * 6 + drop * 10);
-        const c = this._color((x + y) % this.theme.colors.length);
-        /* soft bokeh pool under every bloom */
+        const rowDepth = 0.58 + (y / Math.max(1, rows - 1)) * 0.72;
+        const px = x * cw + cw / 2 + Math.sin(this.t * 0.6 + idx) * 4 * rowDepth;
+        const py = y * rh + rh / 2 + Math.cos(this.t * 0.5 + idx * 1.3) * 4 * rowDepth;
+        const cell = Math.min(cw, rh) * rowDepth;
+        const s = Math.min(cell * 1.18, (7 + amp * 20 * this.sensitivity + this.beat * 5 + drop * 8) * rowDepth);
+        const c = this._loud(x + y * 2 + Math.floor(this.t * 0.04));
         ctx.globalCompositeOperation = 'lighter';
-        /* Each pool sprite spanned 3.8x its radius, so on a 16x9 grid every
-           point overlapped roughly twenty neighbours; additively that summed
-           several times past white and the field read as a flat sheet. Alpha
-           is now budgeted against how much a sprite actually overlaps. */
-        ctx.globalAlpha = 0.035 + amp * 0.055;
-        ctx.drawImage(this._soft(c), px - s * 1.1, py - s * 1.1, s * 2.2, s * 2.2);
+        ctx.globalAlpha = 0.018 + amp * 0.036 * rowDepth;
+        ctx.drawImage(this._soft(c), px - s * 1.12, py - s * 1.12, s * 2.24, s * 2.24);
         ctx.globalCompositeOperation = 'source-over';
-        /* crisp core with alpha falloff */
-        ctx.globalAlpha = 0.20 + amp * 0.45;
-        ctx.drawImage(this._dot(c), px - s * 0.85, py - s * 0.85, s * 1.7, s * 1.7);
-        /* bright center popper on loud cells — the kick lowers the bar so
-           the whole field erupts instead of waiting for a loud bin */
-        if (amp > 0.6 - this.beat * 0.15) {
-          const hr = s * 0.3;
-          /* the beat lowers the threshold below 0.6, so (amp-0.6)*1.2 went
-             negative for quiet cells; canvas ignored the alpha and drew the
-             popper at whatever alpha the previous cell left behind */
-          ctx.globalAlpha = Math.max(0.06, (amp - 0.6) * 1.2);
-          ctx.drawImage(this._soft(this._color((x + y + 1) % this.theme.colors.length)), px - hr, py - hr, hr * 2, hr * 2);
+        ctx.globalAlpha = 0.12 + amp * 0.26 * rowDepth;
+        ctx.drawImage(this._dot(c), px - s * 0.82, py - s * 0.82, s * 1.64, s * 1.64);
+        if (amp > 0.62 - this.beat * 0.12) {
+          const hr = s * 0.28;
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = Math.max(0.05, (amp - 0.6) * 0.9) * rowDepth;
+          ctx.drawImage(this._soft(this._vivid(x + y + 1)), px - hr, py - hr, hr * 2, hr * 2);
           ctx.globalAlpha = 1;
         }
       }
     }
+
+    /* out-of-focus foreground bokeh gives the field a near plane */
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 6; i++) {
+      const bx = (0.08 + 0.84 * ((i * 0.618 + 0.11) % 1)) * w;
+      const by = h * (0.52 + 0.42 * ((i * 0.37 + 0.19) % 1));
+      const br = Math.min(w, h) * (0.05 + (i % 3) * 0.025 + this.sm.level * 0.02);
+      ctx.globalAlpha = 0.022 + this.sm.level * 0.018;
+      ctx.drawImage(this._soft(this._vivid(2 - (i % 2))), bx - br, by - br, br * 2, br * 2);
+    }
     ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    const foot = ctx.createLinearGradient(0, h * 0.9, 0, h);
+    foot.addColorStop(0, 'rgba(4,4,6,0)');
+    foot.addColorStop(1, 'rgba(4,4,6,0.45)');
+    ctx.fillStyle = foot;
+    ctx.fillRect(0, h * 0.9, w, h * 0.1);
   }
 
   _fractal(freq) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h / 2;
+    const minDim = Math.min(w, h);
     const drop = this.beatInfo?.drop || 0;
-    const base = Math.min(w, h) * 0.12;
+    const base = minDim * 0.12;
     const depth = this.quality === 'low' ? 4 : 6;
+
+    ctx.globalCompositeOperation = 'lighter';
+    const ambR = minDim * (0.34 + this.sm.level * 0.08);
+    ctx.globalAlpha = 0.045 + this.sm.bass * 0.05 + this.beat * 0.02;
+    ctx.drawImage(this._soft(this._vivid(0)), cx - ambR, cy - ambR, ambR * 2, ambR * 2);
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 16; i++) {
+      const ang = (i / 16) * Math.PI * 2 - this.t * 0.04;
+      const rr = minDim * (0.30 + ((i * 41) % 17) / 40);
+      const sr = 0.8 + (i % 3) * 0.5;
+      ctx.globalAlpha = 0.06 + 0.08 * (0.5 + 0.5 * Math.sin(this.t * 0.8 + i * 1.7));
+      ctx.drawImage(this._dot(this._loud(i)),
+        cx + Math.cos(ang) * rr - sr, cy + Math.sin(ang) * rr - sr, sr * 2, sr * 2);
+    }
+    ctx.globalAlpha = 1;
+
     const drawBranch = (x, y, len, ang, d, colIdx) => {
       if (d <= 0) return;
       const v = freq ? logSample(freq, (d / depth)) : 0.5;
       const nx = x + Math.cos(ang) * len * (0.7 + v * 0.6);
       const ny = y + Math.sin(ang) * len * (0.7 + v * 0.6);
-      ctx.strokeStyle = hexRgba(this._color(colIdx % this.theme.colors.length), 0.35 + v * 0.45);
-      ctx.lineWidth = Math.max(1, d * 1.2);
+      const c = this._loud(colIdx);
+      if (d > 2) {
+        ctx.strokeStyle = hexRgba(c, 0.035 + v * 0.045);
+        ctx.lineWidth = Math.max(3, d * 2.6);
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(nx, ny);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = hexRgba(c, 0.16 + v * 0.26);
+      ctx.lineWidth = Math.max(0.8, d * 1.05);
       ctx.beginPath();
       ctx.moveTo(x, y);
       ctx.lineTo(nx, ny);
       ctx.stroke();
+      if (d === 1) {
+        const br = 1.4 + v * 2.4 + this.beat * 0.9;
+        ctx.globalAlpha = 0.28 + v * 0.30;
+        ctx.drawImage(this._dot(this._vivid(colIdx + 2)), nx - br, ny - br, br * 2, br * 2);
+        ctx.globalAlpha = 1;
+      }
       const spread = 0.55 + this.sm.bass * 0.3 + drop * 0.35;
       drawBranch(nx, ny, len * 0.68, ang - spread, d - 1, colIdx + 1);
       drawBranch(nx, ny, len * 0.68, ang + spread, d - 1, colIdx + 2);
@@ -1342,9 +1969,35 @@ class ExtraModes {
       const ang = (i / 5) * Math.PI * 2 + this.sceneTime * 0.3 + this.sm.high * 0.12;
       drawBranch(cx, cy, base, ang, depth, i);
     }
-    const cr = base * 0.35 * (1 + this.beat * 0.8 + drop * 0.6);
-    ctx.globalAlpha = 0.9;
-    ctx.drawImage(this._dot(this._color(0)), cx - cr, cy - cr, cr * 2, cr * 2);
+
+    ctx.globalCompositeOperation = 'source-over';
+    const eyeR = base * (0.22 + this.beat * 0.06);
+    const eye = ctx.createRadialGradient(cx, cy, 0, cx, cy, eyeR);
+    eye.addColorStop(0, 'rgba(4,4,6,0.88)');
+    eye.addColorStop(0.62, 'rgba(4,4,6,0.36)');
+    eye.addColorStop(1, 'rgba(4,4,6,0)');
+    ctx.fillStyle = eye;
+    ctx.beginPath();
+    ctx.arc(cx, cy, eyeR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._loud(0), 0.40 + this.beat * 0.18);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, eyeR * 0.9, 0, Math.PI * 2);
+    ctx.stroke();
+    const cr = base * (0.09 + this.beat * 0.05 + drop * 0.04);
+    ctx.globalAlpha = 0.44;
+    ctx.drawImage(this._dot(this._vivid(0)), cx - cr, cy - cr, cr * 2, cr * 2);
+    ctx.globalAlpha = 1;
+
+    for (let i = 0; i < 14; i++) {
+      const px = ((i * 0.618 + 0.21) % 1) * w + Math.sin(this.t * 0.3 + i) * 5;
+      const py = ((i * 0.37 + 0.14) % 1) * h + Math.cos(this.t * 0.25 + i) * 5;
+      const pr = 0.8 + (i % 3) * 0.55 + this.beat * 0.4;
+      ctx.globalAlpha = 0.08 + 0.10 * (0.5 + 0.5 * Math.sin(this.t * 0.9 + i * 1.4));
+      ctx.drawImage(this._soft(this._vivid(2 - (i % 2))), px - pr, py - pr, pr * 2, pr * 2);
+    }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -1370,6 +2023,13 @@ class ExtraModes {
       cv.width = Math.max(2, Math.round(w));
       cv.height = Math.max(2, Math.round(h));
       const rc = cv.getContext('2d');
+      const bez = rc.createRadialGradient(cx, cy, R * 0.12, cx, cy, R * 1.22);
+      bez.addColorStop(0, 'rgba(4,5,7,0)');
+      bez.addColorStop(0.72, 'rgba(4,5,7,0.10)');
+      bez.addColorStop(0.90, 'rgba(4,5,7,0.38)');
+      bez.addColorStop(1, 'rgba(4,5,7,0)');
+      rc.fillStyle = bez;
+      rc.fillRect(0, 0, cv.width, cv.height);
       rc.globalCompositeOperation = 'lighter';
       rc.strokeStyle = hexRgba(this._color(0), 0.16);
       rc.lineWidth = 1;
@@ -1382,6 +2042,14 @@ class ExtraModes {
       rc.moveTo(cx - R, cy); rc.lineTo(cx + R, cy);
       rc.moveTo(cx, cy - R); rc.lineTo(cx, cy + R);
       rc.stroke();
+      rc.fillStyle = hexRgba(this._color(2), 0.30);
+      for (let ring = 1; ring <= 4; ring++) {
+        const rr = (R * ring) / 4;
+        for (let a = 0; a < 12; a++) {
+          const ang = (a / 12) * Math.PI * 2;
+          rc.fillRect(cx + Math.cos(ang) * rr - 0.8, cy + Math.sin(ang) * rr - 0.8, 1.6, 1.6);
+        }
+      }
       rc.strokeStyle = hexRgba(this._color(2), 0.16);
       rc.beginPath();
       rc.arc(cx, cy, R + 6, 0, Math.PI * 2);
@@ -1396,6 +2064,10 @@ class ExtraModes {
       }
       this._radarBase = cv;
     }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 0.10 + this.sm.bass * 0.06;
+    ctx.drawImage(this._soft(this._vivid(0)), cx - R * 1.2, cy + R * 0.92, R * 2.4, R * 0.38);
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'lighter';
     ctx.drawImage(this._radarBase, 0, 0);
     /* rotating crosshair that reads as a hard grid pointer */
@@ -1412,7 +2084,7 @@ class ExtraModes {
       cx + Math.cos(lead) * R, cy + Math.sin(lead) * R,
       cx + Math.cos(lead - wedge) * R, cy + Math.sin(lead - wedge) * R
     );
-    wg.addColorStop(0, hexRgba(this._color(0), 0.16 + this.sm.level * 0.20));
+    wg.addColorStop(0, hexRgba(this._vivid(0), 0.10 + this.sm.level * 0.15));
     wg.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = wg;
     ctx.beginPath();
@@ -1478,9 +2150,12 @@ class ExtraModes {
       if (b.life <= 0) { this.radarBlips.splice(i, 1); continue; }
       const x = cx + Math.cos(b.ang) * b.dist;
       const y = cy + Math.sin(b.ang) * b.dist;
-      const r = (b.big ? 5 : 3) + b.life * (b.big ? 7 : 4);
-      ctx.globalAlpha = clamp(b.life, 0, 1) * (b.big ? 0.95 : 0.55);
-      ctx.drawImage(this._dot(this._color(b.c)), x - r, y - r, r * 2, r * 2);
+      const r = (b.big ? 4.5 : 2.8) + b.life * (b.big ? 6 : 3.6);
+      const bc = this._color(b.c);
+      ctx.globalAlpha = clamp(b.life, 0, 1) * (b.big ? 0.14 : 0.08);
+      ctx.drawImage(this._soft(bc), x - r * 2.5, y - r * 2.5, r * 5, r * 5);
+      ctx.globalAlpha = clamp(b.life, 0, 1) * (b.big ? 0.74 : 0.42);
+      ctx.drawImage(this._dot(bc), x - r, y - r, r * 2, r * 2);
       /* ping ring on fresh contacts */
       if (b.life > 0.82) {
         ctx.strokeStyle = hexRgba(this._color(b.c), (b.life - 0.82) * 2.2);
@@ -1492,10 +2167,25 @@ class ExtraModes {
     }
     ctx.globalAlpha = 1;
 
-    /* center core */
-    const coreR = minDim * 0.014 * (1 + this.sm.bass * 1.2 + this.beat * 0.8);
-    ctx.globalAlpha = 0.95;
-    ctx.drawImage(this._dot(this._color(0)), cx - coreR, cy - coreR, coreR * 2, coreR * 2);
+    /* center core: dark hub, lit ring, small hot seed */
+    ctx.globalCompositeOperation = 'source-over';
+    const coreR = minDim * (0.020 + this.sm.bass * 0.012 + this.beat * 0.010);
+    const hub = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR * 2.4);
+    hub.addColorStop(0, 'rgba(4,5,7,0.90)');
+    hub.addColorStop(0.55, 'rgba(4,5,7,0.38)');
+    hub.addColorStop(1, 'rgba(4,5,7,0)');
+    ctx.fillStyle = hub;
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreR * 2.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.46 + this.beat * 0.18);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.50;
+    ctx.drawImage(this._dot(this._vivid(1)), cx - coreR * 0.34, cy - coreR * 0.34, coreR * 0.68, coreR * 0.68);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -1536,12 +2226,31 @@ class ExtraModes {
     }
 
     const warmth = 0.5 + this.sm.bass * 1.1 + this.beat * 0.35;
+
+    /* the lamp itself: a soft heated column, a base plate and glass edges */
+    ctx.globalCompositeOperation = 'source-over';
+    const seat = ctx.createRadialGradient(colX, h * 0.62, 0, colX, h * 0.62, colW * 0.95);
+    seat.addColorStop(0, this._shadow(this._color(1), 0.16, 6));
+    seat.addColorStop(0.62, this._shadow(this._color(0), 0.10, 4));
+    seat.addColorStop(1, 'rgba(4,4,6,0)');
+    ctx.fillStyle = seat;
+    ctx.fillRect(colX - colW * 0.95, h * 0.12, colW * 1.9, h * 0.88);
+    ctx.fillStyle = this._shadow(this._color(0), 0.14, 4);
+    ctx.beginPath();
+    ctx.ellipse(colX, h * 0.955, colW * 0.58, h * 0.035, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = hexRgba(this._color(1), 0.20 + this.sm.bass * 0.10);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(colX, h * 0.955, colW * 0.58, h * 0.035, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
     ctx.globalCompositeOperation = 'lighter';
 
     /* the lamp's heat source: a pool at the base, brightest on bass */
     const pool = ctx.createLinearGradient(0, h * 0.70, 0, h);
     pool.addColorStop(0, 'rgba(0,0,0,0)');
-    pool.addColorStop(1, hexRgba(this._color(0), 0.10 + this.sm.bass * 0.18));
+    pool.addColorStop(1, hexRgba(this._vivid(0), 0.10 + this.sm.bass * 0.18));
     ctx.fillStyle = pool;
     ctx.fillRect(colX - colW * 0.72, h * 0.70, colW * 1.44, h * 0.30);
 
@@ -1586,7 +2295,7 @@ class ExtraModes {
       const speed = Math.abs(tri - 0.5) * 2;
       const stretch = 1 + speed * 0.34;
       const squash = 1 / stretch;
-      pts.push({ px, py, pr, v, c: b.c, stretch, squash, heat: b.heat, rising });
+      pts.push({ px, py, pr, v, c: b.c, stretch, squash, heat: b.heat, rising, ph: b.ph });
     }
 
     /* --- surface tension between lumps that are close ---
@@ -1612,7 +2321,7 @@ class ExtraModes {
           const br = Math.min(a.pr, b.pr) * (0.34 + pull * 0.42);
           ctx.globalAlpha = clamp(pull * 0.20, 0, 0.17);
           ctx.drawImage(
-            this._soft(this._color(f < 0.5 ? a.c : b.c)),
+            this._soft(this._loud(f < 0.5 ? a.c : b.c)),
             a.px + dx * f - br, a.py + dy * f - br, br * 2, br * 2,
           );
         }
@@ -1631,40 +2340,83 @@ class ExtraModes {
        survives whatever the palette. */
     ctx.globalCompositeOperation = 'source-over';
     for (const p of pts) {
-      const base = this._color(p.c);
-      const soft = this._soft(base);
+      const base = this._loud(p.c);
       const bodyR = p.pr * 1.02;
       ctx.save();
       ctx.translate(p.px, p.py);
       ctx.scale(p.squash, p.stretch);
-      /* source-over stacking converges on the source colour rather than
-         exceeding it, which is the point — but at 0.6 a piece of wax three
-         lumps deep is already 94% of the way there, and on a white palette
-         that is white, which the bloom pass then blows into a slab. Capping
-         lower keeps the column a mid-tone mass with the core supplying the
-         brightness, which is also how wax actually looks: dark material lit
-         from inside, not a glowing shape. */
-      ctx.globalAlpha = clamp(0.16 + p.v * 0.20 + this.sm.bass * 0.10, 0.07, 0.34);
-      ctx.drawImage(soft, -bodyR, -bodyR, bodyR * 2, bodyR * 2);
-      /* the core carries the heat, so a rising blob glows and a sinking one
-         has gone dull — the colour tells you which way it is going */
-      /* Additive over an already-bright body, a large white-hot core just
-         clipped the whole blob to a white disc and threw the wax colour
-         away. Small and only modestly lifted: the body carries the hue, the
-         core says which blobs are on the way up. */
-      ctx.globalCompositeOperation = 'lighter';   // the core is light, not wax
-      const coreR = p.pr * (0.24 + p.heat * 0.13);
-      ctx.globalAlpha = clamp(0.10 + p.heat * 0.24 + p.v * 0.12, 0.04, 0.40);
-      ctx.fillStyle = this._tint(base, 0.06 + p.heat * 0.24);
+      const wax = ctx.createRadialGradient(-bodyR * 0.24, -bodyR * 0.30, bodyR * 0.04, 0, 0, bodyR * 1.08);
+      wax.addColorStop(0, this._tint(base, 0.06));
+      wax.addColorStop(0.34, this._tint(base, -0.18));
+      wax.addColorStop(0.74, this._tint(base, -0.46));
+      wax.addColorStop(0.94, this._tint(base, -0.64));
+      wax.addColorStop(1, this._shadow(base, 0.10, 4));
+      ctx.globalAlpha = clamp(0.40 + p.v * 0.16 + this.sm.bass * 0.08, 0.24, 0.66);
+      ctx.fillStyle = wax;
       ctx.beginPath();
-      ctx.ellipse(0, 0, coreR, coreR, 0, 0, Math.PI * 2);
+      for (let k = 0; k <= 16; k++) {
+        const ang = (k / 16) * Math.PI * 2;
+        const bump = 1
+          + Math.sin(ang * 3 + this.t * 0.8 + p.ph) * 0.05
+          + Math.cos(ang * 5 - this.t * 0.55 + p.ph * 1.7) * 0.028;
+        const bx = Math.cos(ang) * bodyR * bump;
+        const by = Math.sin(ang) * bodyR * bump;
+        if (k === 0) ctx.moveTo(bx, by);
+        else ctx.lineTo(bx, by);
+      }
+      ctx.closePath();
       ctx.fill();
+      ctx.globalAlpha = 0.26 + p.heat * 0.14;
+      ctx.strokeStyle = hexRgba(base, 0.30);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = clamp(0.08 + p.heat * 0.14 + p.v * 0.06, 0.04, 0.24);
+      ctx.fillStyle = this._tint(base, 0.08 + p.heat * 0.20);
+      ctx.beginPath();
+      ctx.arc(0, 0, bodyR * (0.22 + p.heat * 0.11), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.07 + p.heat * 0.08;
+      ctx.drawImage(this._soft(this._vivid(1)), -bodyR * 0.66, -bodyR * 0.80, bodyR * 0.95, bodyR * 0.95);
       ctx.globalCompositeOperation = 'source-over';
       ctx.restore();
     }
 
-    void dt;
+    /* glass edge highlights and rising heat motes finish the lamp */
+    ctx.globalCompositeOperation = 'lighter';
+    for (let side = -1; side <= 1; side += 2) {
+      const gx = colX + side * colW * 0.46;
+      ctx.globalAlpha = 0.045 + this.sm.level * 0.03;
+      ctx.drawImage(this._soft(this._vivid(0)), gx - colW * 0.045, h * 0.14, colW * 0.09, h * 0.78);
+    }
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.20 + this.sm.bass * 0.08);
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(colX - colW * 0.50, h * 0.10);
+    ctx.quadraticCurveTo(colX - colW * 0.57, h * 0.55, colX - colW * 0.33, h * 0.94);
+    ctx.moveTo(colX + colW * 0.50, h * 0.10);
+    ctx.quadraticCurveTo(colX + colW * 0.57, h * 0.55, colX + colW * 0.33, h * 0.94);
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = this._shadow(this._color(1), 0.14, 5);
+    ctx.beginPath();
+    ctx.ellipse(colX, h * 0.085, colW * 0.53, h * 0.028, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.24);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(colX, h * 0.085, colW * 0.53, h * 0.028, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 10; i++) {
+      const hx = colX + (((i * 0.37 + 0.11) % 1) - 0.5) * colW * 0.78
+        + Math.sin(this.t * 0.6 + i * 1.7) * 6;
+      const hy = h * 0.94 - (((i * 0.13 + this.t * 0.018) % 1) * h * 0.62);
+      const hr = 0.8 + (i % 3) * 0.55 + this.sm.bass * 0.7;
+      ctx.globalAlpha = 0.06 + 0.10 * (0.5 + 0.5 * Math.sin(this.t * 0.9 + i));
+      ctx.drawImage(this._soft(this._vivid(0)), hx - hr, hy - hr, hr * 2, hr * 2);
+    }
     ctx.globalAlpha = 1;
+    void dt;
     ctx.globalCompositeOperation = 'source-over';
   }
 
@@ -1690,6 +2442,33 @@ class ExtraModes {
     const cosB = Math.cos(tilt), sinB = Math.sin(tilt);
     const beatP = 1 + this.beat * 0.10 + this.sm.bass * 0.08;
     const scale = S * beatP;
+
+    /* the core sits in a dim room with a circuit floor under it */
+    const floorY = cy + minDim * 0.30;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(4,4,6,0.34)';
+    ctx.beginPath();
+    ctx.ellipse(cx, floorY, minDim * 0.36, minDim * 0.070, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._loud(0), 0.085);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = -4; i <= 4; i++) {
+      const fx = cx + i * minDim * 0.075;
+      ctx.moveTo(fx, floorY);
+      ctx.lineTo(cx + (fx - cx) * 2.6, h);
+    }
+    for (let i = 1; i <= 4; i++) {
+      const fy = floorY + (h - floorY) * (i / 4) * (i / 4);
+      ctx.moveTo(cx - minDim * 0.55, fy);
+      ctx.lineTo(cx + minDim * 0.55, fy);
+    }
+    ctx.stroke();
+    const coreGlowR = minDim * (0.35 + this.sm.bass * 0.07);
+    ctx.globalAlpha = 0.06 + this.sm.level * 0.045;
+    ctx.drawImage(this._soft(this._vivid(0)), cx - coreGlowR, cy - coreGlowR, coreGlowR * 2, coreGlowR * 2);
+    ctx.globalAlpha = 1;
 
     /* render back-to-front for painter's order */
     if (!this._gpuCells || this._gpuCells.length !== this.gpuVox.length) {
@@ -1724,30 +2503,32 @@ class ExtraModes {
       const amp = freq ? logSample(freq, u * 0.8 + 0.1) : 0.5;
       const bright = clamp(0.5 + amp * 0.42 * this.sensitivity, 0, 1.05);
       const ci = Math.floor(u * sliceColors.length) % sliceColors.length;
-      const col = sliceColors[ci];
+      const col = this._loud(ci);
       /* cell body — source-over so overlapping cells stay saturated,
          never stack to white */
       ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = clamp(0.72 + amp * 0.2, 0, 0.92);
-      ctx.fillStyle = this._tint(col, -0.38);
+      const fog = 0.52 + u * 0.48;
+      ctx.globalAlpha = clamp(0.62 + amp * 0.24, 0, 0.90) * fog;
+      ctx.fillStyle = this._tint(col, -0.56);
       ctx.fillRect(c.px - c.s / 2, c.py - c.s / 2, c.s, c.s);
-      /* Hot top face (fake isometric). This was painted in near-white on
-         every one of the 64 cells, so a loud frame turned the whole stack
-         achromatic — the cell bodies were carefully kept off 'lighter' to
-         avoid exactly that, and then the top face did it anyway. Lifting
-         the slice colour instead keeps the lit read and the hue. */
-      ctx.globalAlpha = clamp((0.4 + amp * 0.2) * bright, 0, 0.62);
-      /* the lift is toward white, so a pale palette (Warm Brass tops out at
-         #f5e6d3) reached white on its own — keep the lift proportional to
-         how much headroom the slice colour actually has */
-      ctx.fillStyle = this._tint(col, 0.26 + amp * 0.14);
+      /* lit edges keep the voxel structure legible at every size */
+      ctx.globalAlpha = clamp(0.22 + amp * 0.24, 0, 0.48) * fog;
+      ctx.strokeStyle = this._tint(col, 0.04);
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.rect(c.px - c.s / 2 + 0.4, c.py - c.s / 2 + 0.4, c.s - 0.8, c.s - 0.8);
+      ctx.stroke();
+      /* Hot top face (fake isometric), always a lifted version of the slice
+         hue rather than white. */
+      ctx.globalAlpha = clamp((0.26 + amp * 0.20) * bright, 0, 0.48) * fog;
+      ctx.fillStyle = this._tint(col, 0.10 + amp * 0.10);
       ctx.fillRect(c.px - c.s / 2, c.py - c.s / 2, c.s, c.s * 0.30);
       /* soft halo on loud cells */
       if (amp > 0.55) {
         ctx.globalCompositeOperation = 'lighter';
         const hr = c.s * (1.1 + amp * 0.5);
-        ctx.globalAlpha = (amp - 0.55) * 0.28;   // additive halos stacked to white on dense frames
-        ctx.drawImage(this._soft(this._color(ci)), c.px - hr, c.py - hr, hr * 2, hr * 2);
+        ctx.globalAlpha = (amp - 0.55) * 0.13 * fog;
+        ctx.drawImage(this._soft(this._loud(ci)), c.px - hr, c.py - hr, hr * 2, hr * 2);
       }
     }
     ctx.globalAlpha = 1;
@@ -1755,6 +2536,15 @@ class ExtraModes {
     /* orbiting data nodes — circle the core like bus lines */
     ctx.globalCompositeOperation = 'lighter';
     const orbit = minDim * 0.66;
+    ctx.strokeStyle = hexRgba(this._loud(1), 0.10 + this.sm.level * 0.07);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, orbit * 0.72, orbit * 0.45, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.12 + this.beat * 0.08);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, orbit * 0.54, orbit * 0.34, 0, 0, Math.PI * 2);
+    ctx.stroke();
     const nodes = 7;
     for (let i = 0; i < nodes; i++) {
       const ang = this.t * 0.35 + (i * Math.PI * 2) / nodes;
@@ -1764,10 +2554,10 @@ class ExtraModes {
       const v = freq ? logSample(freq, (i + 1) / (nodes + 1)) : 0.5;
       const rr = Math.min(8, 2.0 + v * 3.6 * this.sensitivity + this.beat * 1.6);
       ctx.globalAlpha = clamp(0.26 + v * 0.42, 0, 0.62);
-      ctx.drawImage(this._dot(this._color((i + 1) % this.theme.colors.length)), nx - rr, ny - rr, rr * 2, rr * 2);
+      ctx.drawImage(this._dot(this._loud(i + 1)), nx - rr, ny - rr, rr * 2, rr * 2);
       /* link line to core center */
       const gl = ctx.createLinearGradient(nx, ny, cx, cy);
-      gl.addColorStop(0, hexRgba(this._color((i + 1) % this.theme.colors.length), 0.05 + v * 0.12));
+      gl.addColorStop(0, hexRgba(this._loud(i + 1), 0.05 + v * 0.12));
       gl.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.strokeStyle = gl;
       ctx.lineWidth = 1;
@@ -1792,11 +2582,28 @@ class ExtraModes {
        recovers. Grooves are circularly symmetric so the rate change reads
        as weight, not a skip. */
     const rot = this.sceneTime * 0.4 + this.beat * 0.08;
-    const c0 = this._color(0), c1 = this._color(1);
+    const c0 = this._vivid(0), c1 = this._vivid(1);
     void dt;
     ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(4,4,6,0.46)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + R * 0.96, R * 1.02, R * 0.15, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.save();
     ctx.translate(cx, cy);
+    const platter = ctx.createRadialGradient(0, 0, R * 0.62, 0, 0, R * 1.08);
+    platter.addColorStop(0, '#111113');
+    platter.addColorStop(0.86, '#17171a');
+    platter.addColorStop(1, '#2b2b30');
+    ctx.fillStyle = platter;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 1.06, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = hexRgba(c1, 0.34);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 1.055, 0, Math.PI * 2);
+    ctx.stroke();
     const body = ctx.createRadialGradient(0, 0, R * 0.12, 0, 0, R);
     body.addColorStop(0, '#1a1a1c');
     body.addColorStop(1, '#0a0a0b');
@@ -1838,40 +2645,85 @@ class ExtraModes {
     sheen.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = sheen;
     ctx.fillRect(-R, -R, R * 2, R * 2);
+    ctx.strokeStyle = hexRgba(this._vivid(1), 0.30 + this.sm.high * 0.16);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 0.985, -2.55, -0.62);
+    ctx.stroke();
     ctx.globalCompositeOperation = 'source-over';
     const lr = R * 0.20;
     const label = ctx.createRadialGradient(0, 0, 0, 0, 0, lr);
-    label.addColorStop(0, hexRgba(c0, 0.95));
-    label.addColorStop(1, hexRgba(c1, 0.9));
+    label.addColorStop(0, hexRgba(c0, 0.96));
+    label.addColorStop(1, hexRgba(c1, 0.92));
     ctx.fillStyle = label;
     ctx.beginPath();
     ctx.arc(0, 0, lr, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = hexRgba(this._vivid(1), 0.38 + this.sm.level * 0.16);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, lr * 0.78, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.fillStyle = 'rgba(10,10,11,0.9)';
     ctx.beginPath();
     ctx.arc(0, 0, lr * 0.2, 0, Math.PI * 2);
     ctx.fill();
     if (this.quality !== 'low') {
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.strokeStyle = hexRgba(this._vivid(1), 0.30);
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.arc(0, 0, lr, 0, Math.PI * 2);
       ctx.stroke();
     }
+
     const pvx = R * 0.92, pvy = -R * 0.98;
-    ctx.strokeStyle = 'rgba(220,220,225,0.85)';
+    const hx = R * 0.06, hy = R * -0.02;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(pvx + 2.5, pvy + 3.5);
+    ctx.lineTo(hx + 2.5, hy + 3.5);
+    ctx.stroke();
+    const armGrad = ctx.createLinearGradient(pvx, pvy, hx, hy);
+    armGrad.addColorStop(0, 'rgba(238,238,242,0.95)');
+    armGrad.addColorStop(0.55, 'rgba(176,176,184,0.92)');
+    armGrad.addColorStop(1, 'rgba(128,128,136,0.92)');
+    ctx.strokeStyle = armGrad;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(pvx, pvy);
-    ctx.lineTo(R * 0.06, R * -0.02);
+    ctx.lineTo(hx, hy);
     ctx.stroke();
-    ctx.fillStyle = 'rgba(220,220,225,0.9)';
+    /* counterweight and pivot */
+    ctx.fillStyle = '#141416';
     ctx.beginPath();
-    ctx.arc(pvx, pvy, 5, 0, Math.PI * 2);
+    ctx.ellipse(pvx + R * 0.055, pvy - R * 0.035, R * 0.028, R * 0.050, Math.atan2(hy - pvy, hx - pvx), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = hexRgba(c1, 0.42);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(pvx + R * 0.055, pvy - R * 0.035, R * 0.028, R * 0.050, Math.atan2(hy - pvy, hx - pvx), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#202024';
+    ctx.beginPath();
+    ctx.arc(pvx, pvy, R * 0.045, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = hexRgba(c0, 0.42);
+    ctx.beginPath();
+    ctx.arc(pvx, pvy, R * 0.045, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#3a3a40';
+    ctx.beginPath();
+    ctx.arc(pvx, pvy, R * 0.018, 0, Math.PI * 2);
+    ctx.fill();
+    /* cartridge sitting in the groove */
+    ctx.fillStyle = 'rgba(205,205,212,0.92)';
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, 5.5, 3.6, Math.atan2(hy - pvy, hx - pvx) + Math.PI / 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = hexRgba(c0, 0.9);
     ctx.beginPath();
-    ctx.arc(R * 0.06, R * -0.02, 2.5, 0, Math.PI * 2);
+    ctx.arc(hx, hy, 2.4, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
     ctx.globalAlpha = 1;
@@ -1927,14 +2779,14 @@ class ExtraModes {
     const tint = document.createElement('canvas');
     tint.width = tint.height = res;
     const tc = tint.getContext('2d');
-    const cols = this.theme.colors;
+    const cols = this._loudColors || this.theme.colors;
     const g = tc.createRadialGradient(res / 2, res / 2, 0, res / 2, res / 2, res / 2);
     for (let i = 0; i < cols.length; i++) {
-      g.addColorStop(i / Math.max(1, cols.length - 1), cols[Math.max(0, cols.length - 4 - i)]);
+      g.addColorStop(i / Math.max(1, cols.length - 1), cols[Math.min(cols.length - 1, i)]);
     }
     tc.fillStyle = g;
     tc.fillRect(0, 0, res, res);
-    tc.globalCompositeOperation = 'source-in';
+    tc.globalCompositeOperation = 'destination-in';
     tc.drawImage(mask, 0, 0);
 
     this._chladniPat = tint;
@@ -1955,6 +2807,15 @@ class ExtraModes {
     const key = `${this._chladniPair[0]},${this._chladniPair[1]},${this.theme.id},${this.quality}`;
     if (this._chladniKey !== key || !this._chladniPat) this._buildChladni(this.sm);
 
+    const plateR = Math.min(w, h) * (0.58 + this.sm.bass * 0.02);
+    const plate = ctx.createRadialGradient(cx, cy, plateR * 0.06, cx, cy, plateR);
+    plate.addColorStop(0, this._shadow(this._color(1), 0.20, 8));
+    plate.addColorStop(0.62, this._shadow(this._color(0), 0.10, 5));
+    plate.addColorStop(1, 'rgba(4,4,6,0)');
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = plate;
+    ctx.fillRect(0, 0, w, h);
+
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(this.t * 0.03 + this.beat * 0.006);
@@ -1962,15 +2823,15 @@ class ExtraModes {
     const S = Math.max(w, h) * 1.35;
     ctx.globalCompositeOperation = 'lighter';
     const zoom = 1 + this.beat * 0.008 + drop * 0.012;
-    ctx.globalAlpha = clamp(0.26 + this.sm.level * 0.12 + this.beat * 0.07 + drop * 0.05, 0, 0.5);
+    ctx.globalAlpha = clamp(0.17 + this.sm.level * 0.09 + this.beat * 0.05 + drop * 0.03, 0, 0.36);
     ctx.drawImage(this._chladniPat, -S * zoom / 2, -S * zoom / 2, S * zoom, S * zoom);
 
-    const cols = this.theme.colors;
+    const cols = this._loudColors || this.theme.colors;
     for (const [u, v, a, phase] of this._chladniDots || []) {
       const j = Math.sin(this.t * (5 + phase * 9) + phase * 20) * (0.7 + this.beat * 1.8);
-      const s = 0.8 + a * 1.8 + this.beat * 1.1;
-      ctx.globalAlpha = clamp(0.18 + a * 0.5, 0, 0.8);
-      ctx.fillStyle = this._tint(cols[Math.floor(phase * cols.length) % cols.length], 0.45);
+      const s = 0.55 + a * 1.2 + this.beat * 0.7;
+      ctx.globalAlpha = clamp(0.10 + a * 0.32, 0, 0.55);
+      ctx.fillStyle = this._tint(cols[Math.floor(phase * cols.length) % cols.length], 0.10);
       ctx.beginPath();
       ctx.arc(u * S * zoom / 2 + j, v * S * zoom / 2 + j * 0.55, s, 0, Math.PI * 2);
       ctx.fill();
@@ -1978,6 +2839,31 @@ class ExtraModes {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
+
+    /* the plate rim and its tick ring sit still while the figure rotates */
+    const rimR = Math.min(w, h) * 0.465;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexRgba(this._loud(0), 0.20 + this.sm.level * 0.08);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rimR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.28 + this.beat * 0.12);
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 36; i++) {
+      const ang = (i / 36) * Math.PI * 2;
+      const long = i % 3 === 0;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * rimR, cy + Math.sin(ang) * rimR);
+      ctx.lineTo(cx + Math.cos(ang) * (rimR + (long ? 7 : 3.5)),
+        cy + Math.sin(ang) * (rimR + (long ? 7 : 3.5)));
+      ctx.stroke();
+    }
+    ctx.strokeStyle = hexRgba(this._loud(1), 0.10 + this.sm.level * 0.06);
+    ctx.beginPath();
+    ctx.arc(cx, cy, rimR * 0.90, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
   }
 }
 

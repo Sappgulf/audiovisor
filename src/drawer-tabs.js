@@ -46,7 +46,11 @@ export function createDrawerTabs({ onSourceTab, onLookTab, onStudioTab, doc = do
       b.setAttribute('aria-selected', String(on));
       b.tabIndex = on ? 0 : -1;
     });
-    panels.forEach((p) => p.classList.toggle('is-active', p.dataset.panel === btn.dataset.tab));
+    panels.forEach((p) => {
+      const on = p.dataset.panel === btn.dataset.tab;
+      p.classList.toggle('is-active', on);
+      p.setAttribute('aria-hidden', String(!on));
+    });
     const title = doc.getElementById('drawer-title');
     if (title) title.textContent = { source: 'Choose your audio', look: 'Shape the scene', audio: 'Tune the sound', studio: 'Make it yours' }[btn.dataset.tab];
     if (btn.dataset.tab === 'source') onSourceTab?.();

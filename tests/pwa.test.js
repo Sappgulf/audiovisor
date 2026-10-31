@@ -3,8 +3,9 @@
  * icon or a stale colour shows up only once someone installs the app to a
  * home screen. These assert the contract against the built output.
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { registerServiceWorker } from '../src/pwa.js';
 
 /* These assert against the built output, so a clean checkout with no dist/
    would fail before anything was wrong. CI builds before it tests; a local
@@ -450,5 +451,38 @@ describe.skipIf(!hasDist)('OS integration', () => {
       expect(shot.type).toBe('image/jpeg');
       expect(shot.form_factor).toMatch(/^(wide|narrow)$/);
     }
+  });
+});
+
+
+describe('service worker registration', () => {
+  const fakeBrowser = ({ controlled }) => {
+    const listeners = {};
+    const sw = {
+      controller: controlled ? {} : null,
+      register: vi.fn(async () => ({ update: vi.fn(async () => {}) })),
+      addEventListener: (name, fn) => { (listeners[name] ||= []).push(fn); },
+    };
+    const reload = vi.fn();
+    const win = { navigator: { serviceWorker: sw }, location: { reload } };
+    const change = () => { for (const fn of listeners.controllerchange || []) fn(); };
+    return { doc: { defaultView: win }, sw, reload, change };
+  };
+
+  it('does not reload when the first worker claims an uncontrolled page', async () => {
+    const { doc, sw, reload, change } = fakeBrowser({ controlled: false });
+    registerServiceWorker(doc);
+    await Promise.resolve();
+    change();
+    expect(sw.register).toHaveBeenCalledWith('/sw.js', { updateViaCache: 'none' });
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('reloads once when an update takes control of an existing page', () => {
+    const { doc, reload, change } = fakeBrowser({ controlled: true });
+    registerServiceWorker(doc);
+    change();
+    change();
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });

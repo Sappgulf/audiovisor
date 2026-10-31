@@ -48,9 +48,11 @@ export function createShortcutsOverlay({ isTypingTarget, doc = document }) {
   let returnFocus = null;
 
   if (grid) {
-    grid.innerHTML = SHORTCUTS.map(([group, rows]) =>
-      `<div class="shortcuts-group">${group}</div>` +
-      rows.map(([label, key]) => `<div class="shortcut-row"><span>${label}</span><kbd>${key}</kbd></div>`).join('')
+    grid.innerHTML = SHORTCUTS.map(([group, rows], index) =>
+      `<div class="shortcuts-section" role="group" aria-labelledby="shortcuts-group-${index}">` +
+      `<h3 class="shortcuts-group" id="shortcuts-group-${index}">${group}</h3>` +
+      rows.map(([label, key]) => `<div class="shortcut-row"><span>${label}</span><kbd>${key}</kbd></div>`).join('') +
+      '</div>'
     ).join('');
   }
 

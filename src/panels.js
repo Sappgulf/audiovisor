@@ -70,34 +70,30 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
 
   function setQueueActive(index, doFocus = false) {
     const rows = getQueueRows();
-    const list = queuePanel.querySelector('.queue-list');
     if (!rows.length) {
       queueActiveIndex = 0;
-      list?.removeAttribute('aria-activedescendant');
       return;
     }
     queueActiveIndex = clampActive(index, rows.length);
     rows.forEach((row, i) => {
       row.tabIndex = i === queueActiveIndex ? 0 : -1;
-      row.setAttribute('aria-selected', String(i === queueActiveIndex));
-      if (i === queueActiveIndex && list) list.setAttribute('aria-activedescendant', row.id);
+      row.classList.toggle('is-selected', i === queueActiveIndex);
+      row.setAttribute('aria-current', String(i === queueActiveIndex));
     });
     if (doFocus) rows[queueActiveIndex]?.focus();
   }
 
   function setLibraryActive(index, doFocus = false) {
     const rows = getLibraryRows();
-    const list = libraryPanel.querySelector('.library-list');
     if (!rows.length) {
       libraryActiveIndex = 0;
-      list?.removeAttribute('aria-activedescendant');
       return;
     }
     libraryActiveIndex = clampActive(index, rows.length);
     rows.forEach((row, i) => {
       row.tabIndex = i === libraryActiveIndex ? 0 : -1;
-      row.setAttribute('aria-selected', String(i === libraryActiveIndex));
-      if (i === libraryActiveIndex && list) list.setAttribute('aria-activedescendant', row.id);
+      row.classList.toggle('is-selected', i === libraryActiveIndex);
+      row.setAttribute('aria-current', String(i === libraryActiveIndex));
     });
     if (doFocus) rows[libraryActiveIndex]?.focus();
   }
@@ -466,8 +462,8 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
     if (!q.length) {
       html += `<div class="queue-empty mono">DROP AUDIO FILES TO BUILD A QUEUE</div>`;
     } else {
-      html += `<div class="queue-list" role="listbox" aria-label="Queue tracks. Drag the grip or press Alt+Up/Alt+Down to reorder.">` + q.map((t, i) => `
-      <div class="queue-row${i === engine.queueIndex ? ' is-active' : ''}" data-i="${i}" data-index="${i}" draggable="true" role="option" id="queue-row-${i}" tabindex="-1" aria-selected="false">
+      html += `<div class="queue-list" role="list" aria-label="Queue tracks. Drag the grip or press Alt+Up/Alt+Down to reorder.">` + q.map((t, i) => `
+      <div class="queue-row${i === engine.queueIndex ? ' is-active' : ''}" data-i="${i}" data-index="${i}" draggable="true" role="listitem" id="queue-row-${i}" tabindex="-1" aria-current="false">
         <span class="queue-grip" aria-hidden="true" title="Drag to reorder">⋮⋮</span>
         <span class="mono queue-idx">${i === engine.queueIndex ? '▶' : String(i + 1).padStart(2, '0')}</span>
         <span class="queue-name">${esc(t.meta.name)}</span>
@@ -522,8 +518,8 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
     if (!filteredMeta.length) {
       html += `<div class="library-empty mono">${baseMeta.length ? 'NO MATCHING TRACKS — WIDEN YOUR SEARCH' : 'NO SAVED TRACKS — PLAY A TRACK THEN HIT SAVE'}</div>`;
     } else {
-      html += `<div class="library-list" role="listbox" aria-label="Saved library tracks">` + filteredMeta.map((m, i) => `
-      <div class="library-row ${m.edits ? 'is-remix' : ''}" data-id="${m.id}" data-index="${i}" role="option" id="lib-row-${i}" tabindex="-1" aria-selected="false">
+      html += `<div class="library-list" role="list" aria-label="Saved library tracks">` + filteredMeta.map((m, i) => `
+      <div class="library-row ${m.edits ? 'is-remix' : ''}" data-id="${m.id}" data-index="${i}" role="listitem" id="lib-row-${i}" tabindex="-1" aria-current="false">
         <div class="library-copy">
           <div class="library-name">${esc(m.name)} ${m.edits ? '<span class="library-remix-tag">REMIX</span>' : ''}</div>
           <div class="mono library-meta">${esc(m.ext)} · ${(m.duration||0).toFixed(1)}s${m.bytes ? ' · ' + fmtBytes(m.bytes) : ''}${m.edits ? ' · ' + Object.keys(m.edits).filter(k=>m.edits[k]).join(', ') : ''}</div>

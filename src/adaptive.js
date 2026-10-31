@@ -39,6 +39,17 @@ export const TIER_INFO = {
 export const WINDOW = 20;
 export const FAST_WINDOW = 4;
 
+/** Intervals outside this range are not frame costs: sub-millisecond noise,
+ *  a backgrounded tab, or a machine sleep. They are dropped from every window
+ *  rather than being averaged in as if the stage were that slow. */
+export const MIN_SAMPLE_MS = 4;
+export const MAX_SAMPLE_MS = 200;
+
+/** True when a frame interval can be judged as render cost. */
+export function isUsableInterval(ms) {
+  return Number.isFinite(ms) && ms > MIN_SAMPLE_MS && ms < MAX_SAMPLE_MS;
+}
+
 /** Frame interval treated as the display's natural pace when unknown. */
 export const DEFAULT_BASELINE_MS = 16.7;
 /**
@@ -69,6 +80,17 @@ export const HEALTHY = 1.1;
 export const CLIMB_STREAK = 6;
 
 /**
+ * Consecutive over-budget windows required before stepping down a tier.
+ *
+ * A single window can be poisoned by something outside the visualizer — a
+ * background tab compiling, an OS update, a thermal blip — and stepping down
+ * on it also records a per-mode climb cap, so one bad moment could pin a mode
+ * a tier lower for the rest of the session. Severe windows (SEVERE) still act
+ * immediately; they are not ambiguous.
+ */
+export const STEP_DOWN_WINDOWS = 2;
+
+/**
  * The display's natural frame interval, estimated as the fastest interval
  * the session has managed.
  *
@@ -92,7 +114,7 @@ export function estimateBaseline(samples, previous = null) {
   _valid.length = 0;
   for (const ms of samples) {
     // discard sub-millisecond noise and absurd gaps like a tab restore
-    if (Number.isFinite(ms) && ms > 4 && ms < 200) _valid.push(ms);
+    if (isUsableInterval(ms)) _valid.push(ms);
   }
   const valid = _valid;
   const prev = Number.isFinite(previous) ? previous : null;
@@ -137,7 +159,7 @@ export function relaxBaseline(estimate, samples) {
   if (!Number.isFinite(estimate)) return estimate;
   let recent = Infinity;
   for (const ms of samples) {
-    if (Number.isFinite(ms) && ms > 4 && ms < 200 && ms < recent) recent = ms;
+    if (isUsableInterval(ms) && ms < recent) recent = ms;
   }
   if (!Number.isFinite(recent)) return Math.min(estimate, 40);
   const moved = estimate + (recent - estimate) * 0.12;
@@ -156,27 +178,39 @@ export function relaxBaseline(estimate, samples) {
  * @param {number} baseline the display's natural interval
  */
 export function windowCost(samples, baseline = DEFAULT_BASELINE_MS) {
-  if (!samples.length) return NaN;
-  let sum = 0, dropped = 0, worst = 0;
+  let sum = 0, dropped = 0, worst = 0, n = 0;
   for (const ms of samples) {
+    if (!isUsableInterval(ms)) continue;
+    n++;
     sum += ms;
     if (ms > worst) worst = ms;
     if (ms > baseline * 1.5) dropped++;
   }
+  if (!n) return NaN;
   /* the single worst frame is left out of the mean: one isolated hitch (a
      GC pause, a decode, a compositor stall) in a window of on-time frames
      pushed a steady 60fps stage to 25ms and cost it a tier. Repeated drops
      are what the judder rule below is for. */
-  const avg = samples.length > 4 ? (sum - worst) / (samples.length - 1) : sum / samples.length;
-  return dropped / samples.length >= 0.1 ? Math.max(avg, baseline * OVER_BUDGET * 1.01) : avg;
+  const avg = n > 4 ? (sum - worst) / (n - 1) : sum / n;
+  return dropped / n >= 0.1 ? Math.max(avg, baseline * OVER_BUDGET * 1.01) : avg;
 }
 
 export function shouldEvaluate(samples, baseline = DEFAULT_BASELINE_MS) {
-  if (samples.length >= WINDOW) return true;
-  if (samples.length < FAST_WINDOW) return false;
+  /* A resumed tab can hand us a run of multi-second gaps. They are not render
+     cost, and letting them satisfy the severe fast-path used to drop two
+     tiers the moment a throttled tab came back. Count only usable samples. */
+  let n = 0;
+  let allSevere = true;
+  for (const ms of samples) {
+    if (!isUsableInterval(ms)) continue;
+    n++;
+    if (ms <= baseline * SEVERE) allSevere = false;
+  }
+  if (n >= WINDOW) return true;
+  if (n < FAST_WINDOW) return false;
   // every sample must be severe, so one GC pause, a cold first frame after
   // a mode change, or the huge gap after a backgrounded tab cannot trigger
-  return samples.every((ms) => ms > baseline * SEVERE);
+  return allSevere;
 }
 
 /**
@@ -187,16 +221,26 @@ export function shouldEvaluate(samples, baseline = DEFAULT_BASELINE_MS) {
  * @param {string} ceiling the tier the user asked for
  * @param {number} baseline the display's natural interval
  * @param {number} healthyStreak consecutive healthy windows so far
+ * @param {number} [overBudgetWindows] consecutive over-budget windows
+ *   including this one; defaults to the full threshold so a direct call keeps
+ *   the historical immediate step-down
  * @returns {{tier: string, streak: number}} the tier to use and the streak
  *   to carry forward
  */
-export function nextTier(current, avgMs, ceiling, baseline = DEFAULT_BASELINE_MS, healthyStreak = 0) {
+export function nextTier(
+  current, avgMs, ceiling, baseline = DEFAULT_BASELINE_MS, healthyStreak = 0,
+  overBudgetWindows = STEP_DOWN_WINDOWS,
+) {
   const i = TIERS.indexOf(current);
   if (i < 0 || !Number.isFinite(avgMs)) return { tier: current, streak: 0 };
   const max = TIERS.indexOf(ceiling);
 
   if (avgMs > baseline * SEVERE) return { tier: TIERS[Math.max(0, i - 2)], streak: 0 };
-  if (avgMs > baseline * OVER_BUDGET) return { tier: TIERS[Math.max(0, i - 1)], streak: 0 };
+  if (avgMs > baseline * OVER_BUDGET) {
+    const run = Number.isFinite(overBudgetWindows) ? overBudgetWindows : STEP_DOWN_WINDOWS;
+    if (run < STEP_DOWN_WINDOWS) return { tier: current, streak: 0 };
+    return { tier: TIERS[Math.max(0, i - 1)], streak: 0 };
+  }
 
   if (avgMs <= baseline * HEALTHY) {
     const streak = healthyStreak + 1;

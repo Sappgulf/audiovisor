@@ -24,11 +24,20 @@ export function createCommandPalette({ commands, doc = document }) {
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
   list?.insertAdjacentElement('afterend', status);
+  const hint = doc.createElement('div');
+  hint.className = 'cmd-hint';
+  hint.setAttribute('aria-hidden', 'true');
+  hint.innerHTML = '<span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Run</span><span><kbd>Esc</kbd> Close</span>';
+  status.insertAdjacentElement('afterend', hint);
   input?.setAttribute('role', 'combobox');
   input?.setAttribute('aria-controls', 'cmd-list');
   input?.setAttribute('aria-autocomplete', 'list');
   input?.setAttribute('aria-expanded', 'false');
   input?.setAttribute('aria-describedby', 'cmd-status');
+  input?.setAttribute('aria-label', 'Search commands');
+  input?.setAttribute('autocomplete', 'off');
+  input?.setAttribute('autocapitalize', 'off');
+  input?.setAttribute('spellcheck', 'false');
 
   const trap = createFocusTrap(palette, doc);
   let active = 0;
@@ -46,7 +55,7 @@ export function createCommandPalette({ commands, doc = document }) {
       ? visible
         .map((c, i) => `<div class="cmd-item ${i === active ? 'is-active' : ''}" id="cmd-item-${i}" role="option" aria-selected="${i === active}" tabindex="-1" data-i="${i}"><span>${esc(c.label)}</span><kbd>↵</kbd></div>`)
         .join('')
-      : '<div class="cmd-empty">No matches</div>';
+      : '<div class="cmd-empty"><strong>No matches</strong><span>Try a mode, theme, or effect name.</span></div>';
     if (count) list.setAttribute('aria-activedescendant', `cmd-item-${active}`);
     else list.removeAttribute('aria-activedescendant');
     status.textContent = count ? `${count} commands available` : 'No matches';

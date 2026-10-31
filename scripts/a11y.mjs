@@ -68,6 +68,12 @@ async function drive(viewport, label, mobile) {
   await tap('#drawer-close').catch(() => page.keyboard.press('Escape'));
   await page.waitForTimeout(300);
 
+  /* Phones hide the transport while the stage is empty; start the built-in
+     demo so the More menu (and its popover) is reachable for the audit. */
+  if (await page.isVisible('#play-demo')) {
+    await tap('#play-demo');
+    await page.waitForTimeout(800);
+  }
   await tap('#more-btn');
   await page.waitForTimeout(300);
   await audit(page, `${label} more menu`);

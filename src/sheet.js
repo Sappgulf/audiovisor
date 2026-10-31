@@ -61,12 +61,15 @@ export function bindSheetDrag(sheet, opts) {
     startY = e.clientY;
     startT = e.timeStamp;
     dy = 0;
+    if (e.cancelable) e.preventDefault();
     sheet.style.transition = 'none';
+    sheet.classList.add('is-dragging');
     try { handle.setPointerCapture(e.pointerId); } catch { /* move still works */ }
   };
 
   const move = (e) => {
     if (id !== e.pointerId) return;
+    if (e.cancelable) e.preventDefault();
     dy = e.clientY - startY;
     setOffset(dragOffset(dy));
   };
@@ -74,6 +77,7 @@ export function bindSheetDrag(sheet, opts) {
   const up = (e) => {
     if (id !== e.pointerId) return;
     id = null;
+    sheet.classList.remove('is-dragging');
     // pointerup carries its own position; browsers coalesce pointermove, so
     // the last move can lag well behind where the finger actually lifted
     if (Number.isFinite(e.clientY)) dy = e.clientY - startY;

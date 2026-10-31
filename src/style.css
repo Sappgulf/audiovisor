@@ -45,6 +45,13 @@
   --radius-lg: 1rem;
   --radius-md: 0.75rem;
   --radius-sm: 0.5rem;
+  --radius-pill: 999px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --tap-min: 44px;
   --shadow-soft: 0 8px 32px rgba(0, 0, 0, 0.36), 0 1px 0 rgba(255, 240, 220, 0.06) inset;
   --shadow-shell: 0 24px 64px rgba(0, 0, 0, 0.48), 0 0 0 1px var(--border-soft), 0 1px 0 rgba(255, 250, 243, 0.06) inset;
 }
@@ -1697,7 +1704,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
   border: 1px solid transparent;
 }
 .queue-row:hover { background: var(--glass); border-color: var(--border-soft); }
-.queue-row[aria-selected="true"] { background: var(--accent-dim); border-color: var(--accent-line); }
+.queue-row.is-selected { background: var(--accent-dim); border-color: var(--accent-line); }
 .queue-row.is-active { background: var(--accent-dim); border-color: var(--accent-line); }
 .queue-row.is-active .queue-name { color: var(--text-strong); font-weight: 500; }
 
@@ -1768,7 +1775,7 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 .library-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 .library-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; border: 1px solid transparent; transition: all 0.16s var(--ease); }
 .library-row:hover { background: var(--glass); border-color: var(--border-soft); }
-.library-row[aria-selected="true"] { background: var(--glass); border-color: var(--accent-line); }
+.library-row.is-selected { background: var(--glass); border-color: var(--accent-line); }
 .library-row.is-remix { border-left: 3px solid var(--accent); }
 .library-copy { flex: 1; min-width: 0; }
 .library-name { font-size: 12px; font-weight: 550; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -3372,3 +3379,701 @@ html, body {
 .custom-color::-webkit-color-swatch { border: 0; border-radius: 4px; }
 .custom-actions { display: flex; gap: 6px; }
 .custom-actions .mini-btn { flex: 1; }
+
+/* ==========================================================================
+   Polish pass (v8.31) — rhythm, states, and responsive refinement
+   ==========================================================================
+   The rules above grew feature by feature. This final layer is deliberately
+   grouped by design concern instead of by selector: shared interaction
+   states first, then each surface from the outside in, then the phone and
+   short-viewport corrections that used to fight the cascade.
+   ========================================================================== */
+
+/* ---- shared interaction states ------------------------------------------ */
+
+:where(a[href], select, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:disabled,
+[aria-disabled="true"] { cursor: not-allowed; }
+
+.mic-btn:active,
+.mini-btn:active,
+.fx-chip:active,
+.nav-link:active,
+.drop-sample:active,
+.drawer-tab:active { transform: translateY(0) scale(0.97); }
+
+#nav-about[aria-expanded="true"] {
+  color: var(--text-strong);
+  background: var(--glass-hover);
+}
+
+.theme-dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.drawer-tab:focus-visible { outline-offset: -2px; }
+
+input[type="range"].ctrl-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 6px;
+}
+
+/* The save control only means something once a source exists. */
+.track-info:not(.has-track) .save-library-btn {
+  visibility: hidden;
+  pointer-events: none;
+}
+.save-library-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  z-index: 2;
+  border-radius: 8px;
+}
+
+/* ---- empty / loading states --------------------------------------------- */
+
+.stage.is-empty .dropzone { max-width: calc(100% - 32px); }
+
+.dropzone[aria-busy="true"] { cursor: progress; }
+.dropzone[aria-busy="true"] .drop-title { color: var(--accent); }
+.dropzone[aria-busy="true"] .drop-actions,
+.dropzone[aria-busy="true"] .drop-samples {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.dropzone[aria-busy="true"] .drop-icon-circle::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-line);
+  border-top-color: var(--accent);
+  animation: drop-spin 0.8s linear infinite;
+}
+.drop-sample[aria-busy="true"] {
+  position: relative;
+  padding-left: 26px;
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+.drop-sample[aria-busy="true"]::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  animation: drop-spin 0.8s linear infinite;
+}
+@keyframes drop-spin { to { transform: rotate(360deg); } }
+
+/* Toasts read as one centred stack rather than a corner afterthought. The
+   footer offsets for the floating console and the phone transport stay. */
+.toasts {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  align-items: center;
+  max-width: min(520px, calc(100vw - 32px));
+}
+
+/* ---- header / compact navigation ---------------------------------------- */
+
+/* The labelled pill nav disappears below 1024px, which also removed the only
+   About entry point on phones and tablets. Keep one icon-only trigger there
+   (Settings already has its own topbar button) and reclaim its room from the
+   two least useful compact controls. */
+@media (max-width: 1024px) {
+  .pill-nav {
+    position: static;
+    transform: none;
+    display: flex;
+    padding: 0;
+    gap: 4px;
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+  .pill-nav #nav-stage,
+  .pill-nav #nav-settings,
+  .pill-nav .nav-sep { display: none; }
+  .pill-nav #nav-about {
+    justify-content: center;
+    gap: 0;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--glass);
+    color: var(--text-40);
+  }
+  .pill-nav #nav-about:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--glass-hover);
+  }
+  .pill-nav #nav-about[aria-expanded="true"] {
+    color: var(--accent);
+    border-color: var(--accent-line);
+    background: var(--accent-dim);
+  }
+  .pill-nav #nav-about .nav-label { display: none; }
+  .pill-nav #nav-about .nav-icon { font-size: 15px; }
+}
+@media (max-width: 700px) {
+  #help-btn,
+  .status-pill { display: none; }
+}
+@media (pointer: coarse) and (max-width: 1024px) {
+  .pill-nav #nav-about { width: var(--tap-min); height: var(--tap-min); min-width: var(--tap-min); min-height: var(--tap-min); }
+}
+@media (pointer: coarse) {
+  .drawer-close,
+  .about-close { width: var(--tap-min); height: var(--tap-min); }
+}
+
+/* ---- drawer ------------------------------------------------------------- */
+
+.drawer-scroll {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.drawer.is-dragging { user-select: none; }
+.drawer-close { width: 36px; height: 36px; }
+.drawer-close .ic { width: 15px; height: 15px; }
+
+.section-title {
+  color: var(--text-60);
+  margin-bottom: 16px;
+  letter-spacing: 0.14em;
+}
+.section-title::after {
+  background: linear-gradient(90deg, var(--border-soft), transparent);
+}
+
+.mode-list { gap: 8px; }
+.mode-card { border-radius: 14px; }
+.mode-name { font-size: 9.5px; letter-spacing: 0.02em; line-height: 1.45; }
+
+.theme-row { gap: 10px; }
+.theme-dot { width: 32px; height: 32px; }
+.theme-dot.is-active::after { inset: 10px; }
+
+.fx-chip { font-size: 10px; }
+@media (min-width: 641px) {
+  .fx-chip { min-height: 32px; }
+  .mini-btn { min-height: 30px; }
+}
+
+/* Inline styles in index.html became real classes so the drawer rhythm is
+   owned in one place. */
+.space-top { margin-top: 10px; }
+.gpu-note {
+  margin: 8px 0 0;
+  font-size: 10px;
+  color: var(--text-40);
+  letter-spacing: 0.04em;
+}
+.feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.feed-list-compact { gap: 6px; max-height: 120px; }
+.inline-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.inline-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  font-size: 11px;
+}
+
+.drawer-empty,
+.queue-empty,
+.library-empty,
+.sp-empty { line-height: 1.5; }
+
+/* On touch a swatch is a control, not a decoration: grow the hit area on a
+   pseudo-element that does not compete with the active-state dot. */
+@media (max-width: 640px) {
+  .theme-dot::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--tap-min);
+    height: var(--tap-min);
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* ---- transport ---------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .transport { gap: 6px; }
+  .utility-controls { flex: 0 1 auto; width: auto; gap: 4px; }
+}
+@media (max-width: 400px) {
+  .transport { gap: 4px; }
+  .utility-controls { gap: 2px; }
+}
+
+/* ---- dialogs: About, shortcuts, command palette ------------------------- */
+
+.about-panel {
+  z-index: 75;
+  padding: max(24px, var(--sat)) 20px max(24px, var(--sab));
+  overflow-y: auto;
+}
+.about-card {
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  opacity: 0;
+  transform: translateY(10px) scale(0.985);
+  transition: opacity 0.28s var(--ease), transform 0.34s var(--ease-out);
+}
+.about-panel.is-open .about-card {
+  opacity: 1;
+  transform: none;
+}
+.about-close {
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  font-size: 20px;
+}
+.about-card h2 { font-size: 24px; letter-spacing: -0.045em; }
+.about-card p {
+  max-width: 46ch;
+  margin-inline: auto;
+  margin-bottom: 22px;
+  line-height: 1.7;
+}
+.about-keys {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px 10px;
+  align-items: start;
+}
+.about-key { gap: 6px; min-width: 0; }
+.about-key kbd {
+  min-width: 42px;
+  padding: 6px 8px;
+  font-size: 10.5px;
+}
+.about-key span {
+  color: var(--text-40);
+  font-size: 10px;
+  line-height: 1.35;
+}
+.about-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-40);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.about-foot .mono { font-size: 9px; letter-spacing: 0.12em; }
+
+.cmd-palette {
+  z-index: 80;
+  padding-top: clamp(72px, 16vh, 176px);
+  padding-inline: 16px;
+  padding-bottom: max(16px, var(--sab));
+  overflow-y: auto;
+  animation: overlay-in 0.18s var(--ease);
+}
+.cmd-box {
+  position: relative;
+  animation: dialog-in 0.24s var(--ease-out);
+  border-color: var(--border-strong);
+}
+.cmd-box:not(.shortcuts-box)::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 21px;
+  width: 16px;
+  height: 16px;
+  color: var(--text-40);
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.2'/%3E%3Cpath d='M15.6 15.6 L20.2 20.2'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.2'/%3E%3Cpath d='M15.6 15.6 L20.2 20.2'/%3E%3C/svg%3E") center / contain no-repeat;
+  pointer-events: none;
+  z-index: 1;
+}
+.cmd-box:not(.shortcuts-box):focus-within::before { color: var(--accent); }
+.cmd-input {
+  padding: 16px 18px 16px 46px;
+  font-size: 15px;
+}
+.cmd-list {
+  max-height: min(340px, 48dvh);
+  gap: 2px;
+  padding: 8px;
+}
+.cmd-item {
+  min-height: 38px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+}
+.cmd-item kbd {
+  min-width: 26px;
+  text-align: center;
+  color: var(--text-40);
+}
+.cmd-empty {
+  display: grid;
+  gap: 4px;
+  padding: 24px 16px 26px;
+  text-align: center;
+}
+.cmd-empty strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.cmd-empty span { color: var(--text-40); font-size: 11px; }
+.cmd-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-40);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cmd-hint span { display: inline-flex; align-items: center; gap: 4px; }
+.cmd-hint kbd,
+.shortcuts-foot kbd {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-60);
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.shortcuts-box {
+  display: flex;
+  flex-direction: column;
+  max-height: min(84dvh, 660px);
+}
+.shortcuts-head {
+  padding: 16px 18px;
+  flex: none;
+}
+.shortcuts-title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.shortcuts-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 22px;
+  padding: 16px 18px 18px;
+  max-height: none;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.shortcuts-section { display: contents; }
+.shortcuts-group {
+  grid-column: 1 / -1;
+  margin: 14px 0 4px;
+  color: var(--text-60);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+.shortcuts-section:first-child .shortcuts-group { margin-top: 0; }
+.shortcut-row {
+  padding: 8px 2px;
+  border-bottom-color: var(--border-soft);
+}
+.shortcuts-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-40);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  flex: none;
+}
+.shortcuts-foot span { display: inline-flex; align-items: center; gap: 5px; }
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---- phone -------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  /* The empty-state card already carries Browse, Demo, modes and samples;
+     the full player underneath it only duplicated them and squeezed the
+     stage to a few hundred pixels. It returns as soon as a source exists. */
+  .shell:has(.stage.is-empty) .transport { display: none; }
+  .shell:has(.stage.is-empty) .toasts { bottom: calc(14px + var(--sab)); }
+
+  .stage.is-empty .dropzone { max-width: calc(100% - 16px); }
+  .toasts { bottom: calc(96px + var(--sab)); }
+
+  /* The transport no longer floats over the sheet, so the old 132px reserve
+     was just empty scroll. Keep the safe-area breathing room instead. */
+  .drawer-scroll { padding-bottom: calc(24px + var(--sab)); }
+  .drawer { border-radius: 24px 24px 0 0; }
+  .drawer-close { width: var(--tap-min); height: var(--tap-min); }
+  .sheet-handle span { height: 5px; background: rgba(255, 235, 205, 0.34); }
+  .sheet-scrim { background: rgba(0, 0, 0, 0.52); }
+
+  /* Two columns give each mode thumbnail real shape and keep the labels
+     legible; the earlier 3-column override contradicted the card design. */
+  .mode-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .mode-card { min-height: 72px; padding: 8px; }
+  .mode-name { font-size: 10px; }
+
+  /* the save control grows to a touch target on phones; keep the title clear */
+  .track-info .track-meta { padding-right: 52px; }
+
+  .connect-input,
+  .drawer-filter,
+  .inline-input { font-size: 16px; }
+
+  .cmd-palette {
+    padding-top: calc(10px + var(--sat));
+    padding-inline: 10px;
+    align-items: flex-start;
+  }
+  .cmd-box { width: calc(100vw - 16px); border-radius: 16px; }
+  .cmd-box:not(.shortcuts-box)::before { top: 19px; left: 16px; }
+  .cmd-input { font-size: 16px; padding: 14px 14px 14px 44px; }
+  .cmd-list { max-height: min(52dvh, 420px); }
+  .cmd-hint { padding: 9px 12px; font-size: 8px; letter-spacing: 0.06em; }
+
+  .shortcuts-grid { grid-template-columns: 1fr; }
+  .shortcuts-foot { justify-content: center; text-align: center; }
+  .shortcuts-head { padding: 14px 16px; }
+
+  .about-panel { padding: max(16px, var(--sat)) 14px max(16px, var(--sab)); }
+  .about-card { padding: 30px 20px 22px; }
+  .about-close { top: 10px; right: 10px; width: var(--tap-min); height: var(--tap-min); }
+  .about-keys { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .about-foot { justify-content: center; text-align: center; }
+}
+
+/* ---- narrow / short phones ---------------------------------------------- */
+
+@media (max-width: 360px) {
+  .stage.is-empty .dropzone {
+    padding: 20px 18px;
+    border-radius: 20px;
+  }
+  .stage.is-empty .dropzone::before { border-radius: 18px; }
+  .stage.is-empty .drop-icon-circle {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 12px;
+    font-size: 19px;
+  }
+  .stage.is-empty .drop-title {
+    font-size: 20px;
+    margin-bottom: 8px;
+  }
+  .stage.is-empty .drop-sub {
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .stage.is-empty .drop-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    margin-top: 14px;
+  }
+  .stage.is-empty .dropzone .browse-btn,
+  .stage.is-empty .dropzone .drop-secondary {
+    width: 100%;
+    min-width: 0;
+    height: 40px;
+  }
+  .stage.is-empty .drop-samples {
+    margin-top: 14px;
+    gap: 6px;
+  }
+  .stage.is-empty .drop-samples-list { gap: 6px; }
+  .stage.is-empty .drop-sample {
+    min-height: 34px;
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+  .stage.is-empty .drop-privacy { margin-top: 10px; font-size: 8.5px; }
+}
+
+/* Phone landscape has no room for the full launch card. Keep the one
+   decision that matters (choose a source) and hide the supporting copy. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .shell:has(.stage.is-empty) .transport { display: none; }
+  .stage.is-empty .dropzone {
+    width: min(520px, calc(100% - 24px));
+    padding: 16px 20px;
+    border-radius: 18px;
+  }
+  .stage.is-empty .drop-visual,
+  .stage.is-empty .drop-sub,
+  .stage.is-empty .drop-samples,
+  .stage.is-empty .drop-privacy,
+  .stage.is-empty .drop-meta { display: none; }
+  .stage.is-empty .drop-title { font-size: 20px; margin-bottom: 12px; }
+  .stage.is-empty .drop-actions {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin-top: 0;
+  }
+  .stage.is-empty .dropzone .browse-btn,
+  .stage.is-empty .dropzone .drop-secondary {
+    width: auto;
+    min-width: 0;
+    height: 38px;
+    padding: 0 12px;
+  }
+}
+
+/* ---- scrollbars and fine print ------------------------------------------ */
+
+.drawer-scroll,
+.cmd-list,
+.shortcuts-grid,
+.queue-list,
+.library-list,
+.sp-results,
+#social-feed {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 235, 205, 0.16) transparent;
+}
+
+.connect-input::placeholder,
+.drawer-filter::placeholder { color: var(--text-40); }
+
+.provider-playback-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap-min);
+}
+
+.sp-help summary { min-height: 32px; }
+
+/* ---- motion preference -------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .dropzone[aria-busy="true"] .drop-icon-circle::after,
+  .drop-sample[aria-busy="true"]::before { animation: none; }
+  .about-card { transform: none; }
+  .cmd-palette,
+  .cmd-box { animation: none; }
+}
+
+@media (forced-colors: active) {
+  .mode-card.is-active,
+  .theme-dot.is-active,
+  .fx-chip.is-active {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/* In the tablet band the launch card fills the stage, so a toast anchored
+   inside the stage covers it. Park the stack in the gap between the topbar
+   and the card; fixed position escapes the stage's overflow clip. Phones
+   keep the in-stage anchor, where the gap is too short to use. */
+@media (min-width: 641px) and (max-width: 1179px) {
+  .toasts {
+    position: fixed;
+    top: calc(74px + var(--sat));
+    bottom: auto;
+  }
+}
+
+.shortcuts-grid:focus-visible { outline-offset: -2px; }
+
+/* Landscape phones have roughly 300px of useful height; dialogs must fit
+   inside that rather than starting a viewport-length scroll. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .cmd-palette { padding-top: 8px; padding-bottom: 8px; }
+  .cmd-box {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - 16px);
+  }
+  .cmd-list { flex: 1; min-height: 0; max-height: none; }
+  .shortcuts-box { max-height: calc(100dvh - 16px); }
+}
+
+/* Empty feeds explain themselves without needing a renderer round-trip. */
+.feed-list:empty::before {
+  content: attr(data-empty);
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--text-40);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.sheet-scrim:not(.is-visible) { pointer-events: none; }

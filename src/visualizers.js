@@ -8,7 +8,11 @@ import { getPluginMode, isPluginMode } from './plugins.js';
 
 /* modes whose scenes are broad bright plates rather than thin bright
    marks; full-strength bloom clips them (see _bloom) */
-const MODE_BLOOM = { spectro: 0.28, gpu: 0.34, terrain: 0.62, chladni: 0.0 };
+const MODE_BLOOM = {
+  spectro: 0.28, gpu: 0.34, terrain: 0.62,
+  orb: 0.52, fluid: 0.62, lava: 0.66, bloomfield: 0.62,
+  nebula: 0.64, vinyl: 0.72, bars: 0.82, city: 0.82, chladni: 0.32,
+};
 
 /* The four modes that ship in the entry bundle. Everything else lives in
    modes-extra.js and is fetched the first time it is selected; until it
@@ -280,6 +284,16 @@ export class Renderer {
     if (this._cacheTheme === this.theme && this._cacheQ === this.quality && this._dotSprites) return;
     this._cacheTheme = this.theme;
     this._cacheQ = this.quality;
+    const score = (hex) => {
+      const n = parseInt(hex.slice(1), 16);
+      const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      return (mx ? (mx - mn) / mx : 0) * (0.35 + mx / 255);
+    };
+    const ordered = [...this.theme.colors].sort((a, b) => score(b) - score(a));
+    this._vividColors = ordered;
+    const loud = ordered.filter((c) => score(c) > 0.30);
+    this._loudColors = loud.length >= 2 ? loud : ordered;
 
     this._dotSprites = new Map();
     this._barSprites = new Map();
@@ -289,21 +303,21 @@ export class Renderer {
       d.width = d.height = 64;
       const dc = d.getContext('2d');
       const g = dc.createRadialGradient(30, 29, 0, 32, 32, 32);
-      g.addColorStop(0, this._tintRgba(c, 0.62, 0.96));
-      g.addColorStop(0.10, this._tintRgba(c, 0.46, 0.88));
-      g.addColorStop(0.24, hexRgba(c, 0.90));
-      g.addColorStop(0.42, hexRgba(c, 0.52));
+      g.addColorStop(0, this._tintRgba(c, 0.28, 0.96));
+      g.addColorStop(0.10, this._tintRgba(c, 0.18, 0.90));
+      g.addColorStop(0.24, hexRgba(c, 0.88));
+      g.addColorStop(0.45, hexRgba(c, 0.48));
       g.addColorStop(1, hexRgba(c, 0));
       dc.fillStyle = g;
       dc.fillRect(0, 0, 64, 64);
       // tiny specular highlight
-      dc.fillStyle = this._tintRgba(c, 0.88, 0.48);
+      dc.fillStyle = this._tintRgba(c, 0.48, 0.34);
       dc.beginPath();
-      dc.ellipse(26, 24, 6, 4.5, -0.6, 0, Math.PI * 2);
+      dc.ellipse(26, 24, 5, 3.2, -0.6, 0, Math.PI * 2);
       dc.fill();
       // rim light (soft edge ring)
-      dc.strokeStyle = this._tintRgba(c, 0.62, 0.26);
-      dc.lineWidth = 1.6;
+      dc.strokeStyle = this._tintRgba(c, 0.34, 0.22);
+      dc.lineWidth = 1.4;
       dc.beginPath();
       dc.arc(32, 32, 21, 0, Math.PI * 2);
       dc.stroke();
@@ -315,19 +329,23 @@ export class Renderer {
       b.height = 256;
       const bc = b.getContext('2d');
       const bg = bc.createLinearGradient(0, 0, 0, 256);
-      bg.addColorStop(0, hexRgba(c, 1));
-      bg.addColorStop(0.10, this._tintRgba(c, 0.82, 0.30));
-      bg.addColorStop(0.14, hexRgba(c, 0.94));
-      bg.addColorStop(0.78, hexRgba(c, 0.62));
-      bg.addColorStop(1, hexRgba(c, 0.18));
+      bg.addColorStop(0, this._tintRgba(c, 0.34, 1));
+      bg.addColorStop(0.10, this._tintRgba(c, 0.20, 0.34));
+      bg.addColorStop(0.16, hexRgba(c, 0.94));
+      bg.addColorStop(0.78, hexRgba(c, 0.58));
+      bg.addColorStop(1, hexRgba(c, 0.16));
       bc.fillStyle = bg;
       bc.beginPath();
       if (bc.roundRect) bc.roundRect(0, 0, 8, 256, [4, 4, 0, 0]);
       else bc.rect(0, 0, 8, 256);
       bc.fill();
       // inner sheen line
-      bc.fillStyle = this._tintRgba(c, 0.78, 0.18);
+      bc.fillStyle = this._tintRgba(c, 0.38, 0.22);
       bc.fillRect(1.2, 0, 1, 256);
+      // dark side walls give the slab roundness when it is scaled up
+      bc.fillStyle = this._tintRgba(c, -0.62, 0.30);
+      bc.fillRect(0, 0, 1, 256);
+      bc.fillRect(7, 0, 1, 256);
       this._barSprites.set(c, b);
     }
     /* rimless soft pool sprites — purely radial falloff, no rim ring or
@@ -372,11 +390,16 @@ export class Renderer {
    */
   _tint(hex, amount = 0.55) {
     const n = parseInt(hex.slice(1), 16);
-    const towardLight = amount >= 0;
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
     const a = Math.min(1, Math.abs(amount));
-    const target = towardLight ? [255, 252, 243] : [14, 12, 10];
     const mix = (v, t) => Math.round(v + (t - v) * a);
-    return `rgb(${mix((n >> 16) & 255, target[0])}, ${mix((n >> 8) & 255, target[1])}, ${mix(n & 255, target[2])})`;
+    if (amount < 0) return `rgb(${mix(r, 14)}, ${mix(g, 12)}, ${mix(b, 10)})`;
+    /* Lift toward a brighter version of the same hue rather than toward warm
+       white. A neutral cap desaturates every palette at exactly the point
+       where the image is hottest, which is what made the stage read beige. */
+    const m = Math.max(1, r, g, b);
+    const target = [Math.round((r / m) * 255), Math.round((g / m) * 255), Math.round((b / m) * 255)];
+    return `rgb(${mix(r, target[0])}, ${mix(g, target[1])}, ${mix(b, target[2])})`;
   }
 
   /** rgba() counterpart to _tint(), for gradient stops that need alpha. */
@@ -389,6 +412,14 @@ export class Renderer {
   _soft(c) { return this._softSprites.get(c); }
   _barS(c) { return this._barSprites.get(c); }
   _color(i) { return this.theme.colors[i % this.theme.colors.length]; }
+  _vivid(i = 0) {
+    const c = this._vividColors || this.theme.colors;
+    return c[((i % c.length) + c.length) % c.length];
+  }
+  _loud(i = 0) {
+    const c = this._loudColors || this.theme.colors;
+    return c[((i % c.length) + c.length) % c.length];
+  }
 
   /* ---------------- analysis smoothing ---------------- */
 
@@ -568,14 +599,14 @@ export class Renderer {
       const s = this._scale || this.dpr;
       tc.setTransform(1, 0, 0, 1, 0, 0);
       tc.globalCompositeOperation = 'destination-out';
-      tc.fillStyle = 'rgba(0,0,0,0.24)';
+      tc.fillStyle = 'rgba(0,0,0,0.30)';
       tc.fillRect(0, 0, this.canvas.width, this.canvas.height);
       tc.globalCompositeOperation = 'source-over';
       tc.drawImage(this.canvas, 0, 0);
       // blend trail under live scene
       ctx.save();
       ctx.setTransform(s, 0, 0, s, 0, 0);
-      ctx.globalAlpha = 0.22;
+      ctx.globalAlpha = 0.12;
       ctx.globalCompositeOperation = 'lighter';
       ctx.drawImage(this.trailCv, 0, 0, w, h);
       ctx.restore();
@@ -918,10 +949,17 @@ export class Renderer {
       amps[i] = clamp(raw / (1 + raw * 0.55), 0.008, 1.12);
       if (amps[i] >= this.peaks[i]) { this.peaks[i] = amps[i]; this.peakVels[i] = 0; }
       else { this.peakVels[i] += 3.2 * dt; this.peaks[i] = Math.max(amps[i], this.peaks[i] - this.peakVels[i] * dt); }
-      colors[i] = this._color(Math.floor((i / N) * this.theme.colors.length + hueFlow) % this.theme.colors.length);
+      colors[i] = this._loud(Math.floor((i / N) * (this._loudColors?.length || this.theme.colors.length) + hueFlow));
     }
 
     const barX = (i) => 12 + i * (bw + gap);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const washR = Math.max(w * 0.52, h * 0.44);
+    ctx.globalAlpha = 0.05 + this.sm.level * 0.055 + this.beat * 0.025;
+    ctx.drawImage(this._soft(this._color(1)), w / 2 - washR, horizon - washR * 0.52, washR * 2, washR * 0.94);
+    ctx.restore();
 
     /* soft backdrop halo per bar */
     ctx.save();
@@ -930,10 +968,23 @@ export class Renderer {
       const bh = amps[i] * maxH;
       if (bh < 2) continue;
       const x = barX(i);
-      const halo = this._dot(colors[i]);
-      const hr = bw * 1.6;
-      ctx.globalAlpha = 0.10 + amps[i] * 0.12;
-      ctx.drawImage(halo, x + bw / 2 - hr, horizon - bh - hr * 0.4, hr * 2, hr * 2);
+      const halo = this._soft(colors[i]);
+      const hr = bw * 2.1;
+      ctx.globalAlpha = 0.05 + amps[i] * 0.075;
+      ctx.drawImage(halo, x + bw / 2 - hr, horizon - bh - hr * 0.35, hr * 2, hr * 2);
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+
+    /* a dimmer, shorter row behind the main stage gives the chart a back wall */
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < N; i++) {
+      const bh = amps[i] * maxH * 0.58;
+      if (bh < 3) continue;
+      const x = barX(i) + bw * 0.17;
+      ctx.globalAlpha = 0.055 + amps[i] * 0.07;
+      ctx.drawImage(this._barS(colors[i]), x, horizon - bh - maxH * 0.09, bw * 0.66, bh);
     }
     ctx.restore();
     ctx.globalAlpha = 1;
@@ -1020,7 +1071,7 @@ export class Renderer {
 
     /* under-glow band */
     ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = hexRgba(this._color(2), 0.12 + this.sm.level * 0.1 + this.beat * 0.08);
+    ctx.strokeStyle = hexRgba(this._vivid(0), 0.12 + this.sm.level * 0.1 + this.beat * 0.08);
     ctx.lineWidth = 10;
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
@@ -1045,24 +1096,46 @@ export class Renderer {
     ctx.fillStyle = g;
     ctx.fill();
 
+    /* low atmosphere pooling under the line */
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const hazeR = Math.max(w * 0.44, h * 0.34);
+    ctx.globalAlpha = 0.045 + this.sm.level * 0.05 + this.beat * 0.02;
+    ctx.drawImage(this._soft(this._loud(0)), w / 2 - hazeR, midY - hazeR * 0.4, hazeR * 2, hazeR * 0.84);
+    ctx.restore();
+
+    /* suspended dust breaks the flat plane into near and far air */
+    const dust = this._soft(this._loud(1));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 12; i++) {
+      const dx = ((i * 0.618 + 0.13) % 1) * w;
+      const dy = midY + Math.sin(this.t * 0.35 + i * 1.7) * ampScale * 0.8
+        + (((i * 0.37) % 1) - 0.5) * ampScale * 0.9;
+      const dr = 1.2 + (i % 3) * 1.05 + this.beat * 1.2;
+      ctx.globalAlpha = 0.05 + 0.05 * (0.5 + 0.5 * Math.sin(this.t * 0.8 + i));
+      ctx.drawImage(dust, dx - dr, dy - dr, dr * 2, dr * 2);
+    }
+    ctx.restore();
+
     /* depth layers — staggered silk bands above/below the main line */
     ctx.globalCompositeOperation = 'lighter';
-    strokeSmooth(samplePts(wave, midY - ampScale * 0.16, ampScale * 0.60, 0.82), hexRgba(this._color(1), 0.30 + this.sm.level * 0.10), 1.5, 0.9);
-    strokeSmooth(samplePts(wave, midY + ampScale * 0.24, ampScale * 0.48, 0.68), hexRgba(this._color(2), 0.20 + this.sm.level * 0.08), 1.2, 0.8);
+    strokeSmooth(samplePts(wave, midY - ampScale * 0.16, ampScale * 0.60, 0.82), hexRgba(this._loud(0), 0.30 + this.sm.level * 0.10), 1.5, 0.9);
+    strokeSmooth(samplePts(wave, midY + ampScale * 0.24, ampScale * 0.48, 0.68), hexRgba(this._loud(1), 0.20 + this.sm.level * 0.08), 1.2, 0.8);
     ctx.globalCompositeOperation = 'source-over';
 
     /* echo pass */
     if (this.echo) {
       ctx.globalCompositeOperation = 'lighter';
       const ePts = samplePts(this.echo, midY + 16, ampScale * 0.7, 0.5);
-      strokeSmooth(ePts, hexRgba(this._color(1), 0.35), 1.1);
+      strokeSmooth(ePts, hexRgba(this._loud(0), 0.35), 1.1);
       ctx.globalCompositeOperation = 'source-over';
     }
 
     /* crest beads */
     ctx.globalCompositeOperation = 'lighter';
     const beadStep = 96;
-    const sprite = this._dot(this._color(0));
+    const sprite = this._dot(this._vivid(0));
     for (let x = beadStep; x < w; x += beadStep) {
       let bi = 0, best = 1e9;
       for (let i = 0; i < pts.length; i++) { const d = Math.abs(pts[i][0] - x); if (d < best) { best = d; bi = i; } }
@@ -1074,7 +1147,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
 
-    strokeSmooth(pts, this._color(0), 2.3);
+    strokeSmooth(pts, this._vivid(0), 2.3);
 
     /* mirrored ghost above */
     ctx.save();
@@ -1082,7 +1155,7 @@ export class Renderer {
     ctx.globalCompositeOperation = 'lighter';
     ctx.translate(0, midY * 2);
     ctx.scale(1, -1);
-    strokeSmooth(pts, hexRgba(this._color(2), 0.6), 1.4);
+    strokeSmooth(pts, hexRgba(this._loud(1), 0.6), 1.4);
     ctx.restore();
 
     /* a new FFT size (or the first frame) needs a fresh buffer, and it must
@@ -1106,24 +1179,52 @@ export class Renderer {
     const delay = Math.floor(wave.length / 4);
     const c0 = this._color(0), c1 = this._color(1);
 
+    /* the instrument sits on a soft pool instead of floating in the frame */
+    ctx.globalAlpha = 0.11 + this.sm.bass * 0.08;
+    ctx.drawImage(this._soft(c0), cx - R * 1.25, cy + R * 0.94, R * 2.5, R * 0.38);
+    ctx.globalAlpha = 1;
+
     /* graticule + ring frame + ticks */
     ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = hexRgba(c0, 0.08);
+    ctx.strokeStyle = hexRgba(c0, 0.055);
     ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 1; i <= 3; i++) {
+      ctx.moveTo(cx + (R * i) / 3, cy);
+      ctx.arc(cx, cy, (R * i) / 3, 0, Math.PI * 2);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = hexRgba(c0, 0.10);
     ctx.beginPath();
     ctx.arc(cx, cy, R * 1.1, 0, Math.PI * 2);
     ctx.moveTo(cx - R * 1.1, cy); ctx.lineTo(cx + R * 1.1, cy);
     ctx.moveTo(cx, cy - R * 1.1); ctx.lineTo(cx, cy + R * 1.1);
     ctx.stroke();
     ctx.lineWidth = 1.2;
-    ctx.strokeStyle = hexRgba(c0, 0.14);
-    for (let a = 0; a < 12; a++) {
-      const ang = (a / 12) * Math.PI * 2;
+    ctx.strokeStyle = hexRgba(c0, 0.16);
+    for (let a = 0; a < 24; a++) {
+      const ang = (a / 24) * Math.PI * 2;
+      const major = a % 6 === 0;
+      const r0 = R * 1.1;
       ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(ang) * R * 1.1, cy + Math.sin(ang) * R * 1.1);
-      ctx.lineTo(cx + Math.cos(ang) * R * 1.18, cy + Math.sin(ang) * R * 1.18);
+      ctx.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
+      ctx.lineTo(cx + Math.cos(ang) * (r0 + (major ? 0.10 : 0.055) * R),
+        cy + Math.sin(ang) * (r0 + (major ? 0.10 : 0.055) * R));
       ctx.stroke();
     }
+    ctx.strokeStyle = hexRgba(c1, 0.12);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 1.17, 0, Math.PI * 2);
+    ctx.stroke();
+    const inset = Math.max(9, minDim * 0.038), blen = Math.max(11, minDim * 0.045);
+    ctx.strokeStyle = hexRgba(c1, 0.15);
+    ctx.beginPath();
+    ctx.moveTo(inset, inset + blen); ctx.lineTo(inset, inset); ctx.lineTo(inset + blen, inset);
+    ctx.moveTo(w - inset - blen, inset); ctx.lineTo(w - inset, inset); ctx.lineTo(w - inset, inset + blen);
+    ctx.moveTo(w - inset, h - inset - blen); ctx.lineTo(w - inset, h - inset); ctx.lineTo(w - inset - blen, h - inset);
+    ctx.moveTo(inset + blen, h - inset); ctx.lineTo(inset, h - inset); ctx.lineTo(inset, h - inset - blen);
+    ctx.stroke();
     ctx.globalCompositeOperation = 'source-over';
 
     /* phosphor buffer */
@@ -1187,8 +1288,8 @@ export class Renderer {
          over white wherever the figure crosses itself — the trail went
          flat white instead of reading as phosphor. Set so accumulation
          settles just about at full scale. */
-      sctx.strokeStyle = hexRgba(this._color(s), 0.26);
-      sctx.lineWidth = 1.6;
+      sctx.strokeStyle = hexRgba(this._loud(s), 0.20);
+      sctx.lineWidth = 1.4;
       sctx.stroke();
     }
     /* glow pass */
@@ -1198,8 +1299,8 @@ export class Renderer {
       else sctx.lineTo(pts[i * 2], pts[i * 2 + 1]);
     }
     sctx.closePath();
-    sctx.strokeStyle = hexRgba(c1, 0.32);
-    sctx.lineWidth = 3.6;
+    sctx.strokeStyle = hexRgba(c1, 0.21);
+    sctx.lineWidth = 3.2;
     sctx.stroke();
     sctx.restore();
 
@@ -1211,14 +1312,35 @@ export class Renderer {
     ctx.drawImage(this.scopeCv, -w / 2, -h / 2, w, h);
     ctx.restore();
 
+    /* a dark well masks the point where every trace crosses, so the centre
+       reads as depth rather than as an additive white knot */
+    const wellR = R * 0.23;
+    const well = ctx.createRadialGradient(cx, cy, 0, cx, cy, wellR);
+    well.addColorStop(0, 'rgba(4,4,6,0.78)');
+    well.addColorStop(0.55, 'rgba(4,4,6,0.32)');
+    well.addColorStop(1, 'rgba(4,4,6,0)');
+    ctx.fillStyle = well;
+    ctx.beginPath();
+    ctx.arc(cx, cy, wellR, 0, Math.PI * 2);
+    ctx.fill();
+
     /* heart core */
-    const heartR = minDim * 0.012 * (1 + this.beat * 2 + this.sm.bass * 0.5);
+    const heartR = minDim * (0.008 + this.beat * 0.014 + this.sm.bass * 0.005);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.translate(cx, cy);
     ctx.rotate(this.t * 0.08);
-    ctx.drawImage(this._dot(c0), -heartR, -heartR, heartR * 2, heartR * 2);
+    ctx.strokeStyle = hexRgba(c1, 0.24 + this.beat * 0.14);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, heartR * 2.4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.42 + this.beat * 0.2;
+    ctx.drawImage(this._soft(this._vivid(0)), -heartR * 4, -heartR * 4, heartR * 8, heartR * 8);
+    ctx.globalAlpha = 0.7;
+    ctx.drawImage(this._dot(this._vivid(1)), -heartR, -heartR, heartR * 2, heartR * 2);
     ctx.restore();
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
 
@@ -1227,7 +1349,7 @@ export class Renderer {
   _particles(dt, dt60) {
     const { ctx, w, h } = this;
     const cx = w / 2, cy = h * 0.5;
-    const cap = this.quality === 'low' ? 120 : 240;
+    const cap = this.quality === 'low' ? 110 : 220;
 
     /* seed a warm ember pool so the field is alive from the first frame
        (re-seeds after every mode switch since setMode empties the pool) */
@@ -1241,6 +1363,7 @@ export class Renderer {
           vx: Math.cos(ang) * sp,
           vy: Math.sin(ang) * sp - 0.35,
           r: 0.8 + Math.random() * 2.4,
+          z: 0.3 + Math.random() * 0.7,
           c: Math.floor(Math.random() * this.theme.colors.length),
           life: 0.5 + Math.random() * 0.5,
           decay: 0.004 + Math.random() * 0.009,
@@ -1262,11 +1385,20 @@ export class Renderer {
         vx: Math.cos(ang) * sp,
         vy: Math.sin(ang) * sp - 0.45,
         r: 0.8 + Math.random() * 2.6,
+        z: 0.3 + Math.random() * 0.7,
         c: Math.floor(Math.random() * this.theme.colors.length),
         life: 1,
         decay: 0.005 + Math.random() * 0.011,
       });
     }
+
+    /* a warm volume behind the field separates embers from the page */
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const auraR = Math.min(w, h) * (0.30 + this.sm.level * 0.12);
+    ctx.globalAlpha = 0.05 + this.sm.bass * 0.06 + this.beat * 0.02;
+    ctx.drawImage(this._soft(this._color(0)), cx - auraR, cy - auraR, auraR * 2, auraR * 2);
+    ctx.restore();
 
     ctx.globalCompositeOperation = 'lighter';
     for (let i = this.particles.length - 1; i >= 0; i--) {
@@ -1275,25 +1407,31 @@ export class Renderer {
       p.y += p.vy * dt60;
       p.vx *= Math.pow(0.985, dt60);
       p.vy = p.vy * Math.pow(0.985, dt60) - (0.014 + this.sm.high * 0.04) * dt60;
+      const dx = p.x - cx, dy = p.y - cy;
+      const inv = 1 / (Math.sqrt(dx * dx + dy * dy) + 42);
+      const swirl = (0.012 + this.sm.bass * 0.02) * p.z * dt60 * inv;
+      p.vx -= dy * swirl;
+      p.vy += dx * swirl;
       p.life -= p.decay * dt60;
       if (p.life <= 0 || p.x < -20 || p.x > w + 20 || p.y < -20 || p.y > h + 20) {
         this.particles.splice(i, 1);
         continue;
       }
-      const sprite = this._dot(this._color(p.c));
-      const r = p.r * (4.2 + this.sm.mid * 2.4 + this.beat * 1.2);
-      ctx.globalAlpha = Math.max(0, 0.66 * p.life);
+      const sprite = this._dot(this._loud(p.c));
+      const depth = 0.5 + p.z * 0.72;
+      const r = p.r * (2.9 + this.sm.mid * 1.7 + this.beat * 0.9) * depth;
+      ctx.globalAlpha = Math.max(0, (0.34 + p.z * 0.24) * p.life);
       ctx.drawImage(sprite, p.x - r, p.y - r, r * 2, r * 2);
     }
     ctx.globalAlpha = 1;
 
     /* inter-particle lines via spatial grid */
     if (this.quality !== 'low') {
-      const lineAlpha = 0.1 + this.sm.level * 0.22;
+      const lineAlpha = 0.06 + this.sm.level * 0.15;
       if (lineAlpha > 0.06) {
         ctx.lineWidth = 0.7;
         const pts = this.particles;
-        const cell = 85;
+        const cell = 78;
         const cols = Math.ceil(w / cell);
         const grid = new Map();
         for (let i = 0; i < pts.length; i++) {
@@ -1302,7 +1440,7 @@ export class Renderer {
           if (!bucket) grid.set(k, (bucket = []));
           bucket.push(i);
         }
-        for (let i = 0; i < pts.length; i++) {
+        for (let i = 0; i < pts.length; i += 2) {
           const a = pts[i];
           const cx0 = (a.x / cell) | 0, cy0 = (a.y / cell) | 0;
           for (let dy = -1; dy <= 1; dy++) {
@@ -1313,13 +1451,13 @@ export class Renderer {
                 if (j <= i) continue;
                 const b = pts[j];
                 const ddx = a.x - b.x;
-                if (ddx > 85 || ddx < -85) continue;
+                if (ddx > 78 || ddx < -78) continue;
                 const ddy = a.y - b.y;
-                if (ddy > 85 || ddy < -85) continue;
+                if (ddy > 78 || ddy < -78) continue;
                 const d2 = ddx * ddx + ddy * ddy;
-                if (d2 < 7225) {
-                  ctx.globalAlpha = Math.max(0, lineAlpha * (1 - d2 / 7225) * a.life * b.life);
-                  ctx.strokeStyle = this._color(a.c);
+                if (d2 < 6084) {
+                  ctx.globalAlpha = Math.max(0, lineAlpha * (1 - d2 / 6084) * a.life * b.life);
+                  ctx.strokeStyle = hexRgba(this._loud(a.c), 0.7);
                   ctx.beginPath();
                   ctx.moveTo(a.x, a.y);
                   ctx.lineTo(b.x, b.y);

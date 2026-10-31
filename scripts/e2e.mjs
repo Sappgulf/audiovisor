@@ -63,7 +63,11 @@ const results = [];
 let shot = 0;
 async function step(name, fn) {
   const before = errors.length;
-  try { const note = await fn(); results.push(`${errors.length > before ? 'ERR ' : 'ok  '} ${name}${note ? ' — ' + note : ''}${errors.length > before ? ' :: ' + errors.slice(before).join(' | ') : ''}`); }
+  try {
+    /* Reveal the auto-hiding transport before every interaction so a step
+       that clicks a transport control does not race the 3.2s hide timer. */
+    await page.evaluate(() => document.getElementById('shell')?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))).catch(() => {});
+    const note = await fn(); results.push(`${errors.length > before ? 'ERR ' : 'ok  '} ${name}${note ? ' — ' + note : ''}${errors.length > before ? ' :: ' + errors.slice(before).join(' | ') : ''}`); }
   catch (e) {
     results.push(`FAIL ${name} — ${String(e.message).split('\n').slice(0, 3).join(' ')}`);
     const failure = `${SP}/e2e-fail-${++shot}`;
@@ -72,6 +76,11 @@ async function step(name, fn) {
   }
 }
 const tap = (sel) => MOBILE ? page.tap(sel) : page.click(sel);
+async function ensureDrawerOpen() {
+  const closed = await page.evaluate(() => document.getElementById('drawer').classList.contains('is-closed'));
+  if (closed) { await tap('#drawer-toggle'); await page.waitForTimeout(350); }
+}
+
 const vis = (sel) => page.isVisible(sel);
 const text = (sel) => page.textContent(sel);
 const snap = (n) => page.screenshot({ path: `${SP}/e2e-${MOBILE ? 'm' : 'd'}-${n}.png`, timeout: 15_000 });
@@ -239,6 +248,8 @@ await step('reset equalizer returns every audio band to flat', async () => {
 await step('FX toggles', async () => { const b = await page.$$('#fx-row button'); const names = []; for (const x of b) { await (MOBILE ? x.tap() : x.click()); await page.waitForTimeout(150); names.push((await x.textContent()).trim()); await (MOBILE ? x.tap() : x.click()); } return names.join(','); });
 await step('studio tab: AI presets + share + party', async () => { await tap('#tab-studio'); await page.waitForTimeout(300); const b = await page.$$('#ai-presets button'); if (b.length) await (MOBILE ? b[0].tap() : b[0].click()); await page.waitForTimeout(200); await tap('#share-btn'); await page.waitForTimeout(600); await page.keyboard.press('Escape'); return b.length + ' ai presets'; });
 await step('studio tab: party QR renders', async () => {
+  await ensureDrawerOpen();
+  await tap('#tab-studio'); await page.waitForTimeout(250);
   await tap('#party-btn'); await page.waitForTimeout(800);
   const svg = await page.$('#party-qr-code svg');
   if (!svg) throw new Error('QR did not render');
@@ -247,6 +258,7 @@ await step('studio tab: party QR renders', async () => {
   return `qr ${(await url || '').length} chars`;
 });
 await step('settings export/import round-trips the custom palette', async () => {
+  await ensureDrawerOpen();
   await tap('#tab-look');
   await page.waitForTimeout(200);
   await tap('[data-theme="custom"]');

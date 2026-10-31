@@ -88,7 +88,7 @@
           <button class="mic-btn" id="drawer-toggle" title="Settings" aria-label="Toggle settings panel" aria-expanded="false" aria-controls="drawer">
             <span class="ic" data-icon="sliders"></span>
           </button>
-          <button class="mic-btn" id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+          <button class="mic-btn" id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-keyshortcuts="?">
             <span class="ic" data-icon="keyboard"></span>
           </button>
           <div class="status-pill" id="status-pill" title="Player status">
@@ -99,7 +99,7 @@
       </header>
 
       <div class="workspace">
-        <main class="stage is-empty" id="stage">
+        <main class="stage is-empty" id="stage" tabindex="-1">
           <!-- The stage is a decorative rendering of audio that is already playing;
                announcing three unlabelled canvases adds noise without adding
                information, so they are hidden from assistive tech. The BPM
@@ -157,7 +157,7 @@
           <div class="dropzone-wrap" id="dropzone">
             <div class="dropzone">
               <span class="drop-title">Choose an audio track</span>
-              <p class="drop-sub">Drop an audio file or choose one to start the visualizer.</p>
+              <p class="drop-sub">Drag a track here, or browse your files to begin.</p>
               <div class="drop-visual" aria-hidden="true">
                 <div class="drop-icon-circle"><span class="ic" data-icon="music"></span></div>
               </div>
@@ -179,7 +179,7 @@
                 </button>
               </div>
               <div class="drop-samples">
-                <span class="drop-samples-label" id="drop-samples-label">Try a sample</span>
+                <span class="drop-samples-label" id="drop-samples-label">Or try a sample</span>
                 <div class="drop-samples-list" role="group" aria-labelledby="drop-samples-label">
                   <button class="drop-sample" type="button" data-sample="night-voltage" data-sample-name="Night Voltage">Night Voltage</button>
                   <button class="drop-sample" type="button" data-sample="velvet-ash" data-sample-name="Velvet Ash">Velvet Ash</button>
@@ -187,7 +187,7 @@
                   <button class="drop-sample" type="button" data-sample="last-seen" data-sample-name="Last Seen">Last Seen</button>
                 </div>
               </div>
-              <p class="drop-privacy">Local files stay on your device.</p>
+              <p class="drop-privacy">Your audio stays on this device.</p>
               <p class="drop-meta sr-only"><span>MP3 / WAV / FLAC / OGG</span><span class="drop-meta-sep" aria-hidden="true"></span><span>24 modes · 32 themes</span><span class="drop-meta-sep" aria-hidden="true"></span><span>Runs locally</span></p>
             </div>
           </div>
@@ -195,7 +195,7 @@
           <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
         </main>
 
-        <div class="sheet-scrim" id="sheet-scrim" hidden></div>
+        <div class="sheet-scrim" id="sheet-scrim" aria-hidden="true" hidden></div>
         <aside class="drawer is-closed" id="drawer" aria-label="Settings panel" inert>
           <!-- bottom-sheet grabber; visible only at phone widths, where the
                drawer becomes a sheet and can be dragged down to dismiss -->
@@ -209,7 +209,7 @@
               <span class="ic" data-icon="close"></span>
             </button>
           </div>
-          <div class="drawer-tabbar" role="tablist" aria-label="Settings sections">
+          <div class="drawer-tabbar" role="tablist" aria-label="Settings sections" aria-orientation="horizontal">
             <button class="drawer-tab" id="tab-source" data-tab="source" role="tab" aria-controls="panel-source" aria-selected="false">
               <span class="ic" data-icon="music2" aria-hidden="true"></span><span class="tab-label">Source</span>
             </button>
@@ -233,11 +233,11 @@
             </section>
             <div class="divider"></div>
             <section>
-              <h3 class="section-title">Social Feed</h3>
+              <h3 class="section-title">Shared Mixes</h3>
 
-              <div id="social-feed" style="display:flex; flex-direction:column; gap:8px; max-height:160px; overflow-y:auto"></div>
-              <div style="display:flex; gap:6px; margin-top:8px">
-                <input id="social-input" class="connect-input" placeholder="Share a mix…" style="flex:1; font-size:11px; padding:6px 8px"/>
+              <div id="social-feed" class="feed-list" data-empty="No mixes shared yet — paste a link below."></div>
+              <div class="inline-form">
+                <input id="social-input" class="connect-input inline-input" placeholder="Share a mix link…" aria-label="Share a mix link" />
                 <button class="mini-btn" id="social-post">Post</button>
               </div>
             </section>
@@ -248,14 +248,14 @@
 
               <input id="mode-filter" class="connect-input drawer-filter" type="search" placeholder="Filter modes…" aria-label="Filter stage modes" autocomplete="off" />
               <div class="mode-list" id="mode-list"></div>
-              <p class="drawer-empty is-hidden" id="mode-empty">No modes match that filter.</p>
-              <div class="fx-row" id="preset-row" style="margin-top:8px"></div>
-              <div class="fx-row" style="margin-top:8px">
+              <p class="drawer-empty is-hidden" id="mode-empty">No modes match that filter. Try a mood, shape, or motion word.</p>
+              <div class="fx-row space-top" id="preset-row"></div>
+              <div class="fx-row space-top">
                 <button class="fx-chip" id="rt-chip" title="Raytraced stage renderer"><span class="chip-dot"></span><span class="chip-txt">Raytrace</span></button>
                 <button class="fx-chip" id="rt-quality" title="Raytrace sample budget"><span class="chip-txt" id="rt-quality-label">Quality: High</span></button>
               </div>
-              <p class="mono" id="gpu-backend" style="margin:8px 0 0; font-size:10px; color:var(--text-40)"></p>
-              <div class="fx-row" style="margin-top:8px">
+              <p class="mono gpu-note" id="gpu-backend"></p>
+              <div class="fx-row space-top">
                 <button class="fx-chip" id="midi-chip" title="Control FX and look with a MIDI device"><span class="chip-dot"></span><span class="chip-txt">MIDI</span></button>
               </div>
             </section>
@@ -302,20 +302,20 @@
               <h3 class="section-title">AI Remix Studio</h3>
 
               <div class="fx-row" id="ai-stems"></div>
-              <div class="fx-row" id="ai-presets" style="margin-top:8px"></div>
-              <button class="fx-chip" id="ai-suggest" style="margin-top:10px"><span class="chip-dot"></span><span class="chip-txt">AI Suggest</span></button>
+              <div class="fx-row space-top" id="ai-presets"></div>
+              <button class="fx-chip space-top" id="ai-suggest"><span class="chip-dot"></span><span class="chip-txt">AI Suggest</span></button>
             </section>
             <div class="divider"></div>
             <section>
               <h3 class="section-title">Collab &amp; Share</h3>
 
-              <div class="fx-row" style="margin-bottom:10px">
+              <div class="fx-row space-top">
                 <button class="fx-chip" id="share-btn"><span class="ic ic-sm" data-icon="link"></span><span class="chip-txt">Copy Link</span></button>
                 <button class="fx-chip" id="party-btn"><span class="ic ic-sm" data-icon="sparkles"></span><span class="chip-txt">Party QR</span></button>
               </div>
-              <div id="collab-comments" style="display:flex; flex-direction:column; gap:6px; max-height:120px; overflow-y:auto"></div>
-              <div style="display:flex; gap:6px; margin-top:8px">
-                <input id="comment-input" class="connect-input" placeholder="Add comment…" style="flex:1; padding:6px 8px; font-size:11px"/>
+              <div id="collab-comments" class="feed-list feed-list-compact" data-empty="No comments yet — start the conversation."></div>
+              <div class="inline-form">
+                <input id="comment-input" class="connect-input inline-input" placeholder="Add a comment…" aria-label="Add a comment" />
                 <button class="mini-btn" id="comment-send">Send</button>
               </div>
               <div id="party-qr" class="party-qr is-hidden">
@@ -328,7 +328,7 @@
             <section>
               <h3 class="section-title">System</h3>
 
-              <div class="fx-row" style="margin-bottom:10px">
+              <div class="fx-row space-top">
                 <button class="mini-btn" id="settings-export">Export</button>
                 <button class="mini-btn" id="settings-import">Import</button>
                 <button class="mini-btn" id="tour-replay">Tour</button>
@@ -343,7 +343,7 @@
 
       <footer class="transport" id="transport">
         <div class="track-info" id="track-info">
-          <button class="ghost-btn" id="save-library-btn" title="Save to library (with edits)" aria-label="Save to library" style="position:absolute; top:6px; right:6px; width:26px; height:26px; z-index:2;"><span class="ic ic-sm" data-icon="layers"></span></button>
+          <button class="ghost-btn save-library-btn" id="save-library-btn" title="Save to library (with edits)" aria-label="Save to library"><span class="ic ic-sm" data-icon="layers"></span></button>
           <div class="track-art" id="track-art"><span class="ic" data-icon="music2"></span></div>
           <div class="track-meta">
             <span class="mono track-label sr-only">Audio source</span>
@@ -423,18 +423,22 @@
       </footer>
     </div>
 
-    <div id="shortcuts-overlay" class="cmd-palette is-hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Keyboard shortcuts">
+    <div id="shortcuts-overlay" class="cmd-palette is-hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="shortcuts-title">
       <div class="cmd-box shortcuts-box">
         <div class="shortcuts-head">
-          <span class="shortcuts-title">Keyboard Shortcuts</span>
-          <button class="mini-btn" id="shortcuts-close" aria-label="Esc — close shortcuts">Esc</button>
+          <h2 class="shortcuts-title" id="shortcuts-title">Keyboard Shortcuts</h2>
+          <button class="mini-btn" id="shortcuts-close" aria-label="Esc — close keyboard shortcuts" aria-keyshortcuts="Escape">Esc</button>
         </div>
-        <div class="shortcuts-grid" id="shortcuts-grid"></div>
+        <div class="shortcuts-grid" id="shortcuts-grid" tabindex="0" role="region" aria-label="Keyboard shortcut list"></div>
+        <div class="shortcuts-foot" aria-hidden="true">
+          <span>Press <kbd>?</kbd> anywhere to reopen</span>
+          <span><kbd>Esc</kbd> to close</span>
+        </div>
       </div>
     </div>
     <div id="cmd-palette" class="cmd-palette is-hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Command palette">
       <div class="cmd-box">
-        <input id="cmd-input" class="cmd-input" placeholder="Type a command… (e.g. bars, brass, reverb)" autocomplete="off" />
+        <input id="cmd-input" class="cmd-input" placeholder="Search modes, themes, and effects…" aria-label="Search commands" autocomplete="off" autocapitalize="off" spellcheck="false" />
         <div id="cmd-list" class="cmd-list"></div>
       </div>
     </div>

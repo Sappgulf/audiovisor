@@ -79,6 +79,20 @@ describe('offline precache', () => {
     expect(sw).toMatch(/Promise\.allSettled\(assets\.map/);
   });
 
+  it('does not skip waiting until the core precache has succeeded', () => {
+    const install = sw.slice(sw.indexOf("addEventListener('install'"), sw.indexOf("addEventListener('activate'"));
+    const settled = install.indexOf('Promise.allSettled');
+    const skip = install.indexOf('self.skipWaiting');
+    expect(settled).toBeGreaterThan(-1);
+    expect(skip).toBeGreaterThan(settled);
+    expect(install).toMatch(/failed\.some\(isEssential\)/);
+    expect(install).toMatch(/throw new Error\(`precache failed/);
+  });
+
+  it('never deletes the previous cache before the current one exists', () => {
+    expect(sw).toMatch(/caches\.has\(CACHE\)/);
+  });
+
   it('handles the PWA share target before the GET-only gate', () => {
     const share = sw.indexOf("url.pathname === '/share-target'");
     const getGate = sw.indexOf("request.method !== 'GET'");
@@ -97,5 +111,26 @@ describe('request handling', () => {
   it('serves navigations network-first so HTML is never stale', () => {
     const nav = sw.slice(sw.indexOf("request.mode === 'navigate'"));
     expect(nav.slice(0, 200)).toMatch(/fetch\(request\)/);
+  });
+
+  it('falls back to the cached shell, then a real offline response', () => {
+    expect(sw).toMatch(/caches\.match\('\/'\)\) \|\| offline\(\)/);
+    expect(sw).toContain('status: 503');
+  });
+
+  it('does not cache one-off navigation query strings', () => {
+    expect(sw).toMatch(/res\.status === 200 && !url\.search/);
+  });
+
+  it('keeps Range requests and the API out of the cache', () => {
+    expect(sw).toMatch(/request\.headers\.has\('range'\)/);
+    expect(sw).toMatch(/url\.pathname === '\/api' \|\| url\.pathname\.startsWith\('\/api\/'\)/);
+  });
+
+  it('bounds cache growth without evicting the precached shell', () => {
+    expect(sw).toMatch(/keys\.filter\(\(key\) => !precached\.has/);
+    expect(sw).toMatch(/removable\.slice\(0, excess\)/);
+    expect(sw).toMatch(/const write = cachePut\(request, response\)/);
+    expect(sw).toMatch(/event\.waitUntil\(write\)/);
   });
 });

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   shouldEvaluate, nextTier, next2dQuality, next2dQualityState, estimateBaseline, baselineOr, relaxBaseline, initialTier, isLowPowerDevice,
   TIERS, WINDOW, FAST_WINDOW, DEFAULT_BASELINE_MS, SEVERE, CLIMB_STREAK, climbCeiling, windowCost, OVER_BUDGET,
+  STEP_DOWN_WINDOWS,
 } from '../src/adaptive.js';
 
 const B = DEFAULT_BASELINE_MS;   // ~16.7ms, one frame at 60Hz
@@ -43,6 +44,14 @@ describe('shouldEvaluate', () => {
   it('ignores the huge gap after a backgrounded tab', () => {
     // one 4-second gap among healthy frames must not downgrade anything
     expect(shouldEvaluate([16, 16, 4000, 16, 16, 16])).toBe(false);
+  });
+
+  it('does not treat a resumed tab as a burst of severe frames', () => {
+    /* Some browsers throttle a hidden tab to ~1fps, so the first four
+       intervals after a long background spell can all be multi-second. They
+       are not render cost and must not trigger the severe fast path. */
+    expect(shouldEvaluate(fill(FAST_WINDOW, 4000), B)).toBe(false);
+    expect(shouldEvaluate([...fill(WINDOW - 2, 16.7), 4000, 4000], B)).toBe(false);
   });
 });
 
@@ -188,6 +197,11 @@ describe('nextTier', () => {
     expect(windowCost(clean, B)).toBeLessThan(B * OVER_BUDGET);
   });
 
+  it('drops tab-restore gaps from the cost instead of averaging them in', () => {
+    const resumed = [...fill(WINDOW - 2, 16.7), 4000, 4000];
+    expect(windowCost(resumed, B)).toBeCloseTo(16.7, 1);
+  });
+
   it('caps the automatic climb at medium unless the tier was picked by hand', () => {
     expect(climbCeiling('high', false)).toBe('medium');
     expect(climbCeiling('ultra', false)).toBe('medium');
@@ -197,6 +211,14 @@ describe('nextTier', () => {
 
   it('steps down from a 45fps judder that averages ~22ms', () => {
     expect(nextTier('high', 22, 'ultra', B, 0).tier).toBe('medium');
+  });
+
+  it('can require consecutive over-budget windows before stepping down', () => {
+    /* A lone over-budget window can be external load; the render loop asks
+       for STEP_DOWN_WINDOWS, while a direct call keeps the old immediate
+       step-down behaviour. */
+    expect(nextTier('high', 30, 'high', B, 0, 1).tier).toBe('high');
+    expect(nextTier('high', 30, 'high', B, 0, STEP_DOWN_WINDOWS).tier).toBe('medium');
   });
 
   it('returns the current tier for nonsense input', () => {

@@ -29,13 +29,13 @@ export function createAboutPanel({ shell, trigger, modeCount, themeCount, doc = 
   panel.tabIndex = -1;
   panel.innerHTML = `
   <div class="about-card">
-    <button class="about-close" type="button" aria-label="Close About">×</button>
+    <button class="about-close" type="button" aria-label="Close About" aria-keyshortcuts="Escape">×</button>
     <h2 id="about-title">AUDIOVISOR</h2>
     <div class="about-tag mono">Real-time audio visualizer</div>
-    <p id="about-description">Drop in a track, stream a URL, capture any app's audio or connect your
-    Spotify account — ${modeCount} stage modes, ${themeCount} theme moods, a full
-    FX chain and a beat tracker, all rendered live.</p>
-    <div class="about-keys">
+    <p id="about-description">Drop a track, stream a URL, capture any app's audio, or connect
+    Spotify and Apple Music. ${modeCount} stage modes, ${themeCount} theme moods, a full
+    FX chain, and a live beat tracker — all rendered in your browser.</p>
+    <div class="about-keys" role="group" aria-label="Keyboard shortcuts at a glance">
       <div class="about-key"><kbd>SPACE</kbd><span>Play / Pause</span></div>
       <div class="about-key"><kbd>← →</kbd><span>Seek 10s</span></div>
       <div class="about-key"><kbd>↑ ↓</kbd><span>Volume ±5%</span></div>
@@ -48,6 +48,10 @@ export function createAboutPanel({ shell, trigger, modeCount, themeCount, doc = 
       <div class="about-key"><kbd>C</kbd><span>Chop N Screw</span></div>
       <div class="about-key"><kbd>L</kbd><span>Library</span></div>
       <div class="about-key"><kbd>F</kbd><span>Fullscreen</span></div>
+    </div>
+    <div class="about-foot">
+      <span>Runs locally · nothing is uploaded</span>
+      <span class="mono">Esc to close</span>
     </div>
   </div>`;
   shell.appendChild(panel);

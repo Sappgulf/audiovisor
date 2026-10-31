@@ -1,8 +1,16 @@
-# AUDIOVISOR — v8.31.0
+# AUDIOVISOR — v8.32.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Professional polish pass (v8.32)
+- **Canvas2D fallback rebuilt** — all 24 fallback modes were reworked with palette-preserving highlights, better depth, grounding, atmospheric layers and per-mode composition. Worst clipping dropped to 0.2% while saturation rose across terrain, spectrogram and fluid.
+- **UI/UX polish** — design tokens for spacing/tap targets/radii, tighter type hierarchy, professional hover/focus/disabled states, better empty/loading copy, responsive phone/tablet/landscape layouts, cleaner dialogs and a search-forward command palette.
+- **Accessibility** — queue and library rows are lists rather than nested interactive listboxes, About is reachable on phones, dialog layering/focus/escape handling is consistent, and the axe gate now covers 26 live surfaces.
+- **Performance & robustness** — rAF pauses on hidden tabs, idle 2D renders at half rate, adaptive quality filters unusable frame intervals and requires two over-budget windows before stepping down. The service worker now fails safe on incomplete precache, protects the old cache during updates, excludes query/Range/API responses and trims runtime entries. Load metrics report TTFB, LCP/CLS, long tasks, late chunks and render blockers.
+- **Cold path** — production preview: 7 resources / 223 kB, zero render-blocking resources, FCP ~100 ms locally.
+- **Tests** — 1,070 unit tests, plus the full desktop/mobile E2E, axe and offline checks.
 
 ### Staged-world redesign (v8.31)
 - **Rooms instead of voids** — every sculptural mode now sits inside a real floor/room: Bars gets a back wall, ring portal and side columns; Scope gets a graticule panel and bezel; Spectrogram gets canyon walls; Plasma becomes a reactor chamber; Orb/Fluid/Tensor/Prism/Fractal gain plinths, tables and frames.

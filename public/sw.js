@@ -4,17 +4,66 @@
 /* Bump on every release. The old name was pinned at v6.3 across many
    deploys, so returning visitors kept being served whatever assets their
    cache already held. */
-const CACHE = 'audiovisor-v8.31.0';
+const CACHE = 'audiovisor-v8.32.0';
+
+/* The shell plus the optional static assets. Hashed build output is appended
+   from the build-time manifest below. */
+const PRECACHE = ['/', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
+/* Precache is ~30 entries; leave room for lazily viewed mode art and samples
+   without letting one-off URLs grow the cache forever. */
+const MAX_CACHE_ENTRIES = 80;
+/* Filled during install. Runtime trimming must never evict the shell or a
+   hashed chunk that offline boot depends on. */
+let precached = new Set();
+
+/* If one of these cannot be cached, keeping the previous worker is safer than
+   activating with a shell that cannot boot offline. */
+const isEssential = (url) => url === '/' || url.startsWith('/assets/');
+
+function offline() {
+  return new Response('Offline', {
+    status: 503,
+    statusText: 'Offline',
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
+async function trimCache(cache) {
+  const keys = await cache.keys();
+  if (keys.length <= MAX_CACHE_ENTRIES) return;
+  const excess = keys.length - MAX_CACHE_ENTRIES;
+  const removable = keys.filter((key) => !precached.has(new URL(key.url).pathname));
+  await Promise.all(removable.slice(0, excess).map((key) => cache.delete(key)));
+}
+
+async function cachePut(request, response) {
+  const cache = await caches.open(CACHE);
+  await cache.put(request, response);
+  await trimCache(cache);
+}
+
+/* Put after a fetch has already been handed back. waitUntil keeps the worker
+   alive for the write; in the rare case the event has already finished, the
+   origin request must not fail just because the cache write cannot be waited
+   on — so fall back to a best-effort write. */
+function cacheInBackground(event, request, response) {
+  const write = cachePut(request, response);
+  try {
+    event.waitUntil(write);
+  } catch {
+    /* already started; keep its rejection from surfacing as unhandled */
+    void write.catch(() => {});
+  }
+}
 
 self.addEventListener('install', (e) => {
-  self.skipWaiting();
   /* Cache the shell and the build-time precache manifest. The old version
      stored only '/', so a first offline launch had HTML but no JS, CSS or
      fonts; now every hashed chunk and the local fonts are fetched once,
      individually, so one missing optional asset cannot reject the batch. */
   e.waitUntil((async () => {
     const c = await caches.open(CACHE);
-    let assets = ['/', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
+    let assets = [...PRECACHE];
     try {
       const res = await fetch('/precache-manifest.json', { cache: 'no-store' });
       if (res.ok) {
@@ -22,16 +71,31 @@ self.addEventListener('install', (e) => {
         if (Array.isArray(data.assets)) assets = [...new Set([...assets, ...data.assets])];
       }
     } catch { /* dev server or an old build without the manifest */ }
-    await Promise.allSettled(assets.map((url) => c.add(url)));
+    precached = new Set(assets);
+    /* reload bypasses the HTTP cache so a new SW never seeds itself from a
+       stale copy of a shell that the server has already replaced. */
+    const results = await Promise.allSettled(assets.map((url) =>
+      c.add(new Request(new URL(url, self.location.origin), { cache: 'reload' }))));
+    const failed = assets.filter((_, i) => results[i].status === 'rejected');
+    if (failed.some(isEssential)) {
+      /* Do not activate with a partial shell and then delete the previous
+         cache on activate: offline would go from working to empty. Failing
+         the install leaves the old worker in control. */
+      throw new Error(`precache failed: ${failed.join(', ')}`);
+    }
+    await self.skipWaiting();
   })());
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    /* An interrupted install must never let activate delete the only usable
+       cache. The install handler normally guarantees this cache exists. */
+    if (!(await caches.has(CACHE))) return;
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', (e) => {
@@ -47,17 +111,14 @@ self.addEventListener('fetch', (e) => {
         const form = await request.formData();
         const file = form.get('audio');
         if (file && typeof file !== 'string' && file.size) {
-          const cache = await caches.open(CACHE);
-          await cache.put(
-            new Request(new URL('/__shared_audio__', self.location.origin)),
-            new Response(file, {
-              headers: {
-                'Content-Type': file.type || 'audio/mpeg',
-                'X-File-Name': encodeURIComponent(file.name || 'shared-audio'),
-                'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(file.name || 'shared-audio')}`,
-              },
-            }),
-          );
+          const shared = new Request(new URL('/__shared_audio__', self.location.origin));
+          await cachePut(shared, new Response(file, {
+            headers: {
+              'Content-Type': file.type || 'audio/mpeg',
+              'X-File-Name': encodeURIComponent(file.name || 'shared-audio'),
+              'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(file.name || 'shared-audio')}`,
+            },
+          }));
         }
       } catch { /* bad payload: still return the app */ }
       return Response.redirect(new URL('/?shared=1', self.location.origin).toString(), 303);
@@ -72,25 +133,31 @@ self.addEventListener('fetch', (e) => {
   }
   /* never touch the token API, and never cache a partial (Range/206) audio
      response under the full URL — it breaks offline playback */
-  if (url.pathname.startsWith('/api/')) return;
+  if (url.pathname === '/api' || url.pathname.startsWith('/api/')) return;
   if (request.headers.has('range')) return;
 
   // navigations: network-first so users always get fresh HTML
   if (request.mode === 'navigate') {
-    e.respondWith(
-      fetch(request)
-        .then((res) => {
-          /* OAuth callbacks carry a one-use code/state in the query; caching
-             that URL retains it and grows the cache without bound */
-          const oauth = url.search.includes('code=') || url.search.includes('state=') || url.searchParams.has('shared');
-          if (res.status === 200 && !oauth) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => {});
-          }
-          return res;
-        })
-        .catch(() => caches.match(request).then((r) => r || caches.match('/')))
-    );
+    e.respondWith((async () => {
+      try {
+        const res = await fetch(request);
+        if (res.status >= 500) {
+          /* A deploy in a bad state should not replace a usable offline shell
+             with an error page. */
+          return (await caches.match('/')) || res;
+        }
+        /* Cache only a queryless 200. OAuth callbacks carry a one-use
+           code/state and the manifest shortcuts (?open=..., ?shared=1) are
+           one-off entries; caching each variant grows the cache without
+           bound and can retain credentials. */
+        if (res.status === 200 && !url.search) {
+          cacheInBackground(e, request, res.clone());
+        }
+        return res;
+      } catch {
+        return (await caches.match(request)) || (await caches.match('/')) || offline();
+      }
+    })());
     return;
   }
 
@@ -110,10 +177,7 @@ self.addEventListener('fetch', (e) => {
         (hit) =>
           hit ||
           fetch(request).then((res) => {
-            if (res.status === 200) {
-              const copy = res.clone();
-              caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => {});
-            }
+            if (res.status === 200) cacheInBackground(e, request, res.clone());
             return res;
           })
       )
@@ -121,15 +185,15 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  e.respondWith(
-    fetch(request)
-      .then((res) => {
-        if (res.status === 200) {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => {});
-        }
-        return res;
-      })
-      .catch(() => caches.match(request))
-  );
+  e.respondWith((async () => {
+    try {
+      const res = await fetch(request);
+      /* 206/redirected/error responses are not a complete body for this URL;
+         the status check keeps them out of the cache. */
+      if (res.status === 200) cacheInBackground(e, request, res.clone());
+      return res;
+    } catch {
+      return (await caches.match(request)) || offline();
+    }
+  })());
 });
