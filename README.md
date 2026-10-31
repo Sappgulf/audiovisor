@@ -1,8 +1,18 @@
-# AUDIOVISOR — v8.26.0
+# AUDIOVISOR — v8.27.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### All-mode visual pass (v8.27)
+- **Shared treble response** — palette rim light now follows the high band and beat on every metallic surface, so hats and air shape the whole stage rather than only the bass-driven scenes.
+- **Bars / scope / particles** — the bar spectrum keeps a small mid-driven floor so the top octaves stay in frame; particle embers flicker with treble; scope keeps its clean instrument trace.
+- **Waves and kaleidoscope** — moving crest beads ride the high band along the silk ribbons; the mandala gains a bright central iris.
+- **Spectrogram and terrain** — both moved their crests off the palette's near-white end: the waterfall is purple/blue again, and the mountains keep a deep coloured body with a lower, tinted snow line instead of washing to white.
+- **Neon City** — larger blocks and fewer towers make a readable skyline; rooftop crowns and windows draw from different palette points, the night sky gets a horizon wash and stars, and the camera looks slightly higher.
+- **Nebula, galaxy and lava** — volumetric sampling is denser (at least 32 steps at low tier), the nebula gets fine filament detail and dark lanes, the galaxy arms catch high-band star glints, and the lava wax is brighter, denser and bubbles with the high band.
+- **Fractal Bloom** — trap-field veins pulse with the high band and the colour walk is wider, breaking up the previous uniform magenta shell.
+- **Every mode touched** — all 24 raytraced scenes feed the new rim response, and the 24 picker stills/animation strips plus the share card are regenerated from the upgraded stage.
 
 ### Follow-up pass (v8.26)
 - **Custom palettes survive settings** — export/import now carries the five custom stops, so moving a configuration to another device restores the palette instead of leaving a dangling `custom` theme id. Reset also clears the saved palette, and a missing custom theme falls back to the default theme rather than handing the renderer `undefined`.

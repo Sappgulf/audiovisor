@@ -213,7 +213,9 @@ float scBars(vec3 p) {
   float u = pow(clamp(slot / 26.0, 0.0, 1.0), 0.62);
   float e = pow(spec(u), 1.2) * uSens;
   e = e / (1.0 + 0.55 * e);
-  float h = 0.1 + 2.6 * e * (1.0 + uBeat * 0.3 + uDrop * 0.45);
+  /* A small mid-driven floor keeps the top octaves visible instead of
+     letting the right half of the spectrum disappear into the stage. */
+  float h = 0.22 + uMid * 0.18 + 2.6 * e * (1.0 + uBeat * 0.3 + uDrop * 0.45);
   float depth = 0.1 + hash11(slot + 4.0) * 0.18;
   vec3 b = vec3(0.12, h, depth);
   float d = sdRBox(q - vec3(cx, h, 0.0), b, 0.04);
@@ -370,6 +372,8 @@ float scKaleido(vec3 p) {
   if (plate < d) { d = plate; g_id = 27.0; g_aux = 0.52; }
   float core = sdEllipsoid(p, vec3(0.34 + uBeat * 0.08, 0.34 + uBass * 0.06, 0.20));
   if (core < d) { d = core; g_id = 11.0; g_aux = 0.94; }
+  float iris = sdSphere(p, 0.095 + uHigh * 0.025 + uBeat * 0.018);
+  if (iris < d) { d = iris; g_id = 4.0; g_aux = 0.92; }
   return d;
 }
 
@@ -462,16 +466,16 @@ float scTerrain(vec3 p) {
 /* 9 city — neon block grid on wet asphalt */
 float scCity(vec3 p) {
   float fl = p.y;
-  vec2 cell = floor(p.xz / 2.2);
-  vec2 lp = mod(p.xz, 2.2) - 1.1;
+  vec2 cell = floor(p.xz / 2.75);
+  vec2 lp = mod(p.xz, 2.75) - 1.375;
   float h = hash11(dot(cell, vec2(17.3, 41.7)));
   float e = clamp(spec(fract(h * 3.7)), 0.0, 1.2);
   float bh = 0.4 + h * 3.2 + e * 2.2 * uSens + uBeat * 0.2 * h;
-  float bw = 0.32 + h * 0.28;
+  float bw = 0.40 + h * 0.30;
   float d = sdBox(vec3(lp.x, p.y - bh * 0.5, lp.y), vec3(bw, bh * 0.5, bw));
   g_id = 8.0; g_aux = e;
   float crown = sdBox(vec3(lp.x, p.y - bh - 0.12, lp.y), vec3(bw * 0.45, 0.14, bw * 0.45));
-  if (crown < d) { d = crown; g_id = 6.0; g_aux = e; }
+  if (crown < d) { d = crown; g_id = h > 0.56 ? 4.0 : 6.0; g_aux = e; }
   if (fl < d) { d = fl; g_id = 9.0; }
   return d;
 }
@@ -640,6 +644,10 @@ float scBloom(vec3 p) {
       if (heart < d) { d = heart; g_id = 4.0; g_aux = 0.94; }
     }
   }
+  /* A low glowing pool anchors the three stems; the mirror floor alone left
+     the bottom half of the garden as empty reflection. */
+  float pool = sdCyl(p - vec3(0.0, -1.76, -2.2), 0.012, 1.85);
+  if (pool < d) { d = pool; g_id = 1.0; g_aux = 0.08; }
   float ground = p.y + 1.8;
   if (ground < d) { d = ground; g_id = 0.0; }
   return d;
@@ -868,23 +876,31 @@ Mat matOf(float id, float aux, vec3 p) {
     m.emis = palf(0.74) * (0.34 + uBeat * 0.35 + uDrop * 0.45);
   } else if (id < 2.5) {                // silk ribbon
     m.alb = c * 0.5; m.rough = 0.22; m.metal = 0.6;
-    m.emis = c * (0.72 + uLevel * 1.25 + uBeat * 0.4 + uHigh * 0.25);
+    float bead = max(0.0, sin(p.x * 9.0 + p.y * 2.8 + uTime * 2.1 + aux * 9.0));
+    bead *= bead; bead *= bead; bead *= bead;
+    m.emis = c * (0.72 + uLevel * 1.25 + uBeat * 0.4 + uHigh * 0.25)
+           + c * bead * (0.20 + uHigh * 0.85);
   } else if (id < 3.5) {                // glass
     m.alb = vec3(0.92); m.rough = 0.06; m.metal = 0.0; m.trans = 1.0;
     m.emis = c * (0.06 + uLevel * 0.16);
   } else if (id < 4.5) {                // pure emissive
     m.alb = c * 0.1; m.rough = 0.3; m.metal = 0.0;
     m.emis = c * (1.1 + 2.2 * spec(aux) + uBeat * 1.1);
+    if (uMode == 3) {
+      float flicker = max(0.0, sin(uTime * 4.6 + aux * 22.0 + p.y * 5.0));
+      flicker *= flicker; flicker *= flicker; flicker *= flicker;
+      m.emis += palf(0.94) * flicker * (0.12 + uHigh * 0.85);
+    }
   } else if (id < 5.5) {                // spectrogram terrace
-    vec3 cc = palf(pow(clamp(aux, 0.0, 1.0), 0.55));
+    vec3 cc = palf(pow(clamp(aux, 0.0, 1.0), 0.55) * 0.46 + 0.03);
     m.alb = cc * 0.5; m.rough = 0.5; m.metal = 0.15;
     /* the newest edge answers treble: a hat lands and the waterfall's front
        lip lights up even where that bin's column isn't tall yet */
     float age = clamp((p.z + 4.8) / 9.6, 0.0, 1.0);
     /* the terrace answers the kick and the drop, not just the waterfall:
        beat lifts the whole relief, the drop surges it harder */
-    m.emis = cc * (0.18 + pow(aux, 2.1) * 1.15) * (1.0 + uBeat * 0.35 + uDrop * 0.5)
-           + palf(0.82) * pow(1.0 - age, 5.0) * uHigh * 0.55;
+    m.emis = cc * (0.16 + pow(aux, 2.1) * 1.02) * (1.0 + uBeat * 0.35 + uDrop * 0.5)
+           + palf(0.50) * pow(1.0 - age, 5.0) * uHigh * 0.40;
     float strata = 1.0 - smoothstep(0.03, 0.13, abs(sin(p.y * 18.0)));
     m.emis += cc * strata * aux * 0.28;
   } else if (id < 6.5) {                // structural strut / bezel
@@ -892,14 +908,15 @@ Mat matOf(float id, float aux, vec3 p) {
     m.emis = palf(0.25) * (0.12 + uLevel * 0.25);
   } else if (id < 7.5) {                // terrain rock
     float crest = pow(clamp(aux, 0.0, 1.0), 3.0);
-    m.alb = mix(vec3(0.025, 0.023, 0.021), palf(aux) * 0.3, aux);
+    m.alb = mix(vec3(0.025, 0.023, 0.021), palf(aux * 0.42 + 0.02) * 0.30, aux * 0.86);
     m.rough = 0.62; m.metal = 0.18;
     /* snow-line glow on the crests plus a cool wash in the troughs. The ridge
        used to freeze on hits — every other mode pulsed while the mountains
        sat still — so the crest line now lifts with the beat and shimmers
        with treble. */
-    m.emis = (palf(aux) * crest * 0.62 + palf(0.9) * pow(1.0 - aux, 4.0) * 0.06)
-           * (1.0 + uBeat * 0.35 + uHigh * crest * 0.25);
+    m.emis = (palf(aux * 0.40 + 0.02) * crest * 0.24
+              + palf(0.40) * pow(1.0 - aux, 4.0) * 0.022)
+           * (1.0 + uBeat * 0.30 + uHigh * crest * 0.22);
     /* atmospheric perspective: far ridges sink into the theme's deep end */
     float haze = smoothstep(2.0, 14.0, -p.z) * 0.65;
     m.alb = mix(m.alb, palf(0.12) * 0.08, haze);
@@ -918,7 +935,11 @@ Mat matOf(float id, float aux, vec3 p) {
     float lit = step(0.28, address) * (0.82 + 0.18 * sin(uTime * 0.4 + address * TAU));
     float win = wy * max(wx, wz) * lit;
     m.alb = vec3(0.02); m.rough = 0.22; m.metal = 0.5;
-    m.emis = palf(aux) * win * (0.5 + aux * 0.9 + uBeat * 0.35 + uDrop * 0.4);
+    /* Each tower draws its windows from a different point on the palette,
+       so a skyline is a street of signs rather than one white grid. */
+    vec3 wc = palf(fract(aux * 0.55 + address * 0.31 + 0.04));
+    m.emis = (wc * win * (0.5 + aux * 0.9 + uBeat * 0.35 + uDrop * 0.4))
+           + palf(0.85) * win * uHigh * 0.22;
   } else if (id < 9.5) {                // wet asphalt
     m.alb = vec3(0.012); m.rough = 0.14; m.metal = 0.9;
   } else if (id < 10.5) {               // liquid chrome
@@ -942,10 +963,13 @@ Mat matOf(float id, float aux, vec3 p) {
   } else if (id < 12.5) {               // event horizon — swallows everything
     m.alb = vec3(0.0); m.rough = 1.0; m.metal = 0.0; m.emis = vec3(0.0);
   } else if (id < 13.5) {               // fractal shell
-    vec3 cc = palf(fract(aux * 3.2 + 0.15 * sin(p.y * 2.0) + uTime * 0.03));
+    vec3 cc = palf(fract(aux * 2.4 + 0.22 * sin(p.y * 2.0 + p.x * 1.4) + uTime * 0.03));
     m.alb = cc * (0.35 + 0.5 * (1.0 - aux));
     m.rough = 0.22 + aux * 0.2; m.metal = 0.8;
-    m.emis = cc * (0.15 + pow(1.0 - aux, 2.0) * 0.9 + uBeat * 0.35 + uDrop * 0.4);
+    float vein = max(0.0, sin(aux * 30.0 + p.y * 3.0 + uTime * 0.9));
+    vein *= vein; vein *= vein; vein *= vein;
+    m.emis = cc * (0.15 + pow(1.0 - aux, 2.0) * 0.9 + uBeat * 0.35 + uDrop * 0.4)
+           + palf(0.88) * vein * (0.22 + uHigh * 0.65);
   } else if (id < 14.5) {               // spare glass material
     m.alb = vec3(0.9); m.rough = 0.06; m.metal = 0.0; m.trans = 1.0;
     m.emis = palf(0.3) * 0.08;
@@ -1060,7 +1084,7 @@ Mat matOf(float id, float aux, vec3 p) {
   // otherwise bloom into a flat white sheet
   float gain = 1.0;
   if (uMode == 3)  gain = 0.65;   // smaller, brighter particles
-  if (uMode == 5)  gain = 0.42;   // spectro terrace
+  if (uMode == 5)  gain = 0.28;   // spectro terrace
   if (uMode == 6)  gain = 0.55;   // tunnel
    if (uMode == 14) gain = 0.62;   // tensor — band-coupled rods earn more light
   if (uMode == 17) gain = 0.35;   // bloom field
@@ -1094,14 +1118,22 @@ vec3 envBase(vec3 rd) {
   float up = clamp(rd.y * 0.5 + 0.5, 0.0, 1.0);
   vec3 sky = mix(vec3(0.004, 0.0038, 0.0035), palf(0.15) * 0.035, pow(up, 2.0));
   sky += palf(0.75) * 0.012 * pow(clamp(-rd.y * 0.5 + 0.5, 0.0, 1.0), 3.0);
-  if (uMode == 10 || uMode == 11 || uMode == 16 || uMode == 17 || uMode == 3) sky += starField(rd);
+  if (uMode == 9 || uMode == 10 || uMode == 11 || uMode == 16 || uMode == 17 || uMode == 3) sky += starField(rd);
   if (uMode == 8) {
     // dusk wash + aurora ribbon over the ridges
     sky += palf(0.2) * 0.05 * pow(clamp(rd.y * 1.6 + 0.2, 0.0, 1.0), 1.5);
     float band = exp(-pow((rd.y - 0.26) * 6.0, 2.0));
     float ripple = 0.45 + 0.55 * sin(rd.x * 7.0 + uTime * 0.5) * sin(rd.x * 3.0 - uTime * 0.3);
-    sky += palf(0.7) * band * ripple * (0.3 + uLevel * 0.55);
+    sky += palf(0.58) * band * ripple * (0.16 + uLevel * 0.34)
+         + palf(0.28) * band * 0.035;
     sky += starField(rd) * 0.5;
+  }
+  if (uMode == 9) {
+    /* dusk horizon behind the skyline: without it the towers ended in a
+       featureless black band and the city read as a floating model. */
+    float hz = exp(-pow((rd.y - 0.02) * 24.0, 2.0));
+    sky += palf(0.38) * hz * (0.10 + uLevel * 0.10);
+    sky += palf(0.62) * exp(-pow((rd.y - 0.24) * 4.2, 2.0)) * 0.025;
   }
   if (uMode == 1) {
     // low sun on a sea horizon: the ribbons used to play to an empty void
@@ -1229,6 +1261,11 @@ vec3 shade(vec3 p, vec3 rd, vec3 n, Mat m, float shadows) {
   col += m.alb * (1.0 - m.metal) * envColor(n) * 0.7 * occ;
   float fres = pow(max(1.0 - max(dot(n, v), 0.0), 0.0), 4.0);
   col += palf(0.7) * fres * 0.18 * occ * (0.4 + uLevel);
+  /* Shared treble response: the palette rim brightens with the high band and
+     the beat, so every scene answers hats and air instead of only the kick.
+     (A per-pixel glint was removed: the sin/x^8 pass cost 10-20% on the heavy
+     scenes for a detail that read mostly as noise in screenshots.) */
+  col += palf(0.82) * fres * fres * (0.10 + uHigh * 0.30 + uBeat * 0.10) * occ;
   return col;
 }
 
@@ -1241,6 +1278,11 @@ float volDensity(vec3 p) {
     float disc = exp(-abs(q.y * 1.42) * 1.3);
     float f = fbm3(q * 0.9 + vec3(0.0, uTime * 0.03, uTime * 0.02));
     f = f * f * 1.8;                                    // more contrast between wisps
+    /* Fine structure and lanes keep the cloud from reading as one soft
+       magenta smear at phone resolution. */
+    float fine = fbm3(q * 3.35 + vec3(0.0, uTime * 0.06, uTime * 0.035));
+    f *= mix(0.56, 1.22, smoothstep(0.42, 0.82, fine));
+    f += fine * fine * 0.22;
     float radius = length(q.xz);
     float angle = atan2s(q.z, q.x);
     float arms = 0.5 + 0.5 * cos(angle * 3.0 - radius * 1.55 + uTime * 0.16);
@@ -1279,7 +1321,10 @@ float volDensity(vec3 p) {
     d = (i == 0) ? s : smin(d, s, 0.3);
   }
   float cyl = sdCyl(q, 2.1, 1.15);
-  return max(0.0, -d * 1.1) * step(cyl, 0.0) * (0.9 + uBass * 0.7 + uDrop * 0.5);
+  float bubbles = pow(max(0.0, sin(q.y * 7.0 + uTime * 2.1 + q.x * 2.7) *
+                                sin(q.z * 6.0 - uTime * 1.7)), 22.0);
+  return max(0.0, -d * 2.4) * step(cyl, 0.0)
+       * (1.18 + uBass * 0.72 + uDrop * 0.55 + bubbles * (0.25 + uHigh * 0.8));
 }
 
 vec3 volColor(float dens, vec3 p) {
@@ -1291,6 +1336,10 @@ vec3 volColor(float dens, vec3 p) {
      (0.12 -> 0.8) washed five-colour palettes out to their pale end */
   float rr = clamp(r * 0.2, 0.0, 1.0);
   vec3 c = mix(palf(0.55 - rr * 0.4), palf(0.08 + rr * 0.15), smoothstep(0.2, 0.9, rr));
+  if (uMode == 10 || uMode == 11) {
+    float spark = pow(max(0.0, sin(p.x * 13.0 + p.y * 17.0 + p.z * 11.0 + uTime * 2.4)), 28.0);
+    c += palf(0.95) * spark * (0.16 + uHigh * 1.15);
+  }
   float paleMix = (uMode == 20) ? 0.10 : 0.38;
   c = mix(c, palf(0.78), smoothstep(0.35, 0.9, t) * paleMix);
   float whiteCore = (uMode == 20) ? 0.025 : 0.12;
@@ -1298,7 +1347,7 @@ vec3 volColor(float dens, vec3 p) {
   /* the lamp wax sits behind glass and loses half its light to the wall
      march — it measured a third of the nebula's brightness. Base it hotter
      so the lamp actually glows between beats. */
-  float base = (uMode == 20) ? 0.46 : 0.52;
+  float base = (uMode == 20) ? 0.82 : 0.52;
   if (uMode == 20) {
     float heat = smoothstep(-1.8, 1.8, p.y + 0.35 * sin(uTime * 0.35 + p.x * 2.0));
     vec3 wax = mix(palf(0.10), palf(0.58), heat);
@@ -1312,11 +1361,14 @@ vec3 marchVolume(vec3 ro, vec3 rd, float tmax, vec3 field) {
   vec3 acc = vec3(0.0);
   float trans = 1.0;
   float t = 0.4;
-  int steps = min(uSteps / 3, 72);
+  /* Volumes were sampled at only uSteps/3, which left the nebula, galaxy and
+     wax looking like soft blobs at low/medium tiers. Keep enough samples to
+     resolve filaments, with a mode-specific cap for cost. */
+  int steps = min(max(uSteps / 2, uMode == 20 ? 24 : 32), 96);
   float stepSize = 0.16;
   /* the wax is enclosed in glass and read as murk against the bright
      vessel highlights — the lamp gets a gain the open volumes don't need */
-  float gain = (uMode == 20) ? 1.15 : 1.0;
+  float gain = (uMode == 20) ? 2.1 : 1.0;
   /* Clip the march to where the medium can be non-zero, so the step budget
      is spent inside the cloud rather than on empty sky: the nebula is faded
      to nothing past r 6.4, the galaxy disc is gone beyond |y| 1.2. */
@@ -1378,7 +1430,7 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
     // roof (including its crown), even at the maximum sensitivity.
     float roof = 4.4 + 2.64 * clamp(uSens, 0.0, 2.4);
     ro = vec3(sin(t * 0.09) * 8.8, roof + sin(t * 0.14) * 0.25, cos(t * 0.09) * 8.8);
-    ta = vec3(0.0, 1.8, 0.0); ap = 0.018;
+    ta = vec3(0.0, 2.8, 0.0); ap = 0.018;
   }
   else if (uMode == 10) { ro = vec3(sin(t * 0.08) * 5.4, 1.6, cos(t * 0.08) * 5.4); ap = 0.0; }
   else if (uMode == 11) { ro = vec3(sin(t * 0.06) * 2.8, 4.4 + sin(t * 0.1) * 0.7, cos(t * 0.06) * 2.8); ta = vec3(0.0); ap = 0.0; }

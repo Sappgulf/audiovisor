@@ -40,15 +40,17 @@ page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error' && /Content Security Policy|CSP/i.test(m.text())) errors.push(m.text()); });
 console.log('· loading build and waiting for service worker');
 await page.goto(base, { waitUntil: 'load', timeout: 30000 });
-await page.evaluate(async () => {
+const controlled = await page.evaluate(async () => {
   await navigator.serviceWorker.ready;
   if (!navigator.serviceWorker.controller) {
     await new Promise((resolve) => {
       navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
-      setTimeout(resolve, 5000);
+      setTimeout(resolve, 8000);
     });
   }
+  return !!navigator.serviceWorker.controller;
 });
+if (!controlled) { console.error('✗ service worker did not take control'); await browser.close(); server.close(); process.exit(1); }
 await page.waitForTimeout(800);
 console.log('· service worker active; checking precache');
 const cached = await page.evaluate(async () => {
@@ -91,8 +93,8 @@ if (!shared.cached) {
 }
 console.log('· loading shared file into the app');
 await page.goto(base + '?shared=1', { waitUntil: 'load', timeout: 30000 });
-await page.waitForFunction(() => window.__av?.engine?.playing, null, { timeout: 30000 });
-const sharedInfo = await page.evaluate(() => ({ name: window.__av.engine.track?.name, query: location.search }));
+await page.waitForFunction(() => /shared-test/.test(window.__av?.engine?.track?.name || ''), null, { timeout: 30000 });
+const sharedInfo = await page.evaluate(() => ({ name: window.__av.engine.track?.name, playing: window.__av.engine.playing, query: location.search }));
 if (!/shared-test/.test(sharedInfo.name || '') || sharedInfo.query.includes('shared')) {
   console.error('✗ shared file was not loaded:', sharedInfo);
   await browser.close(); server.close(); process.exit(1);
@@ -100,8 +102,19 @@ if (!/shared-test/.test(sharedInfo.name || '') || sharedInfo.query.includes('sha
 console.log(`✓ share_target loaded ${sharedInfo.name}`);
 
 console.log('· going offline and reloading');
+await page.evaluate(() => navigator.serviceWorker.ready);
+await page.waitForTimeout(500);
 await ctx.setOffline(true);
-await page.reload({ waitUntil: 'load', timeout: 30000 });
+let reloaded = false;
+for (let attempt = 0; attempt < 2 && !reloaded; attempt++) {
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
+    reloaded = true;
+  } catch {
+    await page.waitForTimeout(500);
+  }
+}
+if (!reloaded) { console.error('✗ offline navigation did not return the app shell'); await ctx.setOffline(false); await browser.close(); server.close(); process.exit(1); }
 await page.waitForFunction(() => !!window.__av, null, { timeout: 30000 });
 const ready = await page.evaluate(() => ({ av: !!window.__av, title: document.title, stage: !!document.getElementById('stage'), toasts: document.querySelectorAll('.toast').length }));
 await ctx.setOffline(false);
