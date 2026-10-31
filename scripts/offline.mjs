@@ -37,7 +37,7 @@ const ctx = await browser.newContext({ serviceWorkers: 'allow', viewport: { widt
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-page.on('console', (m) => { if (m.type() === 'error' && /Content Security Policy|CSP/i.test(m.text())) errors.push(m.text()); });
+page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 console.log('· loading build and waiting for service worker');
 await page.goto(base, { waitUntil: 'load', timeout: 30000 });
 const controlled = await page.evaluate(async () => {
@@ -70,33 +70,58 @@ if (!hasEntry || !hasFont) {
 }
 /* PWA share_target: POST a tiny WAV, then reload into ?shared=1 and let
    file-loader take it out of the cache. This exercises the SW branch the
-   manifest advertises, not just the manifest JSON. */
-const shared = await page.evaluate(async () => {
-  const sr = 8000, n = Math.floor(sr * 0.5);
-  const ab = new ArrayBuffer(44 + n * 2);
-  const v = new DataView(ab);
-  const write = (o, text) => [...text].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
-  write(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); write(8, 'WAVEfmt ');
-  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true);
-  v.setUint16(34, 16, true); write(36, 'data'); v.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.sin(i / sr * Math.PI * 2 * 440) * 0.18 * 32767, true);
-  const form = new FormData();
-  form.append('audio', new File([ab], 'shared-test.wav', { type: 'audio/wav' }));
-  await fetch('/share-target', { method: 'POST', body: form, redirect: 'manual' }).catch(() => {});
-  const hit = await caches.match('/__shared_audio__');
-  return { cached: !!hit, header: hit?.headers.get('X-File-Name') || '' };
-});
-if (!shared.cached) {
-  console.error('✗ share_target did not park the file in the cache:', shared);
-  await browser.close(); server.close(); process.exit(1);
+   manifest advertises, not just the manifest JSON. Retry once because the
+   first navigation can race a worker install on a cold browser profile. */
+async function shareFile(page) {
+  return page.evaluate(async () => {
+    const sr = 8000, n = Math.floor(sr * 0.5);
+    const ab = new ArrayBuffer(44 + n * 2);
+    const v = new DataView(ab);
+    const write = (o, text) => [...text].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    write(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); write(8, 'WAVEfmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true); write(36, 'data'); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.sin(i / sr * Math.PI * 2 * 440) * 0.18 * 32767, true);
+    const form = new FormData();
+    form.append('audio', new File([ab], 'shared-test.wav', { type: 'audio/wav' }));
+    await fetch('/share-target', { method: 'POST', body: form, redirect: 'manual' }).catch(() => {});
+    const hit = await caches.match('/__shared_audio__');
+    return { cached: !!hit, header: hit?.headers.get('X-File-Name') || '', disposition: hit?.headers.get('Content-Disposition') || '' };
+  });
 }
-console.log('· loading shared file into the app');
-await page.goto(base + '?shared=1', { waitUntil: 'load', timeout: 30000 });
-await page.waitForFunction(() => /shared-test/.test(window.__av?.engine?.track?.name || ''), null, { timeout: 30000 });
-const sharedInfo = await page.evaluate(() => ({ name: window.__av.engine.track?.name, playing: window.__av.engine.playing, query: location.search }));
-if (!/shared-test/.test(sharedInfo.name || '') || sharedInfo.query.includes('shared')) {
-  console.error('✗ shared file was not loaded:', sharedInfo);
+
+let shared = null;
+let sharedInfo = null;
+let lastError = null;
+for (let attempt = 0; attempt < 2 && !sharedInfo; attempt++) {
+  if (attempt) console.log('· retrying share_target');
+  shared = await shareFile(page);
+  if (!shared.cached) {
+    console.error('✗ share_target did not park the file in the cache:', shared);
+    break;
+  }
+  console.log('· loading shared file into the app');
+  await page.goto(base + '?shared=1', { waitUntil: 'load', timeout: 30000 });
+  try {
+    await page.waitForFunction(() => /shared-test/.test(window.__av?.engine?.track?.name || ''), null, { timeout: 15000 });
+    const info = await page.evaluate(() => ({ name: window.__av.engine.track?.name, playing: window.__av.engine.playing, query: location.search }));
+    if (/shared-test/.test(info.name || '') && !info.query.includes('shared')) sharedInfo = info;
+  } catch (err) {
+    lastError = err;
+  }
+}
+if (!sharedInfo) {
+  const diag = await page.evaluate(async () => {
+    const keys = await caches.keys();
+    const cachesFound = [];
+    for (const k of keys) {
+      const c = await caches.open(k);
+      cachesFound.push({ key: k, hasShared: !!(await c.match('/__shared_audio__')), urls: (await c.keys()).slice(0, 5).map((r) => new URL(r.url).pathname) });
+    }
+    return { url: location.href, track: window.__av?.engine?.track, caches: cachesFound };
+  }).catch(() => null);
+  console.error('✗ shared file load failed', JSON.stringify({ shared, diag, lastError: lastError?.message, errors }, null, 2));
   await browser.close(); server.close(); process.exit(1);
 }
 console.log(`✓ share_target loaded ${sharedInfo.name}`);

@@ -198,9 +198,9 @@ export class Renderer {
     this.resize();
   }
 
-  setMode(m) {
+  setMode(m, { loadExtras = true } = {}) {
     this.mode = m;
-    if (!CORE_MODES.has(m) && !extrasReady && !isPluginMode(m)) {
+    if (loadExtras && !CORE_MODES.has(m) && !extrasReady && !isPluginMode(m)) {
       loadExtraModes(Renderer).catch(() => {});
     }
     this.history = [];

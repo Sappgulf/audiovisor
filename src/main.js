@@ -52,48 +52,80 @@ if (storedCustomTheme && !THEMES.some((t) => t.id === storedCustomTheme.id)) THE
 
 const engine = new AudioEngine();
 const renderer = new Renderer($('viz-canvas'));
-/* The eighteen heavier Canvas2D modes ship in their own chunk. setMode()
-   fetches it on demand, but that leaves a frame or two of bars on the first
-   switch, so warm it once the browser is otherwise idle. */
-const warmExtraModes = () => loadExtraModes(Renderer).catch(() => {});
-if (typeof requestIdleCallback === 'function') requestIdleCallback(warmExtraModes, { timeout: 4000 });
-else setTimeout(warmExtraModes, 1500);
+
+/* The Canvas2D extras and the raytraced stage are both large optional chunks.
+   Keep them off the cold path: load the 2D extras only when the 2D renderer
+   is actually visible, and load the raytraced stage on the first real stage
+   interaction (playback, mode pick, or explicit raytrace control). A landing
+   visitor used to download both chunks and start 24 shader pipelines before
+   touching anything. */
+let extrasPromise = null;
+function ensureExtraModes() {
+  if (!extrasPromise) {
+    extrasPromise = loadExtraModes(Renderer).catch((err) => {
+      extrasPromise = null;
+      console.warn('Canvas2D extras failed to load:', err);
+    });
+  }
+  return extrasPromise;
+}
+
 /* RayStage carries the whole GLSL scene library (raystage + rayshader), by
    far the largest thing in the bundle, and every mode already has a working
    Canvas2D path. Start on a no-op stub that reports `ok: false` — which the
    render loop already treats as "use the 2D renderer" — and swap the real
    stage in once its chunk lands. */
 let ray = {
-  ok: false, lost: false, loading: true, error: null,
+  ok: false, lost: false, loading: false, loaded: false, error: null,
   canvas: $('ray-canvas'), beat: 0, w: 0, h: 0, quality: 'high',
   setMode() {}, setTheme() {}, setQuality() {}, setSensitivity() {},
   setBassFocus() {}, setColorPop() {}, setBloom() {}, resize() {}, render() {},
+  prewarm() {},
 };
+let rayPromise = null;
+function loadRayStage() {
+  if (ray.ok) return Promise.resolve(ray);
+  if (rayPromise) return rayPromise;
+  ray.loading = true;
+  rayPromise = import('./raystage.js')
+    .then(({ RayStage }) => {
+      const stage = new RayStage($('ray-canvas'));
+      ray = stage;
+      ray.loading = false;
+      ray.loaded = true;
+      if (!stage.ok && stage.error) {
+        console.warn('raytrace stage unavailable:', stage.error);
+        void ensureExtraModes();
+      }
+      // replay everything the stub swallowed while the chunk was in flight
+      stage.setTheme(activeTheme());
+      stage.setMode(state.modeId);
+      /* A tier picked by hand while the chunk was in flight is a choice, not a
+         ceiling to re-derive: apply it exactly. Only a restored/default tier
+         starts at the safer device tier and climbs. */
+      const startTier = state.rayQualityExplicit ? state.rayQuality : initialTier(state.rayQuality);
+      stage.setQuality(startTier);
+      showEffectiveTier(startTier);
+      refreshRayControls();
+      for (const [id, el] of Object.entries(sliderEls)) applySlider(id, parseFloat(el.value));
+      if (renderer.w) stage.resize(renderer.w, renderer.h);
+      return stage;
+    })
+    .catch((err) => {
+      ray.loading = false;
+      ray.error = err;
+      rayPromise = null;
+      refreshRayControls();
+      void ensureExtraModes();
+      console.warn('raytrace stage failed to load:', err);
+      return null;
+    });
+  return rayPromise;
+}
 
-import('./raystage.js')
-  .then(({ RayStage }) => {
-    const stage = new RayStage($('ray-canvas'));
-    ray = stage;
-    if (!stage.ok && stage.error) console.warn('raytrace stage unavailable:', stage.error);
-    // replay everything the stub swallowed while the chunk was in flight
-    stage.setTheme(activeTheme());
-    stage.setMode(state.modeId);
-    /* A tier picked by hand while the chunk was in flight is a choice, not a
-       ceiling to re-derive: apply it exactly. Only a restored/default tier
-       starts at the safer device tier and climbs. */
-    const startTier = state.rayQualityExplicit ? state.rayQuality : initialTier(state.rayQuality);
-    stage.setQuality(startTier);
-    showEffectiveTier(startTier);
-    refreshRayControls();
-    for (const [id, el] of Object.entries(sliderEls)) applySlider(id, parseFloat(el.value));
-    if (renderer.w) stage.resize(renderer.w, renderer.h);
-  })
-  .catch((err) => {
-    ray.loading = false;
-    ray.error = err;
-    refreshRayControls();
-    console.warn('raytrace stage failed to load:', err);
-  });
+engine.on('state', () => {
+  if (engine.playing || engine.micActive || engine.captureActive) void loadRayStage();
+});
 /* the colourway a first visit opens on */
 const DEFAULT_THEME = 'iris';
 renderer.setTheme(THEMES.find((t) => t.id === DEFAULT_THEME));
@@ -137,6 +169,7 @@ const picker = createModePicker({
   onPickMode: (id) => setMode(id),
   onPickTheme: (id) => setTheme(id),
   setToggle,
+  onPreviewMode: (id) => ray.prewarm?.(MODES.findIndex((m) => m.id === id)),
 });
 
 /* Public plugin API: register a custom Canvas2D visualizer mode. */
@@ -266,8 +299,6 @@ const loadPreset = (slot) => { void loadLookPresets().then((p) => p?.loadPreset(
 for (const id of ['tab-look', 'stage-context', 'explore-modes']) {
   $(id)?.addEventListener('click', loadLookPresets, { once: true });
 }
-if (typeof requestIdleCallback === 'function') requestIdleCallback(loadLookPresets, { timeout: 3000 });
-else setTimeout(loadLookPresets, 1800);
 
 let studioPromise = null;
 let studioMounted = false;
@@ -302,8 +333,6 @@ function armStudioAction(id) {
 }
 ['voice-btn', 'midi-chip', 'party-btn', 'tab-studio'].forEach(armStudioAction);
 if (location.hash.startsWith('#share=')) void loadStudioExtras();
-else if (typeof requestIdleCallback === 'function') requestIdleCallback(loadStudioExtras, { timeout: 2500 });
-else setTimeout(loadStudioExtras, 1200);
 
 
 /* ---------- mode / theme switching ---------- */
@@ -327,7 +356,10 @@ function setMode(id, { restore = false } = {}) {
   if (!MODES.some((m) => m.id === id)) return;
   /* Restoring a saved mode alone keeps the first-run stage idle; an active
      audio source or a fresh mode pick reveals it. */
-  if (!restore) document.documentElement.classList.remove('mode-unchosen');
+  if (!restore) {
+    document.documentElement.classList.remove('mode-unchosen');
+    void loadRayStage();
+  }
   /* Each mode has its own cost, and the tier adapted for the last one says
      nothing about this one — without this, stepping down for a heavy mode
      left every later mode stuck at that tier. The render loop also skips the
@@ -340,7 +372,7 @@ function setMode(id, { restore = false } = {}) {
   if (ray.ok && ray.quality !== start) ray.setQuality(start);
   state.modeId = id;
   setModeStory(id);
-  renderer.setMode(id);
+  renderer.setMode(id, { loadExtras: !state.raytraceWanted || !!ray.error || !!ray.lost });
   ray.setMode(id);
   picker.setActiveMode(id);
   syncStageContext();
@@ -494,8 +526,6 @@ function loadThemeEditor() {
 for (const id of ['tab-look', 'stage-context', 'explore-modes']) {
   $(id)?.addEventListener('click', loadThemeEditor, { once: true });
 }
-if (typeof requestIdleCallback === 'function') requestIdleCallback(loadThemeEditor, { timeout: 3000 });
-else setTimeout(loadThemeEditor, 1800);
 
 function randomizeLook() {
   setMode(pickRandom(MODES).id);
@@ -821,6 +851,7 @@ const transport = createTransport({
 const { transportToggle, setVolumeUI, updateMediaSession, seekTrack } = transport;
 
 $('stage-context')?.addEventListener('click', () => {
+  ensureModeCards();
   if ($('drawer').classList.contains('is-closed')) $('drawer-toggle').click();
   $('tab-look').click();
   $('mode-filter')?.focus({ preventScroll: true });
@@ -924,10 +955,15 @@ $('nav-about')?.addEventListener('click', async (e) => {
 }, { once: true, capture: true });
 
 createDrawer({ state });
+/* Opening the drawer is a user gesture. Load only the surface that is
+   actually visible: a Source/Studio open must not fetch mode thumbnails. */
+$('drawer-toggle')?.addEventListener('click', ensureVisibleDrawerTab);
+$('nav-settings')?.addEventListener('click', ensureVisibleDrawerTab);
 
 // The empty state offers a clear path into the mode browser without requiring
 // users to understand the settings dock first.
 $('explore-modes')?.addEventListener('click', () => {
+  ensureModeCards();
   if (!state.drawerOpen) $('nav-settings')?.click();
   $('tab-look')?.click();
   requestAnimationFrame(() => $('mode-filter')?.focus({ preventScroll: true }));
@@ -981,6 +1017,7 @@ const renderLoop = createRenderLoop({
   isDjFiring: () => djFiring,
   setDjFiring: (v) => { djFiring = v; },
   onQualityChange: (tier) => showEffectiveTier(tier),
+  onFallback: ensureExtraModes,
 });
 
 const {
@@ -994,6 +1031,8 @@ const {
   toast,
   saveSettings,
   resume: renderLoop.resume,
+  ensureRay: loadRayStage,
+  ensureExtras: ensureExtraModes,
 });
 
 loadSettings();
@@ -1141,7 +1180,24 @@ gpu.whenReady().then((backend) => {
 
 /* ---------- drawer tabs (v8.7) ---------- */
 
-createDrawerTabs({ onSourceTab: connectLoader.ensureConnect });
+const ensureModeCards = () => picker.ensureModes();
+function ensureVisibleDrawerTab() {
+  const tab = document.querySelector('.drawer-tab[aria-selected="true"]')?.dataset.tab;
+  if (tab === 'look') {
+    ensureModeCards();
+    void loadLookPresets();
+    void loadThemeEditor();
+  } else if (tab === 'studio') {
+    void loadStudioExtras();
+  } else if (tab === 'source') {
+    connectLoader.ensureConnect();
+  }
+}
+createDrawerTabs({
+  onSourceTab: connectLoader.ensureConnect,
+  onLookTab: () => { ensureModeCards(); void loadLookPresets(); void loadThemeEditor(); },
+  onStudioTab: () => { void loadStudioExtras(); },
+});
 
 /* ---------- keyboard shortcuts overlay ---------- */
 
@@ -1183,6 +1239,9 @@ window.addEventListener('keydown', shortcutsKey);
 /* debug/testing hook */
 window.__av = {
   engine, renderer, state,
+  ensureStage: loadRayStage,
+  ensureExtras: ensureExtraModes,
+  ensureModes: () => picker.ensureModes(),
   get ray() { return ray; },
   get connect() { return connectLoader.getConnect(); },
 };

@@ -33,11 +33,13 @@ import {
  * @param {(v: boolean) => void} deps.setDjFiring
  * @param {(tier: string) => void} [deps.onQualityChange] called when the
  *   adaptive sampler moves the effective raytrace tier
+ * @param {() => void} [deps.onFallback] load the Canvas2D extras when the ray
+ *   stage is unavailable or is suspended after repeated frame errors
  * @param {Document} [deps.doc]
  */
 export function createRenderLoop({
   engine, renderer, getRay, state, toast, getGpu, drawVu, drawWaveform,
-  seekTrack, getAutoDj, isDjFiring, setDjFiring, onQualityChange, doc = document,
+  seekTrack, getAutoDj, isDjFiring, setDjFiring, onQualityChange, onFallback, doc = document,
 }) {
   let rayDropped = false;
   let raySuspended = false;   // runtime-only kill switch, never persisted
@@ -93,6 +95,7 @@ export function createRenderLoop({
   let settleFrames = SETTLE_AFTER_MODE_CHANGE;
   let lastFrameTs = performance.now();
   let _frameErrors = 0;
+  let fallbackNotified = false;
 
   /** Change the effective tier and report it, so the UI can show what is
       actually running rather than only the ceiling the user chose. */
@@ -115,6 +118,7 @@ export function createRenderLoop({
       // deliberately left alone so a transient fault isn't made permanent
       if (_frameErrors === 8 && state.raytraceWanted && !raySuspended) {
         raySuspended = true;
+        onFallback?.();
         toast('Raytrace <b>suspended</b> — the stage kept erroring', { duration: 3600 });
       }
     }
@@ -132,6 +136,10 @@ export function createRenderLoop({
       return;
     }
     const ray = getRay();
+    if (state.raytraceWanted && !ray.loading && !ray.ok && !fallbackNotified) {
+      fallbackNotified = true;
+      onFallback?.();
+    }
     const { webgpuState, webgl2State, webgpuCanvas, startGpu, gpuDead } = getGpu();
     /* The gap since the last frame is what a viewer experiences, and the only
        figure that reflects GPU cost — the CPU time this function takes is

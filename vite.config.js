@@ -1,5 +1,4 @@
 import { defineConfig } from 'vite';
-import { readdirSync } from 'node:fs';
 
 /* The GLSL sources are JS template literals, so the minifier leaves them
    alone and every design note inside them shipped to the browser — about a
@@ -37,11 +36,10 @@ const precacheManifest = {
       'space-grotesk-600.woff2', 'space-grotesk-700.woff2',
       'jetbrains-mono-400.woff2', 'jetbrains-mono-500.woff2',
     ]) assets.add('/fonts/' + file);
-    try {
-      for (const file of readdirSync('public/modes')) {
-        if (file.endsWith('.webp') && !file.includes('-anim')) assets.add('/modes/' + file);
-      }
-    } catch { /* styles/art may not exist in a minimal checkout */ }
+    /* Mode artwork is fetched lazily by the picker's <img loading=lazy>
+       tags and cached by the worker's normal fetch path. Preloading all 24
+       stills during first install competed with the page for bandwidth and
+       made the offline shell much larger than the app needs to boot. */
     this.emitFile({
       type: 'asset',
       fileName: 'precache-manifest.json',

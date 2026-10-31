@@ -5,7 +5,7 @@ import { modeArt } from './mode-art.js';
 export function modeAssetPath(id, animated = false) {
   // Public previews have a long HTTP cache. A new artwork revision must
   // change their URLs so returning listeners see the upgraded scenes.
-  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.28`;
+  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.29`;
 }
 
 /**
@@ -24,14 +24,18 @@ export function modeAssetPath(id, animated = false) {
  * @param {(id: string) => void} deps.onPickMode
  * @param {(id: string) => void} deps.onPickTheme
  * @param {(el: HTMLElement | null, on: boolean, cls?: string) => void} deps.setToggle
+ * @param {(id: string) => void} [deps.onPreviewMode] warm a mode ahead of click
  * @param {Document} [deps.doc]
  */
 export function createModePicker({
-  modes, themes, getModeId, getThemeId, onPickMode, onPickTheme, setToggle, doc = document,
+  modes, themes, getModeId, getThemeId, onPickMode, onPickTheme, setToggle,
+  onPreviewMode = null, doc = document,
 }) {
   const modeList = doc.getElementById('mode-list');
   const modeCatalog = [];
   let modeFilterIndex = -1;
+  let modesBuilt = false;
+  let pendingMode = getModeId();
 
   function buildCard(m) {
     const btn = doc.createElement('button');
@@ -78,9 +82,10 @@ export function createModePicker({
       btn.classList.add('is-anim');
     };
     const deactivateAnimation = () => btn.classList.remove('is-anim');
-    btn.addEventListener('pointerenter', activateAnimation);
+    const preview = () => onPreviewMode?.(m.id);
+    btn.addEventListener('pointerenter', () => { preview(); activateAnimation(); });
     btn.addEventListener('pointerleave', deactivateAnimation);
-    btn.addEventListener('focus', activateAnimation);
+    btn.addEventListener('focus', () => { preview(); activateAnimation(); });
     btn.addEventListener('blur', deactivateAnimation);
     btn.addEventListener('click', () => onPickMode(m.id));
     modeCatalog.push({ id: m.id, searchText, button: btn });
@@ -88,8 +93,6 @@ export function createModePicker({
     setIcon(btn.querySelector('.ic'), m.icon);
     return btn;
   }
-
-  modes.forEach(buildCard);
 
   const themeRow = doc.getElementById('theme-row');
   /* Auto leads the row: its palette comes from the current track's cover art
@@ -142,6 +145,7 @@ export function createModePicker({
   }
 
   function applyModeFilter() {
+    if (!modesBuilt) return [];
     if (!modeFilter) return [];
     const q = modeFilter.value.trim().toLowerCase();
     let shown = 0;
@@ -188,6 +192,7 @@ export function createModePicker({
   }
 
   function setActiveMode(id) {
+    if (!modesBuilt) { pendingMode = id; return; }
     [...modeList.children].forEach((el) => {
       const c = /** @type {HTMLElement} */ (el);
       const on = c.dataset.modeId === id;
@@ -234,8 +239,20 @@ export function createModePicker({
   themeRow?.addEventListener('keydown', (e) => navigateGrid(e, [...themeRow.children], focusChoice));
   setActiveTheme(getThemeId());
 
+  /** Build the 24 cards only when the Look surface is actually opened. */
+  function ensureModes() {
+    if (modesBuilt) return;
+    modesBuilt = true;
+    modes.forEach(buildCard);
+    applyModeFilter();
+    if (pendingMode) setActiveMode(pendingMode);
+  }
+
   /** Add a card for a mode registered after boot (plugin API). */
   function addMode(m) {
+    /* Before the grid exists, ensureModes() already includes the newly
+       registered mode in MODES; building it again here duplicated the card. */
+    if (!modesBuilt) { ensureModes(); return; }
     buildCard(m);
     applyModeFilter();
   }
@@ -252,5 +269,5 @@ export function createModePicker({
     return buildThemeDot(t);
   }
 
-  return { modeCatalog, setActiveMode, setActiveTheme, getModeFilterCards, applyModeFilter, focusModeFilterCard, syncModeFilterTabStops, addMode, addTheme };
+  return { modeCatalog, setActiveMode, setActiveTheme, getModeFilterCards, applyModeFilter, focusModeFilterCard, syncModeFilterTabStops, addMode, addTheme, ensureModes };
 }

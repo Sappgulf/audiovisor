@@ -16,10 +16,13 @@ import { initialTier, TIER_INFO } from './adaptive.js';
  * @param {(msg: string, opts?: object) => void} deps.toast
  * @param {() => void} deps.saveSettings
  * @param {() => void} deps.resume
+ * @param {() => void} [deps.ensureRay] load the deferred raytraced chunk
+ * @param {() => void} [deps.ensureExtras] load Canvas2D extras on fallback
  * @param {Document} [deps.doc]
  */
 export function createRaytraceControls({
-  state, getRay, getTheme, renderer, rayQualities, toast, saveSettings, resume, doc = document,
+  state, getRay, getTheme, renderer, rayQualities, toast, saveSettings, resume,
+  ensureRay = null, ensureExtras = null, doc = document,
 }) {
   const $ = (id) => doc.getElementById(id);
   /** The tier the adaptive sampler is actually running, which can sit below
@@ -64,7 +67,12 @@ export function createRaytraceControls({
 
   function setRaytrace(on, { quiet = false } = {}) {
     state.raytraceWanted = on;
-    if (on) resume();
+    if (on) {
+      resume();
+      if (!quiet) ensureRay?.();
+    } else if (!quiet) {
+      ensureExtras?.();
+    }
     const chip = $('rt-chip');
     chip?.classList.toggle('is-active', on);
     chip?.setAttribute('aria-pressed', String(on));
@@ -102,10 +110,16 @@ export function createRaytraceControls({
   $('rt-chip')?.addEventListener('click', () => {
     const ray = getRay();
     if (ray.loading) { toast('Raytrace stage <b>still loading</b>…', { duration: 1600 }); return; }
-    if (!ray.ok && !ray.lost) { toast('<b>Raytrace unavailable</b> — WebGL2 required', { duration: 2400 }); return; }
+    if (!ray.ok && !ray.lost) {
+      if (!state.raytraceWanted) { setRaytrace(true); return; }
+      ensureRay?.();
+      toast('<b>Raytrace stage</b> starting…', { duration: 1600 });
+      return;
+    }
     setRaytrace(!state.raytraceWanted);
   });
   $('rt-quality')?.addEventListener('click', () => {
+    ensureRay?.();
     const i = (rayQualities.indexOf(state.rayQuality) + 1) % rayQualities.length;
     setRayQuality(rayQualities[i]);
   });

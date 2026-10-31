@@ -168,7 +168,15 @@ export function createFileLoader({ engine, toast, updateTrackUI, ensureAudible, 
         if (!res) continue;
         await cache.delete('/__shared_audio__');
         const blob = await res.blob();
-        const decoded = decodeURIComponent(res.headers.get('X-File-Name') || 'shared-audio');
+        const named = res.headers.get('X-File-Name');
+        let decoded = named ? decodeURIComponent(named) : 'shared-audio';
+        if (!named) {
+          const disposition = res.headers.get('Content-Disposition') || '';
+          const match = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+          if (match) {
+            try { decoded = decodeURIComponent(match[1].replace(/"/g, '')); } catch { /* keep fallback */ }
+          }
+        }
         return new File([blob], decoded, { type: res.headers.get('Content-Type') || blob.type || 'audio/mpeg' });
       }
     } catch { /* cache unavailable in private mode */ }

@@ -15,9 +15,11 @@ const TAB_KEY = 'audiovisor.drawerTab';
 /**
  * @param {object} [opts]
  * @param {() => void} [opts.onSourceTab]
+ * @param {() => void} [opts.onLookTab]
+ * @param {() => void} [opts.onStudioTab]
  * @param {Document} [opts.doc]
  */
-export function createDrawerTabs({ onSourceTab, doc = document } = {}) {
+export function createDrawerTabs({ onSourceTab, onLookTab, onStudioTab, doc = document } = {}) {
   const tabs = /** @type {HTMLElement[]} */ ([...doc.querySelectorAll('.drawer-tab')]);
   const panels = [...doc.querySelectorAll('.drawer-panel')];
   const ink = doc.getElementById('drawer-tab-ink');
@@ -48,6 +50,8 @@ export function createDrawerTabs({ onSourceTab, doc = document } = {}) {
     const title = doc.getElementById('drawer-title');
     if (title) title.textContent = { source: 'Choose your audio', look: 'Shape the scene', audio: 'Tune the sound', studio: 'Make it yours' }[btn.dataset.tab];
     if (btn.dataset.tab === 'source') onSourceTab?.();
+    if (btn.dataset.tab === 'look' && persist) onLookTab?.();
+    if (btn.dataset.tab === 'studio' && persist) onStudioTab?.();
     if (scroll) scroll.scrollTop = positions.get(btn.dataset.tab) || 0;
     moveInk(btn);
     if (persist) writeText(TAB_KEY, btn.dataset.tab);

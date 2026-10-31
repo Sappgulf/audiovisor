@@ -19,7 +19,8 @@ try {
   const context = await browser.newContext({ viewport: { width: 704, height: 600 }, serviceWorkers: 'block' });
   const page = await context.newPage();
   await page.goto(server.resolvedUrls.local[0], { waitUntil: 'networkidle', timeout: 30000 });
-  await page.waitForFunction(() => window.__av?.ray?.ok);
+  await page.evaluate(() => window.__av.ensureStage());
+await page.waitForFunction(() => window.__av?.ray?.ok);
   await page.evaluate((theme) => {
     const ray = window.__av.ray;
     ray.setQuality('high');

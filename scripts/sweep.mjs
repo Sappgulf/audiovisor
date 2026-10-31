@@ -51,7 +51,8 @@ await page.goto(base, { waitUntil: 'load', timeout: 30000 });
 /* a cold vite dep-optimise pass reloads the page once after first load;
    wait it out so evaluate() does not race a navigation */
 await page.waitForLoadState('networkidle');
-await page.waitForFunction(() => window.__av?.ray, null, { timeout: 30000 });
+await page.evaluate(() => window.__av.ensureStage());
+await page.waitForFunction(() => window.__av?.ray?.ok, null, { timeout: 30000 });
 await page.waitForTimeout(2500);
 
 const FRAMES = 20;

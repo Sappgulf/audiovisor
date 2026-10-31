@@ -41,6 +41,7 @@ page.on('console', (message) => {
   if (message.type() === 'error') errors.push(message.text());
 });
 await page.goto(base, { waitUntil: 'load', timeout: 30000 });
+await page.evaluate(() => window.__av.ensureStage());
 await page.waitForFunction(() => window.__av?.ray?.ok, null, { timeout: 30000 });
 await page.waitForTimeout(2500);
 

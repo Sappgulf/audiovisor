@@ -115,7 +115,10 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 await page.goto(server.resolvedUrls.local[0]);
-await page.waitForFunction(() => window.__av?.ray);
+await page.evaluate(() => window.__av.ensureStage());
+await page.waitForFunction(() => window.__av?.ray?.ok, null, { timeout: 30000 });
+await page.evaluate(() => window.__av.ensureModes());
+await page.waitForSelector('button[aria-label$=" mode"]', { timeout: 10000 });
 await page.addScriptTag({ content: HARNESS });
 await page.evaluate(() => window.__bench(0));          // synthesise + load the track
 if (TWO_D) {

@@ -80,8 +80,17 @@ const snap = (n) => page.screenshot({ path: `${SP}/e2e-${MOBILE ? 'm' : 'd'}-${n
    needs its own generous budget; the 3.5s default is for individual steps. */
 await page.goto(server.resolvedUrls.local[0], { waitUntil: 'load', timeout: 30_000 });
 await page.waitForLoadState('networkidle', { timeout: 30_000 });
-await page.waitForFunction(() => window.__av?.ray, null, { timeout: 30_000 });
+await page.waitForFunction(() => window.__av, null, { timeout: 30_000 });
 await page.waitForTimeout(1500);
+await step('cold load defers the stage chunk and mode grid', async () => {
+  const early = await page.evaluate(() => ({
+    loaded: window.__av.ray.loaded,
+    cards: document.querySelectorAll('#mode-list [data-mode-id]').length,
+    stageChunks: performance.getEntriesByType('resource').filter((r) => /raystage|modes-extra/.test(r.name)).length,
+  }));
+  if (early.loaded || early.cards || early.stageChunks) throw new Error('eager startup: ' + JSON.stringify(early));
+  return 'stage and grid deferred';
+});
 await step('first paint: audio entry point visible while renderer waits', async () => {
   const state = await page.evaluate(() => ({
     waiting: document.documentElement.classList.contains('mode-unchosen'),
@@ -123,6 +132,10 @@ await step('mode grid keeps keyboard focus visible', async () => {
   await page.keyboard.press('Home');
 });
 await step('pick mode by clicking card (Neon City)', async () => { await tap('[data-mode-id="city"]'); await page.waitForTimeout(800); const m = await page.evaluate(() => window.__av.state.modeId); if (m !== 'city') throw new Error('mode ' + m); if (await page.evaluate(() => document.documentElement.classList.contains('mode-unchosen'))) throw new Error('still blank'); });
+await step('raytrace stage loads after the first mode interaction', async () => {
+  await page.waitForFunction(() => window.__av.ray.loaded, null, { timeout: 15000 });
+  return 'loaded';
+});
 await step('stage mode button opens the named visual picker', async () => {
   await tap('#drawer-close');
   await tap('#stage-context');

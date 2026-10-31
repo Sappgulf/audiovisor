@@ -99,6 +99,7 @@ describe('settings orientation', () => {
   it('reports filter results and the selected theme alongside real previews', () => {
     const picker = createModePicker({ modes: MODES, themes: THEMES, getModeId: () => 'bars',
       getThemeId: () => 'iris', onPickMode: vi.fn(), onPickTheme: vi.fn(), setToggle, doc: document });
+    picker.ensureModes();
     const input = document.getElementById('mode-filter');
     input.value = 'neon'; input.dispatchEvent(new Event('input'));
     expect(document.getElementById('mode-count').textContent).toBe('1 / 24');

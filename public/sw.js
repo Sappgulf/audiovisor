@@ -4,7 +4,7 @@
 /* Bump on every release. The old name was pinned at v6.3 across many
    deploys, so returning visitors kept being served whatever assets their
    cache already held. */
-const CACHE = 'audiovisor-v8.28.0';
+const CACHE = 'audiovisor-v8.29.0';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
@@ -54,6 +54,7 @@ self.addEventListener('fetch', (e) => {
               headers: {
                 'Content-Type': file.type || 'audio/mpeg',
                 'X-File-Name': encodeURIComponent(file.name || 'shared-audio'),
+                'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(file.name || 'shared-audio')}`,
               },
             }),
           );

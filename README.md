@@ -1,8 +1,17 @@
-# AUDIOVISOR — v8.28.0
+# AUDIOVISOR — v8.29.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Loading & startup pass (v8.29)
+- **The stage chunk waits for a stage interaction** — raystage is no longer imported on landing. Playback, a mode pick or an explicit raytrace action loads it; the Canvas2D fallback covers the gap.
+- **The mode grid is lazy** — 24 cards and their thumbnails are built when the drawer's Look surface opens, not during boot. The picker still supports keyboard/grid navigation and plugin modes once built.
+- **Canvas2D extras stay off the raytraced path** — the 18 extra 2D scenes load only when the 2D renderer is actually used or the ray stage falls back.
+- **One-pipeline shader warmup** — the stage now warms the selected mode only; hovering a mode card warms that card's pipeline. The old boot path queued pipeline builds for all 24 scenes.
+- **Smaller install shell** — the service-worker precache no longer fetches all 24 mode stills during first install (53 → 29 entries); artwork is cached normally when the picker opens.
+- **Shared-file naming fix** — the PWA share target now writes `Content-Disposition` as a fallback to the custom filename header, so the imported track keeps its name even if a browser drops non-standard headers.
+- **Measured cold path** — on a local production preview the boot moved from 29 resources / 302 kB to 8 resources / 237 kB, with DCL 129→~50 ms and FCP 156→~100 ms. E2E now fails if the stage chunk or mode grid returns to the cold path.
 
 ### Test & control hardening (v8.28)
 - **MIDI follows the real FX state** — pad hits now read the live chip/engine state instead of a private mirror, so an effect already toggled with the mouse turns off on the first pad hit rather than requiring two.

@@ -65,9 +65,17 @@ describe('More menu', () => {
 
 describe('visual navigation', () => {
   function picker() {
-    return createModePicker({ modes: MODES, themes: THEMES, getModeId: () => 'bars', getThemeId: () => 'iris',
+    const p = createModePicker({ modes: MODES, themes: THEMES, getModeId: () => 'bars', getThemeId: () => 'iris',
       onPickMode: vi.fn(), onPickTheme: vi.fn(), setToggle: (el, on, cls) => el?.classList.toggle(cls || 'is-on', on) });
+    p.ensureModes();
+    return p;
   }
+  it('builds the mode grid only when asked', () => {
+    createModePicker({ modes: MODES, themes: THEMES, getModeId: () => 'bars', getThemeId: () => 'iris',
+      onPickMode: vi.fn(), onPickTheme: vi.fn(), setToggle: vi.fn() });
+    expect(document.querySelectorAll('[data-mode-id]')).toHaveLength(0);
+  });
+
   it('scrolls the focused mode into view and moves the tab stop with it', () => {
     picker();
     const first = document.querySelector('[data-mode-id="bars"]');

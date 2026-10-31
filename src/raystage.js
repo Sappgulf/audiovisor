@@ -212,6 +212,7 @@ export class RayStage {
       this._scenes = new Map();
       this._drawnMode = null;
       this._prewarmTimer = 0;
+      this._prewarmQueue = null;
       /* With parallel compile the first program is only queued: nothing is
          drawn until a mode is picked, and by then it has usually finished
          off the main thread. Without it, link now so a broken build still
@@ -306,14 +307,15 @@ export class RayStage {
      compile on first use instead. */
   _prewarm() {
     if (!this._parallel || this._prewarmTimer) return;
+    if (!this._prewarmQueue) this._prewarmQueue = new Set([this.mode || 0]);
     const gl = this.gl;
     const next = () => {
       this._prewarmTimer = 0;
       if (!this.ok || this.lost) return;
       let pending = false;
-      for (let m = 0; m < MODES.length; m++) {
+      for (const m of [...this._prewarmQueue]) {
         const sp = this._scenes.get(m);
-        if (sp && sp.warm) continue;
+        if (sp && sp.warm) { this._prewarmQueue.delete(m); continue; }
         pending = true;
         try {
           if (!sp) { this._startScene(m); continue; }
@@ -339,15 +341,32 @@ export class RayStage {
           this._fullscreen();
           gl.bindFramebuffer(gl.FRAMEBUFFER, null);
           ready.warm = true;
+          this._prewarmQueue.delete(m);
           break;   // one pipeline per tick keeps each hitch small
         } catch {
           this._scenes.delete(m);   // compiled on use instead
+          this._prewarmQueue.delete(m);
           break;
         }
       }
-      if (pending) this._prewarmTimer = setTimeout(next, 120);
+      if (pending || this._prewarmQueue.size) this._prewarmTimer = setTimeout(next, 120);
     };
     this._prewarmTimer = setTimeout(next, 300);
+  }
+
+  /** Warm one mode's GPU pipeline ahead of a click (mode-card hover). */
+  prewarm(mode) {
+    if (!this._parallel) return;
+    const m = Number(mode);
+    if (!Number.isInteger(m) || m < 0 || m >= MODES.length) return;
+    if (!this._prewarmQueue) this._prewarmQueue = new Set();
+    this._prewarmQueue.add(m);
+    if (!this._prewarmTimer) {
+      this._prewarmTimer = setTimeout(() => {
+        this._prewarmTimer = 0;
+        this._prewarm();
+      }, 40);
+    }
   }
 
   _locs(prog, names) {
@@ -421,7 +440,7 @@ export class RayStage {
 
   setMode(id) {
     const i = MODES.findIndex((m) => m.id === id);
-    if (i >= 0 && i !== this.mode) { this.mode = i; this.frames = 0; this._lookRev++; }
+    if (i >= 0 && i !== this.mode) { this.mode = i; this.frames = 0; this._lookRev++; this.prewarm(i); }
   }
   setTheme(theme) {
     if (!theme) return;
