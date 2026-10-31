@@ -1,8 +1,13 @@
-# AUDIOVISOR — v8.27.0
+# AUDIOVISOR — v8.28.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Test & control hardening (v8.28)
+- **MIDI follows the real FX state** — pad hits now read the live chip/engine state instead of a private mirror, so an effect already toggled with the mouse turns off on the first pad hit rather than requiring two.
+- **Previously untested UI surfaces now have unit coverage** — command palette filtering/navigation/focus return, look presets, autopilot, sleep timer, autoplay recovery, settings export/reset, the custom-palette editor and theme-editor synchronisation.
+- **Stronger coverage gate** — the suite is 72 files / 1,056 tests, and the CI floors rose from 55/42/44/57 to 59/46/48/61 (current: 60.4% statements, 47.5% branches, 49.8% functions, 62.5% lines).
 
 ### All-mode visual pass (v8.27)
 - **Shared treble response** — palette rim light now follows the high band and beat on every metallic surface, so hats and air shape the whole stage rather than only the bass-driven scenes.

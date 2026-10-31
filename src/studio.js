@@ -15,9 +15,9 @@ import { createMidiInput } from './midi.js';
 
 export function mountStudio({
   engine, renderer, state, toast, setMode, setTheme, setFx, setCustomTheme,
-  saveSettings, setSlider, setToggle, fxNames, modes, chip,
+  saveSettings, setSlider, setToggle, fxNames, modes, chip, getFx,
 }) {
-  createMidiInput({ chip, fxNames, modes, setSlider, setFx, setMode, toast, setToggle });
+  createMidiInput({ chip, fxNames, modes, setSlider, setFx, getFx, setMode, toast, setToggle });
   createAiStudio({ engine, toast, setFx, setTheme, saveSettings });
   createCollab({ state, toast, setMode, setTheme, setFx, setCustomTheme });
   createVoiceInput({ engine, renderer, toast });

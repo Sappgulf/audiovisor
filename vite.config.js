@@ -102,10 +102,10 @@ export default defineConfig({
          drop is visible in CI without pretending the UI orchestration suites
          are fully unit-tested. Raise these as coverage improves. */
       thresholds: {
-        statements: 55,
-        branches: 42,
-        functions: 44,
-        lines: 57,
+        statements: 59,
+        branches: 46,
+        functions: 48,
+        lines: 61,
       },
     },
   },

@@ -59,11 +59,12 @@ export function decodeMidi(data) {
  * @param {Array<{ id: string, name: string }>} deps.modes
  * @param {(id: string, value: number) => void} deps.setSlider
  * @param {(name: string, on: boolean) => void} deps.setFx
+ * @param {(name: string) => boolean} [deps.getFx] current UI/engine FX state
  * @param {(id: string) => void} deps.setMode
  * @param {(msg: string, opts?: object) => void} deps.toast
  * @param {(el: HTMLElement | null, on: boolean, cls?: string) => void} deps.setToggle
  */
-export function createMidiInput({ chip, fxNames, modes, setSlider, setFx, setMode, toast, setToggle }) {
+export function createMidiInput({ chip, fxNames, modes, setSlider, setFx, getFx = null, setMode, toast, setToggle }) {
   let access = null;
   let enabled = false;
   /** @type {boolean[]} */
@@ -77,7 +78,11 @@ export function createMidiInput({ chip, fxNames, modes, setSlider, setFx, setMod
     } else if (intent.type === 'fx') {
       const name = fxNames[intent.index];
       if (!name) return;
-      fxState[intent.index] = !fxState[intent.index];
+      /* Read the real chip/engine state when available. A local mirror goes
+         stale as soon as the user toggles FX with a mouse, which made the
+         first pad hit a no-op for an already-engaged effect. */
+      const current = getFx ? !!getFx(name) : fxState[intent.index];
+      fxState[intent.index] = !current;
       setFx(name, fxState[intent.index]);
     } else if (intent.type === 'mode') {
       const m = modes[intent.index];

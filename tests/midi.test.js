@@ -64,6 +64,18 @@ describe('createMidiInput dispatch', () => {
     expect(setFx).toHaveBeenNthCalledWith(2, 'reverb', false);
   });
 
+  it('uses the real FX state instead of a stale mirror', () => {
+    const setFx = vi.fn();
+    const input = createMidiInput({
+      chip: null,
+      fxNames: ['reverb'],
+      modes: [{ id: 'bars' }],
+      setSlider: vi.fn(), setFx, getFx: () => true, setMode: vi.fn(), toast: vi.fn(), setToggle: vi.fn(),
+    });
+    input.handleMessage({ data: [0x90, FX_NOTE_BASE, 100] });
+    expect(setFx).toHaveBeenCalledWith('reverb', false);
+  });
+
   it('selects a mode by pad', () => {
     const { input, setMode } = makeInput();
     input.handleMessage({ data: [0x90, MODE_NOTE_BASE + 1, 100] });

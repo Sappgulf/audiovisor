@@ -278,7 +278,7 @@ function loadStudioExtras() {
       engine, renderer, state, toast, setMode, setTheme, setFx,
       setCustomTheme: applyCustomTheme, saveSettings,
       setSlider: setSliderNormalized, setToggle,
-      fxNames: FX, modes: MODES, chip: $('midi-chip'),
+      fxNames: FX, modes: MODES, chip: $('midi-chip'), getFx: (name) => !!state.fx[name],
     });
     studioMounted = true;
     return true;
