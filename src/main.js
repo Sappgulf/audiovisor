@@ -169,7 +169,10 @@ const picker = createModePicker({
   onPickMode: (id) => setMode(id),
   onPickTheme: (id) => setTheme(id),
   setToggle,
-  onPreviewMode: (id) => ray.prewarm?.(MODES.findIndex((m) => m.id === id)),
+  onPreviewMode: (id) => {
+    void loadRayStage();
+    ray.prewarm?.(MODES.findIndex((m) => m.id === id));
+  },
 });
 
 /* Public plugin API: register a custom Canvas2D visualizer mode. */

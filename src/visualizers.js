@@ -289,20 +289,20 @@ export class Renderer {
       d.width = d.height = 64;
       const dc = d.getContext('2d');
       const g = dc.createRadialGradient(30, 29, 0, 32, 32, 32);
-      g.addColorStop(0, 'rgba(255, 252, 243, 0.96)');
-      g.addColorStop(0.10, 'rgba(255, 255, 255, 0.88)');
+      g.addColorStop(0, this._tintRgba(c, 0.62, 0.96));
+      g.addColorStop(0.10, this._tintRgba(c, 0.46, 0.88));
       g.addColorStop(0.24, hexRgba(c, 0.90));
       g.addColorStop(0.42, hexRgba(c, 0.52));
       g.addColorStop(1, hexRgba(c, 0));
       dc.fillStyle = g;
       dc.fillRect(0, 0, 64, 64);
       // tiny specular highlight
-      dc.fillStyle = 'rgba(255,255,255,0.52)';
+      dc.fillStyle = this._tintRgba(c, 0.88, 0.48);
       dc.beginPath();
       dc.ellipse(26, 24, 6, 4.5, -0.6, 0, Math.PI * 2);
       dc.fill();
       // rim light (soft edge ring)
-      dc.strokeStyle = 'rgba(255,255,255,0.28)';
+      dc.strokeStyle = this._tintRgba(c, 0.62, 0.26);
       dc.lineWidth = 1.6;
       dc.beginPath();
       dc.arc(32, 32, 21, 0, Math.PI * 2);
@@ -316,7 +316,7 @@ export class Renderer {
       const bc = b.getContext('2d');
       const bg = bc.createLinearGradient(0, 0, 0, 256);
       bg.addColorStop(0, hexRgba(c, 1));
-      bg.addColorStop(0.10, 'rgba(255,255,255,0.30)');
+      bg.addColorStop(0.10, this._tintRgba(c, 0.82, 0.30));
       bg.addColorStop(0.14, hexRgba(c, 0.94));
       bg.addColorStop(0.78, hexRgba(c, 0.62));
       bg.addColorStop(1, hexRgba(c, 0.18));
@@ -326,7 +326,7 @@ export class Renderer {
       else bc.rect(0, 0, 8, 256);
       bc.fill();
       // inner sheen line
-      bc.fillStyle = 'rgba(255,255,255,0.18)';
+      bc.fillStyle = this._tintRgba(c, 0.78, 0.18);
       bc.fillRect(1.2, 0, 1, 256);
       this._barSprites.set(c, b);
     }
@@ -377,6 +377,12 @@ export class Renderer {
     const target = towardLight ? [255, 252, 243] : [14, 12, 10];
     const mix = (v, t) => Math.round(v + (t - v) * a);
     return `rgb(${mix((n >> 16) & 255, target[0])}, ${mix((n >> 8) & 255, target[1])}, ${mix(n & 255, target[2])})`;
+  }
+
+  /** rgba() counterpart to _tint(), for gradient stops that need alpha. */
+  _tintRgba(hex, amount, alpha) {
+    const rgb = this._tint(hex, amount).match(/\d+/g) || ['255', '255', '255'];
+    return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
   }
 
   _dot(c) { return this._dotSprites.get(c); }

@@ -5,7 +5,7 @@ import { modeArt } from './mode-art.js';
 export function modeAssetPath(id, animated = false) {
   // Public previews have a long HTTP cache. A new artwork revision must
   // change their URLs so returning listeners see the upgraded scenes.
-  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.29`;
+  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.30`;
 }
 
 /**
@@ -84,6 +84,7 @@ export function createModePicker({
     const deactivateAnimation = () => btn.classList.remove('is-anim');
     const preview = () => onPreviewMode?.(m.id);
     btn.addEventListener('pointerenter', () => { preview(); activateAnimation(); });
+    btn.addEventListener('pointerdown', preview);
     btn.addEventListener('pointerleave', deactivateAnimation);
     btn.addEventListener('focus', () => { preview(); activateAnimation(); });
     btn.addEventListener('blur', deactivateAnimation);

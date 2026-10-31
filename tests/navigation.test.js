@@ -98,6 +98,18 @@ describe('visual navigation', () => {
     key(document.activeElement, 'Home'); expect(document.activeElement).toBe(dots[0]);
     expect(dots[0].tabIndex).toBe(0);
   });
+  it('previews a mode on pointerdown and focus for touch and keyboard users', () => {
+    const onPreviewMode = vi.fn();
+    const p = createModePicker({ modes: MODES, themes: THEMES, getModeId: () => 'bars', getThemeId: () => 'iris',
+      onPickMode: vi.fn(), onPickTheme: vi.fn(), setToggle: vi.fn(), onPreviewMode });
+    p.ensureModes();
+    const card = document.querySelector('[data-mode-id="city"]');
+    card.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(onPreviewMode).toHaveBeenCalledWith('city');
+    card.focus();
+    expect(onPreviewMode).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps still previews for reduced motion instead of downloading animation strips', () => {
     window.matchMedia = vi.fn(() => ({ matches: true })); picker();
     const card = document.querySelector('.mode-card'); card.dispatchEvent(new Event('pointerenter'));

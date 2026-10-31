@@ -1,8 +1,13 @@
-# AUDIOVISOR — v8.29.0
+# AUDIOVISOR — v8.30.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Fallback & touch polish (v8.30)
+- **Palette-tinted 2D highlights** — the Canvas2D dot and bar sprites no longer cap every hot core at white; highlights lift toward the active palette's hue, so brass stays warm and Neon Cyber stays cyan/magenta instead of every mode reading beige.
+- **Faster first tap** — mode cards start the raytraced chunk and shader warmup on pointerdown/focus, before the click resolves, so touch users do not wait through an extra interaction phase.
+- **Regression coverage** — the mode picker now has a test that pointerdown and focus both trigger preview/warmup callbacks.
 
 ### Loading & startup pass (v8.29)
 - **The stage chunk waits for a stage interaction** — raystage is no longer imported on landing. Playback, a mode pick or an explicit raytrace action loads it; the Canvas2D fallback covers the gap.
