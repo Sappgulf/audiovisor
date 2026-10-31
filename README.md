@@ -11,7 +11,8 @@ A hifi, real-time music visualizer for the browser. Drop in a track or use a per
 - **One-pipeline shader warmup** — the stage now warms the selected mode only; hovering a mode card warms that card's pipeline. The old boot path queued pipeline builds for all 24 scenes.
 - **Smaller install shell** — the service-worker precache no longer fetches all 24 mode stills during first install (53 → 29 entries); artwork is cached normally when the picker opens.
 - **Shared-file naming fix** — the PWA share target now writes `Content-Disposition` as a fallback to the custom filename header, so the imported track keeps its name even if a browser drops non-standard headers.
-- **Measured cold path** — on a local production preview the boot moved from 29 resources / 302 kB to 8 resources / 237 kB, with DCL 129→~50 ms and FCP 156→~100 ms. E2E now fails if the stage chunk or mode grid returns to the cold path.
+- **Inlined production CSS** — the single stylesheet is embedded in the built HTML, removing the last render-blocking request. CSP already permits inline styles.
+- **Measured cold path** — on a local production preview the boot moved from 29 resources / 302 kB to 7 resources / 223 kB, with DCL 129→~50 ms and FCP 156→~110 ms. E2E now fails if the stage chunk or mode grid returns to the cold path.
 
 ### Test & control hardening (v8.28)
 - **MIDI follows the real FX state** — pad hits now read the live chip/engine state instead of a private mirror, so an effect already toggled with the mouse turns off on the first pad hit rather than requiring two.

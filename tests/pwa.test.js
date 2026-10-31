@@ -76,6 +76,13 @@ describe.skipIf(!hasDist)('iOS home-screen meta', () => {
   });
 });
 
+describe.skipIf(!hasDist)('loading shell', () => {
+  it('inlines the production stylesheet instead of a render-blocking request', () => {
+    expect(html).toContain('<style>');
+    expect(html).not.toMatch(/<link rel="stylesheet"[^>]*\/assets\//);
+  });
+});
+
 describe.skipIf(!hasDist)('search metadata', () => {
   it('describes the app for search results', () => {
     const m = html.match(/<meta name="description" content="([^"]+)"/);

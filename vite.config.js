@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 /* The GLSL sources are JS template literals, so the minifier leaves them
    alone and every design note inside them shipped to the browser — about a
@@ -20,6 +21,27 @@ export function minifyGlsl(src) {
    manifest of every JS/CSS chunk (including lazy ones) plus the static fonts,
    icons and mode stills, so a first install can render offline instead of
    waiting for a second online visit to populate the cache. */
+
+/* Inline the single production stylesheet into dist/index.html. The CSS is
+   only 14 kB gzipped, but as a separate render-blocking request it delayed
+   first paint by one full round trip on mobile networks. CSP already allows
+   inline styles, and the service worker caches the resulting shell. */
+const inlineCss = {
+  name: 'inline-css',
+  apply: 'build',
+  closeBundle() {
+    try {
+      const htmlPath = 'dist/index.html';
+      let html = readFileSync(htmlPath, 'utf8');
+      const match = html.match(/<link rel="stylesheet"[^>]*href="([^"]+\.css)"[^>]*>/);
+      if (!match) return;
+      const css = readFileSync(`dist${match[1]}`, 'utf8');
+      html = html.replace(match[0], `<style>${css}</style>`);
+      writeFileSync(htmlPath, html);
+    } catch { /* a partial build should not be hidden, but this is an optimization */ }
+  },
+};
+
 const precacheManifest = {
   name: 'precache-manifest',
   apply: 'build',
@@ -58,7 +80,7 @@ const glslMinify = {
 };
 
 export default defineConfig({
-  plugins: [glslMinify, precacheManifest],
+  plugins: [glslMinify, inlineCss, precacheManifest],
   build: {
     /* The provider panel and the raytraced stage are dynamic imports, split
        out so a cold visit does not pay for them. Vite's default would emit
