@@ -1,14 +1,14 @@
-# AUDIOVISOR — v8.34.0
+# AUDIOVISOR — v8.35.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
 
-### Full-frame mode redesign (v8.34)
-- **The stage is gone** — the room, plinth, table, dais, bezel and pylon dressing was removed from every sculptural mode. Modes now fill the frame as environments or fields instead of sitting as a small object on a set.
-- **Rebuilt as graphic fields** — Scope is a phosphor trace in the dark; Particle Field is an ember vortex; Kaleidoscope is a twelve-fold mandala; Plasma Rings is a full-screen storm; Pulse Orb is a banded gas giant; Tensor Grid is a perspective lattice; Prism Ray is a spectral fan; Bloom Field is a bioluminescent bloom; Fractal Bloom is a Julia-set field; Lava Lamp is a macro wax field; GPU Core is an endless circuit substrate.
-- **Framing pass** — Spectrogram became a terrace landscape; Beat Radar and Vinyl Groove were reframed to fill the frame; Fluid Metal is a mercury sea; Bars, Waves, Radial Tunnel, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Void Core and Chladni Field keep their signatures without the shared stage dressing.
-- **Previews regenerated** — all 24 picker stills and hover strips were recaptured from the new scenes (593 kB total, still under the artwork budget).
+### Full-frame mode redesign (v8.35)
+- **One graphic language** — every mode now fills the frame. The staged rooms, plinths, tables, daises, bezels and pylons are gone; Radial Tunnel, Aurora Terrain and Chladni Field keep their 3D signatures, and the other twenty-one modes are direct procedural fields composited through the same bloom/tonemap path.
+- **Rebuilt fields** — Bars is a mirrored spectrum wall; Waves is a layered neon waveform field; Scope is a phosphor trace in the dark; Particles is an ember vortex; Kaleidoscope is a twelve-fold mandala; Spectrogram is a scrolling time/frequency waterfall; Plasma is a full-screen storm; Neon City is a moonlit skyline with a wet-street reflection; Nebula is a filamented cloud field; Spiral Galaxy has defined arms and dust lanes; Pulse Orb is a banded gas giant; Fluid Metal is liquid chrome; Tensor Grid is a perspective lattice; Prism Ray is a spectral fan; Void Core is a black hole and accretion disc; Bloom Field is a bioluminescent bloom; Fractal Bloom is a Julia-set field; Beat Radar is a classic phosphor scope; Lava Lamp is a macro wax field; GPU Core is a circuit substrate; Vinyl Groove is a full-frame record and tonearm.
+- **Audio mapping kept** — each field still reacts to its original band or transport signal (spectrum, waveform, stereo difference, history, beat/drop) rather than becoming a static wallpaper.
+- **Previews regenerated** — all 24 picker stills and hover strips were recaptured from the new scenes.
 - **Tests** — the full unit, E2E, accessibility and offline gates still pass.
 
 ### Audit & reliability pass (v8.33)

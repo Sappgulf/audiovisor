@@ -65,21 +65,29 @@ describe('ray shaders', () => {
     }
   });
 
-  it('has a scene branch for every stage mode', () => {
-    // map() dispatches on the MODES index; the pure-volumetric modes are
-    // handled by isVolumetric() instead of a map() branch (lava is a hybrid:
-    // an SDF glass vessel with the wax composited in as a volume)
-    const volumetric = ['nebula', 'spiral'];
-    MODES.forEach((m, i) => {
-      if (volumetric.includes(m.id)) return;
-      expect(SCENE_FRAG.includes(`uMode == ${i})`), `${m.id} (index ${i})`).toBe(true);
-    });
+  it('keeps 3D scene branches for the signature modes', () => {
+    /* scope, tunnel, terrain and chladni still use the ray marcher */
+    for (const fn of ['scScope', 'scTunnel', 'scTerrain', 'scChladni']) {
+      expect(SCENE_FRAG).toContain(`float ${fn}(vec3 p)`);
+    }
+    const map = SCENE_FRAG.slice(SCENE_FRAG.indexOf('float map('),
+      SCENE_FRAG.indexOf('vec3 normalAt'));
+    for (const fn of ['scScope', 'scTunnel', 'scTerrain', 'scChladni']) {
+      expect(map, fn).toContain(`return ${fn}(p)`);
+    }
   });
 
-  it('routes the pure-volumetric modes through isVolumetric', () => {
-    const idx = ['nebula', 'spiral'].map((id) => MODES.findIndex((m) => m.id === id));
-    const fn = SCENE_FRAG.slice(SCENE_FRAG.indexOf('bool isVolumetric'), SCENE_FRAG.indexOf('bool isVolumetric') + 120);
-    for (const i of idx) expect(fn.includes(`m == ${i}`)).toBe(true);
+  it('routes every non-signature mode through the full-frame field path', () => {
+    const signature = new Set(['scope', 'tunnel', 'terrain', 'chladni']);
+    const fn = SCENE_FRAG.slice(SCENE_FRAG.indexOf('bool isFieldMode'),
+      SCENE_FRAG.indexOf('bool isFieldMode') + 220);
+    MODES.forEach((m, i) => {
+      if (signature.has(m.id)) {
+        expect(fn, `${m.id} should keep its 3D rig`).toContain(`m != ${i}`);
+        return;
+      }
+      expect(SCENE_FRAG, `${m.id} has no field branch`).toContain(`uMode == ${i})`);
+    });
   });
 
   it('compiles a new scene when parallel shader compile is unavailable', () => {
@@ -104,46 +112,36 @@ describe('ray shaders', () => {
     );
   });
 
-  it('keeps the radar contacts phase-locked to the deck sweep', () => {
-    /* The contact flare in scRadar must read the same sweep fraction the
-       deck material draws its phosphor wedge from — fract(a / TAU - uTime *
-       0.22). Change one side without the other and the contacts blink out
-       of sync with the beam that is supposed to be illuminating them. */
-    const radar = SCENE_FRAG.slice(SCENE_FRAG.indexOf('float scRadar'), SCENE_FRAG.indexOf('/* 21 gpu'));
-    expect(radar).toContain('fract(a / TAU - uTime * 0.22)');
-    const mat = SCENE_FRAG.slice(SCENE_FRAG.indexOf('id < 15.5'));
-    expect(mat).toContain('- uTime * 0.22');
+  it('keeps the radar contacts phase-locked to the field sweep', () => {
+    /* the beam wedge and the contact flare must read the same sweep phase */
+    const radar = SCENE_FRAG.slice(SCENE_FRAG.indexOf('} else if (uMode == 19) {'),
+      SCENE_FRAG.indexOf('} else if (uMode == 20) {'));
+    expect(radar).toContain('fract(a / TAU - uTime * 0.25)');
+    expect(radar).toContain('fract(ang / TAU - uTime * 0.25)');
   });
 
-  it('couples each tensor axis family to a band and the drop to the volumes', () => {
-    /* bass/mids/highs own one rod direction each; the three volumetric
-       densities answer the drop envelope so breakdowns land there too */
-    expect(SCENE_FRAG).toContain('uBass * 0.026');
-    expect(SCENE_FRAG).toContain('uMid * 0.022');
-    expect(SCENE_FRAG).toContain('uHigh * 0.018');
-    const vol = SCENE_FRAG.slice(SCENE_FRAG.indexOf('float volDensity'));
-    expect(vol.match(/uDrop/g)?.length).toBeGreaterThanOrEqual(4);
+  it('keeps the tensor field a perspective lattice driven by the mix', () => {
+    const tensor = SCENE_FRAG.slice(SCENE_FRAG.indexOf('} else if (uMode == 14) {'),
+      SCENE_FRAG.indexOf('} else if (uMode == 15) {'));
+    expect(tensor).toContain('1.0 / (0.35 + r)');
+    expect(tensor).toContain('uLevel * 0.45');
+    expect(tensor).toContain('spec(fract(h))');
   });
 
-  it('marches the lava volume past the near glass wall, not up to it', () => {
-    /* The vessel's near wall is the first surface the ray hits, so limiting
-       the volume march to that hit distance marched nothing but the air in
-       front of the lamp and the wax never rendered — an empty glass tube.
-       The limit has to clear the vessel interior. */
-    const lava = MODES.findIndex((m) => m.id === 'lava');
-    const call = SCENE_FRAG.match(
-      new RegExp(`if \\(uMode == ${lava}\\) col \\+= marchVolume\\(ro, rd, t([^)]*)\\);`),
-    );
-    expect(call).not.toBe(null);
-    expect(parseFloat(call[1].replace('+', ''))).toBeGreaterThan(2.3);
+  it('keeps the lava field a soft-metaball wax field', () => {
+    const lava = SCENE_FRAG.slice(SCENE_FRAG.indexOf('} else if (uMode == 20) {'),
+      SCENE_FRAG.indexOf('} else if (uMode == 21) {'));
+    expect(lava).toContain('smin(d, s, 0.18)');
+    expect(lava).toContain('uBass');
   });
 
-  it('gives every mode a camera rig', () => {
+  it('gives every ray-marched mode a camera rig', () => {
     const cam = SCENE_FRAG.slice(SCENE_FRAG.indexOf('void camera('), SCENE_FRAG.indexOf('/* ---------------- main trace'));
-    for (let i = 0; i < MODES.length - 1; i++) {
-      expect(cam.includes(`uMode == ${i})`), `camera for ${MODES[i].id}`).toBe(true);
+    for (const id of ['scope', 'tunnel', 'terrain', 'chladni']) {
+      const i = MODES.findIndex((m) => m.id === id);
+      expect(cam.includes(`uMode == ${i})`), `camera for ${id}`).toBe(true);
     }
-    expect(cam.includes('else')).toBe(true); // last mode falls through to the default rig
+    expect(cam.includes('else')).toBe(true); // unknown modes fall through to the default rig
   });
 });
 
