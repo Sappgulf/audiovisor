@@ -18,12 +18,20 @@ export function registerServiceWorker(doc = document) {
   /* first install claims the page with no prior controller; reloading there
      threw away file selection/settings (and could drop an OAuth callback) */
   const hadController = !!sw.controller;
+  /* A page that just completed (or is completing) an OAuth redirect must not
+     be reloaded by an update: the one-time code is consumed and the access
+     token lives only in memory, so a reload lands the user signed out. */
+  const oauthSurface = () => {
+    if (/** @type {any} */ (win).__audiovisorOauthHandled) return true;
+    if (/[?&](code|error)=/.test(win.location.search)) return true;
+    try { return win.sessionStorage?.getItem('audiovisor.oauth.pending') === '1'; } catch { return false; }
+  };
   sw.register('/sw.js', { updateViaCache: 'none' })
     .then((reg) => reg.update())
     .catch(() => {});
   let reloading = false;
   sw.addEventListener('controllerchange', () => {
-    if (!hadController || reloading) return;
+    if (!hadController || reloading || oauthSurface()) return;
     reloading = true;
     win.location.reload();
   });

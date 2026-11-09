@@ -93,6 +93,8 @@ export function createAboutPanel({ shell, trigger, modeCount, themeCount, doc = 
   panel.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
+      // stop the drawer/keyboard handlers from closing a second layer
+      e.stopPropagation();
       setOpen(false);
       return;
     }

@@ -5,11 +5,11 @@ import { createAutoplayGuard } from '../src/autoplay.js';
 beforeEach(() => { document.body.innerHTML = ''; });
 
 function setup(state = 'suspended') {
-  const engine = {
-    ctx: { state, resume: vi.fn(() => Promise.resolve()) },
-    playing: false,
-    play: vi.fn(),
+  const ctx = {
+    state,
+    resume: vi.fn(() => { ctx.state = 'running'; return Promise.resolve(); }),
   };
+  const engine = { ctx, playing: false, play: vi.fn() };
   const toast = vi.fn();
   const refreshStatus = vi.fn();
   const guard = createAutoplayGuard({ engine, toast, refreshStatus });
@@ -41,5 +41,43 @@ describe('autoplay guard', () => {
     const guard = createAutoplayGuard({ engine, toast, refreshStatus: vi.fn() });
     guard.ensureAudible();
     expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('keeps listening when resume does not actually start the context', async () => {
+    const { engine, guard } = setup();
+    /* simulate a strict browser: resume() resolves but the context stays
+       suspended. The guard must stay armed for the next gesture. */
+    let attempts = 0;
+    engine.ctx.resume = vi.fn(() => {
+      attempts++;
+      if (attempts > 1) engine.ctx.state = 'running';
+      return Promise.resolve();
+    });
+    guard.ensureAudible();
+    window.dispatchEvent(new Event('pointerdown'));
+    await Promise.resolve(); await Promise.resolve();
+    expect(engine.play).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event('keydown'));
+    await Promise.resolve(); await Promise.resolve();
+    expect(engine.ctx.resume).toHaveBeenCalledTimes(2);
+    expect(engine.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps listening when resume rejects', async () => {
+    const { engine, guard } = setup();
+    let attempts = 0;
+    engine.ctx.resume = vi.fn(() => {
+      attempts++;
+      if (attempts === 1) return Promise.reject(new Error('blocked'));
+      engine.ctx.state = 'running';
+      return Promise.resolve();
+    });
+    guard.ensureAudible();
+    window.dispatchEvent(new Event('pointerdown'));
+    await Promise.resolve(); await Promise.resolve();
+    expect(engine.play).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event('pointerdown'));
+    await Promise.resolve(); await Promise.resolve();
+    expect(engine.play).toHaveBeenCalledTimes(1);
   });
 });

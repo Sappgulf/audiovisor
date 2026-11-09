@@ -193,6 +193,14 @@ export class RayStage {
     this._init();
   }
 
+  /** Release timers so a torn-down stage cannot keep calling into GL. */
+  dispose() {
+    clearInterval(this._watchdog);
+    this._watchdog = 0;
+    clearTimeout(this._prewarmTimer);
+    this._prewarmTimer = 0;
+  }
+
   _recover() {
     if (!this.gl || this.gl.isContextLost()) return;
     this.lost = false;
@@ -202,6 +210,11 @@ export class RayStage {
 
   _init() {
     this.ok = false;
+    /* _recover() calls _init(); a prewarm timeout queued before the context
+       loss used to survive, clear the new timer id, and start a second chain
+       alongside the new one (two pipeline builds per tick during recovery). */
+    clearTimeout(this._prewarmTimer);
+    this._prewarmTimer = 0;
     const gl = this.gl;
     this.float = !!gl.getExtension('EXT_color_buffer_float');
     gl.getExtension('OES_texture_float_linear');
@@ -344,6 +357,12 @@ export class RayStage {
           this._prewarmQueue.delete(m);
           break;   // one pipeline per tick keeps each hitch small
         } catch {
+          /* if _scene() linked the program and a later step threw, dropping
+             the map entry leaked the GL program for the session */
+          const ready = this._scenes.get(m);
+          if (ready?.prog) {
+            try { gl.deleteProgram(ready.prog); } catch { /* context lost */ }
+          }
           this._scenes.delete(m);   // compiled on use instead
           this._prewarmQueue.delete(m);
           break;

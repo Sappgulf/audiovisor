@@ -39,29 +39,37 @@ export function initWebGL2(canvas) {
       }
       return s;
     };
-    const vsh = compile(gl.VERTEX_SHADER, vs);
-    const fsh = compile(gl.FRAGMENT_SHADER, fs);
-    if (!vsh || !fsh) return null;
-    const prog = gl.createProgram();
-    gl.attachShader(prog, vsh);
-    gl.attachShader(prog, fsh);
-    gl.linkProgram(prog);
-    gl.deleteShader?.(vsh);
-    gl.deleteShader?.(fsh);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      console.warn('webgl2 link failed:', gl.getProgramInfoLog?.(prog));
-      gl.deleteProgram?.(prog);
-      return null;
-    }
-    gl.useProgram(prog);
-    const state = {
-      gl, prog, lost: false, w: 0, h: 0,
-      uTime: gl.getUniformLocation(prog, 'u_time'),
-      uLevel: gl.getUniformLocation(prog, 'u_level'),
-      uRes: gl.getUniformLocation(prog, 'u_res'),
+    const state = { gl, prog: null, lost: false, w: 0, h: 0, uTime: null, uLevel: null, uRes: null };
+    /* Rebuild the program after a context restore. This used to set
+       lost = true on restore too, so the fallback stayed dead for the rest
+       of the session even though the context was healthy again. */
+    const build = () => {
+      const vsh = compile(gl.VERTEX_SHADER, vs);
+      const fsh = compile(gl.FRAGMENT_SHADER, fs);
+      if (!vsh || !fsh) return false;
+      const prog = gl.createProgram();
+      gl.attachShader(prog, vsh);
+      gl.attachShader(prog, fsh);
+      gl.linkProgram(prog);
+      gl.deleteShader?.(vsh);
+      gl.deleteShader?.(fsh);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        console.warn('webgl2 link failed:', gl.getProgramInfoLog?.(prog));
+        gl.deleteProgram?.(prog);
+        return false;
+      }
+      gl.useProgram(prog);
+      state.prog = prog;
+      state.w = 0;
+      state.h = 0;
+      state.uTime = gl.getUniformLocation(prog, 'u_time');
+      state.uLevel = gl.getUniformLocation(prog, 'u_level');
+      state.uRes = gl.getUniformLocation(prog, 'u_res');
+      return true;
     };
+    if (!build()) return null;
     canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); state.lost = true; });
-    canvas.addEventListener('webglcontextrestored', () => { state.lost = true; });
+    canvas.addEventListener('webglcontextrestored', () => { state.lost = !build(); });
     return state;
   } catch { return null; }
 }

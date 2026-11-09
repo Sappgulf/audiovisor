@@ -6,9 +6,13 @@ const FOLLOW_KEY = 'audiovisor.social.follows';
 
 const newId = () => Math.random().toString(36).slice(2, 9);
 
+/** Read the feed, discarding structurally invalid entries. */
 export function getFeed() {
   const feed = readJSON(KEY, []);
-  return Array.isArray(feed) ? feed : [];
+  if (!Array.isArray(feed)) return [];
+  /* a corrupt entry could be null or a primitive: healFeed/likeFeed then
+     threw reading .id and took the whole Studio mount down with it */
+  return feed.filter((e) => e && typeof e === 'object' && !Array.isArray(e));
 }
 
 export function postToFeed({ title, mode, theme, fx }) {
@@ -62,6 +66,9 @@ function healFeed(feed) {
   for (const e of feed) {
     if (typeof e.id !== 'string' || !e.id) { e.id = newId(); changed = true; }
     if (!Number.isFinite(e.at)) { e.at = Date.now(); changed = true; }
+    if (!Number.isFinite(e.likes)) { e.likes = 0; changed = true; }
+    if (typeof e.title !== 'string') { e.title = 'Untitled Mix'; changed = true; }
+    if (typeof e.user !== 'string') { e.user = 'You'; changed = true; }
   }
   if (changed) writeJSON(KEY, feed);
   return changed;

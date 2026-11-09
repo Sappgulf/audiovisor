@@ -118,14 +118,14 @@ export default defineConfig({
          have settled. */
       include: ['src/**/*.js'],
       exclude: ['src/dom-shim.d.ts'],
-      /* A floor below today's measured baseline (roughly 60/47/49/63) so a
-         drop is visible in CI without pretending the UI orchestration suites
-         are fully unit-tested. Raise these as coverage improves. */
+      /* A floor below today's measured baseline (roughly 65.7/49.9/53.7/68.0)
+         so a drop is visible in CI without pretending the UI orchestration
+         suites are fully unit-tested. Raise these as coverage improves. */
       thresholds: {
-        statements: 59,
-        branches: 46,
-        functions: 48,
-        lines: 61,
+        statements: 64,
+        branches: 49,
+        functions: 52,
+        lines: 66,
       },
     },
   },

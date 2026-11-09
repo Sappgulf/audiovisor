@@ -18,18 +18,37 @@
 export function createPlayState({ engine, panels, setIcon, setToggle, getDropzone, onTrackChange, doc = document }) {
   const $ = (id) => doc.getElementById(id);
   let wakeLock = null;
+  let wakeLockPending = false;
 
   async function syncWakeLock(playing) {
     try {
-      if (playing && navigator.wakeLock && !wakeLock) {
-        wakeLock = await navigator.wakeLock.request('screen');
-        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      if (playing && navigator.wakeLock && !wakeLock && !wakeLockPending) {
+        wakeLockPending = true;
+        const lock = await navigator.wakeLock.request('screen');
+        /* the request can resolve after a pause (or after another request
+           replaced it); never keep a lock for a stopped transport */
+        if (engine.playing && !wakeLock) {
+          wakeLock = lock;
+          lock.addEventListener('release', () => {
+            if (wakeLock === lock) wakeLock = null;
+          });
+        } else {
+          await lock.release();
+        }
       } else if (!playing && wakeLock) {
-        await wakeLock.release();
+        const lock = wakeLock;
         wakeLock = null;
+        await lock.release();
       }
     } catch {}
+    finally { wakeLockPending = false; }
   }
+
+  /* a lock is released automatically when the tab is hidden; take it again
+     when the listener returns to a playing stage */
+  doc.addEventListener?.('visibilitychange', () => {
+    if (!doc.hidden) syncWakeLock(engine.playing);
+  });
 
   function refreshStatus() {
     const playing = engine.playing;

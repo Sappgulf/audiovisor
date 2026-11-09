@@ -62,6 +62,17 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
   let queueActiveIndex = 0;
   let libraryActiveIndex = 0;
   let queueDragIndex = null;
+  let queueReturnFocus = null;
+  let libraryReturnFocus = null;
+
+  /** Return focus to whatever opened a panel, falling back to its trigger. */
+  function restorePanelFocus(el, fallback, panel) {
+    const target = el?.isConnected && !el.hasAttribute('disabled') ? el : fallback;
+    (window.requestAnimationFrame || setTimeout)(() => {
+      if (!panel.classList.contains('is-hidden')) return;
+      target?.focus?.();
+    });
+  }
 
   const libSearchInput = () => /** @type {HTMLInputElement | null} */ (libraryPanel.querySelector('#lib-search'));
 
@@ -267,12 +278,15 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
     if (!rows.length) {
       if (e.key === 'Escape' && !queuePanel.classList.contains('is-hidden')) {
         e.preventDefault();
+        e.stopPropagation();
         toggleQueue(false);
       }
       return;
     }
     if (e.key === 'Escape') {
+      // consume the event so the drawer below does not also close
       e.preventDefault();
+      e.stopPropagation();
       toggleQueue(false);
       return;
     }
@@ -392,12 +406,15 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
     if (!rows.length) {
       if (e.key === 'Escape' && !libraryPanel.classList.contains('is-hidden')) {
         e.preventDefault();
+        e.stopPropagation();
         toggleLibrary(false);
       }
       return;
     }
     if (e.key === 'Escape') {
+      // consume the event so the drawer below does not also close
       e.preventDefault();
+      e.stopPropagation();
       toggleLibrary(false);
       return;
     }
@@ -487,6 +504,21 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
 
   function toggleQueue(force) {
     const show = force ?? queuePanel.classList.contains('is-hidden');
+    const wasHidden = queuePanel.classList.contains('is-hidden');
+    if (show && wasHidden) {
+      /* when switching from the library, the focused element is a row that
+         is about to be hidden; return to the trigger instead */
+      queueReturnFocus = libraryPanel.contains(document.activeElement)
+        ? triggerQueue : document.activeElement;
+    }
+    if (show && !libraryPanel.classList.contains('is-hidden')) {
+      /* switching panels: the newly opened panel owns focus, so do not
+         schedule a focus restore that would steal it a frame later */
+      libraryPanel.classList.add('is-hidden');
+      libraryPanel.setAttribute('aria-hidden', 'true');
+      setToggle(triggerLibrary, false);
+      libraryReturnFocus = null;
+    }
     queuePanel.classList.toggle('is-hidden', !show);
     queuePanel.setAttribute('aria-hidden', String(!show));
     setToggle(triggerQueue, show);
@@ -495,9 +527,12 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
       renderQueue();
       requestAnimationFrame(() => {
         const rows = getQueueRows();
-        if (!rows.length) return;
-        rows[queueActiveIndex]?.focus();
+        if (rows.length) rows[queueActiveIndex]?.focus();
+        else queuePanel.querySelector('#queue-close-btn')?.focus();
       });
+    } else {
+      restorePanelFocus(queueReturnFocus, triggerQueue, queuePanel);
+      queueReturnFocus = null;
     }
   }
 
@@ -553,6 +588,18 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
 
   function toggleLibrary(force) {
     const show = force ?? libraryPanel.classList.contains('is-hidden');
+    const wasHidden = libraryPanel.classList.contains('is-hidden');
+    if (show && wasHidden) {
+      libraryReturnFocus = queuePanel.contains(document.activeElement)
+        ? triggerLibrary : document.activeElement;
+    }
+    if (show && !queuePanel.classList.contains('is-hidden')) {
+      /* switching panels: the library search field will take focus */
+      queuePanel.classList.add('is-hidden');
+      queuePanel.setAttribute('aria-hidden', 'true');
+      setToggle(triggerQueue, false);
+      queueReturnFocus = null;
+    }
     libraryPanel.classList.toggle('is-hidden', !show);
     libraryPanel.setAttribute('aria-hidden', String(!show));
     setToggle(triggerLibrary, show);
@@ -564,8 +611,10 @@ export function createPanels({ shell, engine, toast, setToggle, setFx, triggerQu
         sInput?.setSelectionRange(sInput.value.length, sInput.value.length);
         setTimeout(() => setLibraryActive(0, false), 0);
       });
+    } else {
+      restorePanelFocus(libraryReturnFocus, triggerLibrary, libraryPanel);
+      libraryReturnFocus = null;
     }
-    if (show) { queuePanel.classList.add('is-hidden'); setToggle(triggerQueue, false); }
   }
 
   async function saveToLibrary() {

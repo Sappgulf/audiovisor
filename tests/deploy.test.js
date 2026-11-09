@@ -62,6 +62,14 @@ describe('security policy', () => {
     expect(csp).toContain('https://js-cdn.music.apple.com');
   });
 
+  it('does not allow inline scripts, which the built shell never needs', () => {
+    const csp = header('/(.*)', 'Content-Security-Policy');
+    const scriptSrc = csp.split(';').map((part) => part.trim()).find((part) => part.startsWith('script-src '));
+    expect(scriptSrc).toBeTruthy();
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+    expect(csp).toContain("script-src-attr 'none'");
+  });
+
   it('allows local audio streams and album art without allowing arbitrary frames', () => {
     const csp = header('/(.*)', 'Content-Security-Policy');
     expect(csp).toContain('media-src');

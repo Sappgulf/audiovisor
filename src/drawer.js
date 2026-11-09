@@ -31,8 +31,16 @@ export function createDrawer({ state, doc = document }) {
     drawer.setAttribute('aria-hidden', String(!state.drawerOpen));
     drawer.inert = !state.drawerOpen;
     $('shell').classList.toggle('drawer-open', state.drawerOpen);
-    const transport = doc.querySelector('.transport');
-    if (transport) transport.inert = state.drawerOpen && win.innerWidth <= 640;
+    /* A phone sheet covers the whole page. The scrim blocks the pointer but
+       not Tab, so the topbar, stage and transport were still reachable behind
+       it. Inert them (the drawer is their sibling, so it stays live). */
+    const sheetOpen = state.drawerOpen && win.innerWidth <= 640;
+    /* The drawer lives inside .workspace, so inert the stage (its sibling),
+       not the workspace itself — that made the sheet itself inert too. */
+    for (const selector of ['.topbar', '.stage', '.transport', '.skip-link']) {
+      const el = doc.querySelector(selector);
+      if (el) el.inert = sheetOpen;
+    }
   }
 
   function syncDrawer() {
@@ -116,6 +124,9 @@ export function createDrawer({ state, doc = document }) {
   // Other transient surfaces (palette, shortcuts, About, queue, library) get
   // the first Escape so this never closes two layers at once.
   doc.addEventListener('keydown', (e) => {
+    /* an inner surface that already handled Escape owns this event; closing
+       the drawer here too made one key press close two stacked layers */
+    if (e.defaultPrevented) return;
     if (e.key !== 'Escape' || !state.drawerOpen) return;
     if (doc.getElementById('about-panel')?.classList.contains('is-open')) return;
     const palette = doc.getElementById('cmd-palette');

@@ -263,7 +263,10 @@ export function nextTier(
  */
 export function next2dQualityState(current, avgMs, baseline = DEFAULT_BASELINE_MS, healthyStreak = 0) {
   if (!Number.isFinite(avgMs)) return { quality: current, streak: 0 };
-  if (avgMs > baseline * 1.3) return { quality: 'low', streak: 0 };
+  /* windowCost() already promotes a judder window (>=10% dropped frames) to
+     1.212x baseline; the old 1.3x line sat above that and left Canvas2D at
+     high forever on exactly the pattern the sampler was written to catch. */
+  if (avgMs > baseline * OVER_BUDGET) return { quality: 'low', streak: 0 };
   if (avgMs < baseline * 0.85) return { quality: 'high', streak: 0 };
   if (current === 'low' && avgMs <= baseline * 1.05) {
     const streak = healthyStreak + 1;

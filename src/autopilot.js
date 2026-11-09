@@ -13,15 +13,22 @@
  */
 export function createAutopilot({ state, chip, shuffleBtn, toast, setToggle, saveSettings, randomizeLook }) {
   function setAutopilot(on, opts = {}) {
+    const wasOn = !!state.autopilot;
     state.autopilot = on;
     setToggle(chip, on, 'is-active');
     setToggle(shuffleBtn, on);
     const note = shuffleBtn?.querySelector('.tool-note');
     if (note) note.textContent = on ? 'On · every 12s' : 'Cycle modes and themes';
     if (on) {
-      state.autopilotTimer = setInterval(randomizeLook, 12000);
-      randomizeLook();
-      if (!opts.silent) toast('AUTOPILOT <b>ON</b> — cycling modes &amp; themes', { duration: 1800 });
+      /* Importing settings with autopilot already on used to create a second
+         interval and overwrite the first id; turning it off then cleared only
+         the new one, leaving an orphan cycling looks for the session. */
+      if (!wasOn) {
+        if (state.autopilotTimer) clearInterval(state.autopilotTimer);
+        state.autopilotTimer = setInterval(randomizeLook, 12000);
+        randomizeLook();
+        if (!opts.silent) toast('AUTOPILOT <b>ON</b> — cycling modes &amp; themes', { duration: 1800 });
+      }
     } else if (state.autopilotTimer) {
       clearInterval(state.autopilotTimer);
       state.autopilotTimer = null;

@@ -94,6 +94,16 @@ describe('feed operations', () => {
     working({ [KEY]: '{"not":"an array"}' });
     expect(Social.getFeed()).toEqual([]);
   });
+
+  it('drops structurally invalid entries instead of throwing', () => {
+    /* seedFeed() runs during Studio mount; a null entry used to throw
+       reading .id and abort the whole mount */
+    working({ [KEY]: '[null,1,"x",{"id":"a","likes":2,"at":1}]' });
+    expect(() => Social.getFeed()).not.toThrow();
+    expect(Social.getFeed()).toHaveLength(1);
+    expect(() => Social.seedFeed()).not.toThrow();
+    expect(Social.likeFeed('a')).toBe(true);
+  });
 });
 
 describe('when storage rejects writes', () => {

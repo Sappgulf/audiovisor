@@ -7,12 +7,19 @@ import { createModePicker } from '../src/mode-picker.js';
 import { createDrawer } from '../src/drawer.js';
 import { MODES, THEMES } from '../src/themes.js';
 
+const innerWidthDescriptor = Object.getOwnPropertyDescriptor(window, 'innerWidth');
 beforeEach(() => {
   document.open(); document.write(readFileSync('index.html', 'utf8')); document.close();
   localStorage.clear();
   window.matchMedia = vi.fn(() => ({ matches: window.innerWidth <= 640 }));
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  /* tests that simulate a phone redefine this property; put the original
+     descriptor back so later tests see jsdom's real viewport */
+  if (innerWidthDescriptor) Object.defineProperty(window, 'innerWidth', innerWidthDescriptor);
+  else delete window.innerWidth;
+});
 const key = (el, value) => el.dispatchEvent(new KeyboardEvent('keydown', { key: value, code: value, bubbles: true, cancelable: true }));
 
 describe('More menu', () => {
@@ -76,6 +83,29 @@ describe('visual navigation', () => {
     expect(document.querySelectorAll('[data-mode-id]')).toHaveLength(0);
   });
 
+  it('clears the mode filter on Escape without dropping focus', () => {
+    picker();
+    const filter = document.getElementById('mode-filter');
+    filter.value = 'bars';
+    filter.dispatchEvent(new Event('input', { bubbles: true }));
+    filter.focus();
+    const ev = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    filter.dispatchEvent(ev);
+    expect(filter.value).toBe('');
+    expect(document.activeElement).toBe(filter);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it('lets Escape through when the mode filter is already empty', () => {
+    picker();
+    const filter = document.getElementById('mode-filter');
+    filter.value = '';
+    filter.focus();
+    const ev = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    filter.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+  });
+
   it('scrolls the focused mode into view and moves the tab stop with it', () => {
     picker();
     const first = document.querySelector('[data-mode-id="bars"]');
@@ -115,6 +145,35 @@ describe('visual navigation', () => {
     const card = document.querySelector('.mode-card'); card.dispatchEvent(new Event('pointerenter'));
     expect(card.dataset.animLoaded).toBeUndefined();
     expect(card.classList.contains('is-anim')).toBe(false);
+  });
+});
+
+describe('drawer layering and focus', () => {
+  it('makes the page behind a phone sheet inert', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    const state = { drawerOpen: true };
+    const drawer = createDrawer({ state });
+    expect(document.querySelector('.topbar').inert).toBe(true);
+    expect(document.querySelector('.stage').inert).toBe(true);
+    expect(document.querySelector('.transport').inert).toBe(true);
+    expect(document.querySelector('.skip-link').inert).toBe(true);
+    expect(document.getElementById('drawer').inert).toBe(false);
+    document.getElementById('drawer').inert = false;
+    drawer.setDrawerOpen(false);
+    expect(document.querySelector('.topbar').inert).toBe(false);
+    expect(document.querySelector('.stage').inert).toBe(false);
+    expect(document.querySelector('.transport').inert).toBe(false);
+  });
+
+  it('does not close when an inner surface already consumed Escape', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
+    const state = { drawerOpen: true };
+    createDrawer({ state });
+    document.body.addEventListener('keydown', (e) => e.preventDefault(), { once: true });
+    const ev = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.getElementById('drawer').dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    expect(state.drawerOpen).toBe(true);
   });
 });
 

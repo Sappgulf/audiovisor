@@ -7,6 +7,7 @@ import { isPluginMode } from './plugins.js';
 import {
   shouldEvaluate, nextTier, next2dQualityState, estimateBaseline, baselineOr, relaxBaseline,
   TIERS, SEVERE, OVER_BUDGET, climbCeiling, windowCost, isUsableInterval,
+  MAX_SAMPLE_MS,
 } from './adaptive.js';
 
 /**
@@ -185,6 +186,15 @@ export function createRenderLoop({
     const frameGap = now - lastFrameTs;
     const dtMs = Math.min(50, frameGap);
     lastFrameTs = now;
+    /* Visible frames slower than MAX_SAMPLE_MS used to be discarded as if
+       they were a backgrounded-tab artefact, so a stage running at <5 fps
+       never produced a single sample and never stepped down. Visibility
+       resume already resets the clock; keep a large sanity cap for machine
+       sleep/debugger pauses, and clamp sustained visible gaps so the sampler
+       still sees them as slow. */
+    const sampleGap = frameGap >= MAX_SAMPLE_MS && frameGap < 10000
+      ? MAX_SAMPLE_MS - 0.001
+      : frameGap;
 
     const input = engine.activeInput;
     const idle = input === 'none';
@@ -303,6 +313,10 @@ export function createRenderLoop({
       if (webgpuCanvas) webgpuCanvas.style.display = gpuMode ? 'block' : 'none';
       vizCanvasEl.classList.toggle('is-off', gpuMode);
       if (gpuMode && !idle && levels) {
+        /* GPU Core draws through its own path, so renderer.render() never
+           runs here. Without this the scene clock (and the VU/beat chrome
+           that reads renderer.sm/beat) froze at the last idle values. */
+        renderer.updateAnalysis(levels, dtMs);
         if (webgpuState) renderWebGPU(webgpuState, renderer.t, levels.level);
         else renderWebGL2(webgl2State, renderer.t, levels.level, gpuW, gpuH);
       } else {
@@ -411,12 +425,12 @@ export function createRenderLoop({
          pipeline being built on first draw (300ms on a real M1 display) —
          acting on it dropped every freshly picked mode to low and recorded
          low as its ceiling. Two in a row is the scene itself. */
-      severeRun = isUsableInterval(frameGap) && frameGap > rayBaseline * SEVERE ? severeRun + 1 : 0;
-      if (state.raytraceWanted && ray.ok && severeRun >= 2 && TIERS.indexOf(ray.quality) > 0) {
-        const { tier } = nextTier(ray.quality, frameGap, state.rayQuality, rayBaseline);
+      severeRun = isUsableInterval(sampleGap) && sampleGap > rayBaseline * SEVERE ? severeRun + 1 : 0;
+      if (rtOn && severeRun >= 2 && TIERS.indexOf(ray.quality) > 0) {
+        const { tier } = nextTier(ray.quality, sampleGap, state.rayQuality, rayBaseline);
         applyTier(ray, tier);
       }
-    } else if (isUsableInterval(frameGap)) frameTimes.push(frameGap);
+    } else if (isUsableInterval(sampleGap)) frameTimes.push(sampleGap);
     /* Normally this waits for a full window before judging, but that window
        costs more wall-clock the slower things are — on a mode running several
        times over budget that was seconds of stutter before anything happened. shouldEvaluate() acts on a
@@ -434,7 +448,10 @@ export function createRenderLoop({
          cost calculation and the tier decision */
       const avg = windowCost(samples, relaxed);
       samples.length = 0;
-      if (state.raytraceWanted && ray.ok) {
+      /* use the effective renderer predicate, not the raw preference: a
+         plugin mode or a suspended ray stage draws Canvas2D and must not
+         reallocate ray targets or cap the wrong mode */
+      if (rtOn) {
         overBudgetRun = Number.isFinite(avg) && avg > relaxed * OVER_BUDGET ? overBudgetRun + 1 : 0;
         const allowed = climbCeiling(state.rayQuality, state.rayQualityExplicit);
         const ceiling = climbCap && TIERS.indexOf(climbCap) < TIERS.indexOf(allowed)
@@ -482,10 +499,22 @@ export function createRenderLoop({
   doc.addEventListener?.('visibilitychange', onVisibilityChange);
 
   let resizeRaf = 0;
+  let lastDpr = (doc.defaultView || window).devicePixelRatio || 1;
   function scheduleResize() {
     if (resizeRaf) return;
     resizeRaf = requestAnimationFrame(() => {
       resizeRaf = 0;
+      /* ResizeObserver only fires for content-box changes, so moving the
+         window to a different-density display left both canvases at the old
+         backing resolution and kept judging frames against the old display. */
+      const nextDpr = (doc.defaultView || window).devicePixelRatio || 1;
+      if (nextDpr !== lastDpr) {
+        lastDpr = nextDpr;
+        rayBaselineEstimate = null;
+        healthy2d = 0;
+        climbCap = climbCaps.get(state.modeId) ?? null;
+        resetSampling(SETTLE_AFTER_MODE_CHANGE);
+      }
       renderer.resize();
       getRay().resize(renderer.w, renderer.h);
       if (engine.buffer && engine.mode === 'file') drawWaveform(engine.buffer);
@@ -495,9 +524,9 @@ export function createRenderLoop({
   const stageEl = doc.getElementById('stage');
   if (typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(() => scheduleResize()).observe(stageEl);
-  } else {
-    doc.defaultView?.addEventListener('resize', () => scheduleResize());
   }
+  /* also needed with ResizeObserver: a DPR change may keep the same CSS box */
+  doc.defaultView?.addEventListener('resize', () => scheduleResize());
 
   return {
     start: () => {

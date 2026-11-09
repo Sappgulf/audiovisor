@@ -25,6 +25,7 @@ import { loadCustomTheme } from './custom-theme.js';
 export function createCollab({ state, toast, setMode, setTheme, setFx, setCustomTheme = () => {}, doc = document, location = window.location }) {
   const COLLAB_KEY = 'audiovisor.collab';
   const COMMENTS_KEY = 'audiovisor.comments';
+  const SHARE_FX = new Set(['reverb', 'limiter', 'lowpass', 'speed', 'autotune', 'chorus', 'echo', 'crush', 'chop', 'widener']);
 
   function lookUrl() {
     const custom = state.themeId === 'custom' ? loadCustomTheme()?.colors : undefined;
@@ -79,16 +80,25 @@ export function createCollab({ state, toast, setMode, setTheme, setFx, setCustom
   const commentInput = doc.getElementById('comment-input');
   const collabEl = doc.getElementById('collab-comments');
 
+  /* localStorage can hold a non-array or null entries; a comment renderer
+     must not throw on either (it runs during Studio mount). */
+  function readComments() {
+    const raw = readJSON(COMMENTS_KEY, []);
+    return Array.isArray(raw)
+      ? raw.filter((c) => c && typeof c === 'object' && !Array.isArray(c))
+      : [];
+  }
+
   function renderComments() {
     if (!collabEl) return;
-    const list = readJSON(COMMENTS_KEY, []);
+    const list = readComments();
     collabEl.innerHTML = list.slice(-6).map(c => `<div style="font-size:11px; color:var(--text-60); padding:4px 6px; background:var(--glass); border-radius:6px"><b style="color:var(--accent)">${esc(c.user)}</b> ${esc(c.text)}</div>`).join('') || '<div style="font-size:10px; color:var(--text-20)">No comments yet</div>';
   }
 
   doc.getElementById('comment-send')?.addEventListener('click', () => {
     const text = commentInput?.value.trim();
     if (!text) return;
-    const list = readJSON(COMMENTS_KEY, []);
+    const list = readComments();
     list.push({ user: 'You', text, at: Date.now() });
     writeJSON(COMMENTS_KEY, list);
     if (commentInput) commentInput.value = '';
@@ -105,7 +115,7 @@ export function createCollab({ state, toast, setMode, setTheme, setFx, setCustom
     bc.onmessage = (e) => {
       if (e.data?.type === 'party') { setMode(e.data.mode); setTheme(e.data.theme); toast('Party <b>sync</b>'); }
       if (e.data?.type === 'comment') {
-        const list = readJSON(COMMENTS_KEY, []);
+        const list = readComments();
         list.push({ user: 'Guest', text: e.data.text, at: Date.now() });
         writeJSON(COMMENTS_KEY, list);
         renderComments();
@@ -121,7 +131,13 @@ export function createCollab({ state, toast, setMode, setTheme, setFx, setCustom
       if (Array.isArray(data.custom) && data.custom.length) setCustomTheme(data.custom);
       if (data.mode) setMode(data.mode);
       if (data.theme) setTheme(data.theme);
-      if (data.fx) for (const [k, v] of Object.entries(data.fx)) setFx(k, v);
+      if (data.fx && typeof data.fx === 'object') {
+        /* a crafted #share= link must not write arbitrary keys into the FX
+           map (including __proto__) */
+        for (const [k, v] of Object.entries(data.fx)) {
+          if (SHARE_FX.has(k) && typeof v === 'boolean') setFx(k, v);
+        }
+      }
       toast('Shared <b>remix</b> loaded');
     }
   } catch {}

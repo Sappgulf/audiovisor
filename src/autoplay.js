@@ -25,12 +25,16 @@ export function createAutoplayGuard({ engine, toast, refreshStatus, doc = docume
     toast('Tap anywhere to <b>start audio</b>', { duration: 5000 });
     const kick = () => {
       ctx.resume().then(() => {
+        /* A rejected or still-suspended resume is the exact case this guard
+           exists for. Keep the listeners and `armed` so the next gesture
+           retries instead of leaving the stage silent forever. */
+        if (ctx.state === 'suspended') return;
         armed = false;
+        win.removeEventListener('pointerdown', kick, true);
+        win.removeEventListener('keydown', kick, true);
         if (!engine.playing) engine.play();
         refreshStatus();
       }).catch(() => {});
-      win.removeEventListener('pointerdown', kick, true);
-      win.removeEventListener('keydown', kick, true);
     };
     win.addEventListener('pointerdown', kick, true);
     win.addEventListener('keydown', kick, true);

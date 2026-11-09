@@ -464,9 +464,9 @@ describe('service worker registration', () => {
       addEventListener: (name, fn) => { (listeners[name] ||= []).push(fn); },
     };
     const reload = vi.fn();
-    const win = { navigator: { serviceWorker: sw }, location: { reload } };
+    const win = { navigator: { serviceWorker: sw }, location: { reload, search: '' } };
     const change = () => { for (const fn of listeners.controllerchange || []) fn(); };
-    return { doc: { defaultView: win }, sw, reload, change };
+    return { doc: { defaultView: win }, sw, reload, change, win };
   };
 
   it('does not reload when the first worker claims an uncontrolled page', async () => {
@@ -484,5 +484,23 @@ describe('service worker registration', () => {
     change();
     change();
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reload a page that completed an OAuth redirect', () => {
+    /* the one-time code is consumed and the access token is memory-only, so
+       an update reload in this window lands the user signed out */
+    const { doc, reload, change, win } = fakeBrowser({ controlled: true });
+    win.__audiovisorOauthHandled = true;
+    registerServiceWorker(doc);
+    change();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('does not reload while an OAuth callback is still in the URL', () => {
+    const { doc, reload, change, win } = fakeBrowser({ controlled: true });
+    win.location.search = '?code=abc&state=xyz';
+    registerServiceWorker(doc);
+    change();
+    expect(reload).not.toHaveBeenCalled();
   });
 });

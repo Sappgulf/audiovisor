@@ -244,6 +244,15 @@ describe('next2dQuality', () => {
     expect(next2dQuality('high', 25, B)).toBe('low');
   });
 
+  it('drops on judder that windowCost promotes to over budget', () => {
+    /* one 33ms frame in eight averages ~20.2ms; windowCost promotes it to
+       1.212x baseline and the 2D renderer must follow the same 1.2x line */
+    const judder = Array.from({ length: 8 }, (_, i) => (i === 7 ? 33 : 16.7));
+    const cost = windowCost(judder, B);
+    expect(cost).toBeGreaterThan(B * OVER_BUDGET);
+    expect(next2dQuality('high', cost, B)).toBe('low');
+  });
+
   it('returns to high with headroom', () => {
     expect(next2dQuality('low', 8, B)).toBe('high');
   });

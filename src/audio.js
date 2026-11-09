@@ -111,6 +111,8 @@ export class AudioEngine {
     this.dropDetector = new DropDetector();
 
     this.recDest = null;
+    /* outgoing crossfade sources still audible until their timer fires */
+    this._fades = new Set();
 
     this._listeners = { state: [], source: [], error: [] };
 
@@ -292,6 +294,20 @@ export class AudioEngine {
       this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
       this.waveData = new Uint8Array(this.analyser.fftSize);
       this.beatFreq = new Uint8Array(this.beatAnalyser.frequencyBinCount);
+
+      /* Restored settings run before the AudioContext exists, so setFx()
+         and setEq() only recorded the intent. Replay it now that the nodes
+         exist — otherwise the UI showed reverb/EQ as on while the audio was
+         dry until each control was toggled twice. */
+      for (const [name, on] of Object.entries(this.fx)) {
+        if (on) this.setFx(name, true);
+      }
+      if (this.eqGains) {
+        this.eqFilters.forEach((f, i) => {
+          const gain = this.eqGains[i];
+          if (gain) f.gain.value = gain;
+        });
+      }
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
@@ -472,6 +488,12 @@ export class AudioEngine {
 
   playTrack(i) {
     if (!this.queue.length) return;
+    this._flushFades();
+    if (this.mode === 'stream') {
+      /* the media element is not part of the buffer graph; without this the
+         stream keeps playing under the file that replaces it */
+      try { this.mediaEl?.pause(); } catch { /* already stopped */ }
+    }
     if (this.playing) this._retireSource();
     this._applyQueueItem(i, true);
     this.playing = false;
@@ -493,6 +515,16 @@ export class AudioEngine {
     try { src.stop(); } catch { /* already stopped */ }
     try { src.disconnect(); } catch { /* already disconnected */ }
     if (src === this.source) this.source = null;
+  }
+
+  /** Cut every in-flight crossfade immediately (pause, seek, new source). */
+  _flushFades() {
+    for (const fade of this._fades) {
+      clearTimeout(fade.timer);
+      try { fade.src?.stop(); } catch { /* already stopped */ }
+      try { fade.gain?.disconnect(); } catch { /* already disconnected */ }
+    }
+    this._fades.clear();
   }
 
   _connectSource() {
@@ -553,6 +585,8 @@ export class AudioEngine {
   }
 
   pause() {
+    /* a fading-out track from a crossfade must stop with the transport */
+    this._flushFades();
     if (this.isExternal() && this.playing) {
       this.playing = false;
       if (this.external?.pause) this.external.pause();
@@ -581,6 +615,7 @@ export class AudioEngine {
     /* onsets are timestamped in song time — a jump invalidates the grid */
     this.beat.reset();
     this.dropDetector.reset();
+    this._flushFades();
     if (this.isExternal()) {
       if (this.external?.seek) this.external.seek(Math.max(0, t));
       return;
@@ -640,59 +675,69 @@ export class AudioEngine {
 
   /** Empty the file queue and return transport/UI state to idle file mode. */
   clearQueue() {
-    if (!this.queue.length) {
-      if (this.mode === 'file') this._retireSource();
+    /* Only the file transport owns buffer/offset/playing. Clearing the
+       queue during a stream or account session must not tell the engine
+       it is paused while the stream keeps sounding. */
+    const wasFile = this.mode === 'file';
+    if (wasFile) {
+      this._flushFades();
+      this._retireSource();
       this.buffer = null;
       this.track = null;
       this.offset = 0;
       this.playing = false;
-      this.queueIndex = -1;
       this.beat.reset();
       this.dropDetector.reset();
-      if (this.mode === 'file') this._setMode('none');
-      this._emit();
-      return;
+      this._setMode('none');
+    } else {
+      /* the queue is gone even though another source owns the transport */
+      this.buffer = null;
+      this.track = null;
+      this.offset = 0;
     }
-
-    if (this.mode === 'file') {
-      this._retireSource();
-    }
-
     this.queue = [];
     this.queueIndex = -1;
-    this.buffer = null;
-    this.track = null;
-    this.offset = 0;
-    this.playing = false;
-    this.beat.reset();
-    if (this.mode === 'file') this._setMode('none');
+    if (!wasFile) this._emit();
     if (this.onQueueChange) this.onQueueChange();
   }
 
   /** Remove a queue item. If it's playing, advance to the next track in its place. */
   removeFromQueue(i) {
     if (i < 0 || i >= this.queue.length) return;
+    const wasFile = this.mode === 'file';
     const removingCurrent = i === this.queueIndex;
+    if (removingCurrent) this._flushFades();
     this.queue.splice(i, 1);
 
     if (!this.queue.length) {
-      this._retireSource();
-      this.buffer = null;
-      this.track = null;
-      this.offset = 0;
-      this.playing = false;
+      if (wasFile) {
+        this._retireSource();
+        this.buffer = null;
+        this.track = null;
+        this.offset = 0;
+        this.playing = false;
+        this._setMode('none');
+      } else if (removingCurrent) {
+        /* the removed entry was the idle file, not the active stream */
+        this.buffer = null;
+        this.track = null;
+      }
       this.queueIndex = -1;
-      if (this.mode === 'file') this._setMode('none');
       if (this.onQueueChange) this.onQueueChange();
       return;
     }
 
-    if (removingCurrent) {
+    if (removingCurrent && wasFile) {
       const wasPlaying = this.playing;
       if (this.source) this._retireSource();
       this.playing = false;
       this._applyQueueItem(Math.min(i, this.queue.length - 1));
       if (wasPlaying) this.play();
+    } else if (removingCurrent) {
+      this.buffer = null;
+      this.track = null;
+      this.offset = 0;
+      this.queueIndex = -1;
     } else if (i < this.queueIndex) {
       this.queueIndex--;
     }
@@ -753,6 +798,9 @@ export class AudioEngine {
   setVolume(v) {
     this.volume = v;
     if (this.master) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
+    /* the CORS fallback element is not wired into the graph, so master gain
+       never reaches it — the slider and mute were inert on most radio URLs */
+    if (this.streamNoTap && this.mediaEl) this.mediaEl.volume = v;
     if (this.external?.setVolume) this.external.setVolume(v);
   }
 
@@ -852,6 +900,7 @@ export class AudioEngine {
   }
 
   setEq(band, gainDb) {
+    (this.eqGains ??= [0, 0, 0, 0, 0])[band] = gainDb;
     if (this.eqFilters && this.eqFilters[band]) {
       this.eqFilters[band].gain.setTargetAtTime(gainDb, this.ctx.currentTime, 0.03);
     }
@@ -859,6 +908,8 @@ export class AudioEngine {
 
   crossfadeTo(i, fadeSec = 4) {
     if (!this.queue[i] || i === this.queueIndex) return;
+    /* a second Auto DJ trigger must not stack a third source under the mix */
+    this._flushFades();
     /* auto-DJ can reach an entry whose buffer was released under memory
        pressure; crossfading into it started a null buffer and threw */
     if (!this.queue[i].buffer) {
@@ -872,6 +923,10 @@ export class AudioEngine {
     let offset = 0;
     if (bpm > 0) offset = this.getTime() % (60 / bpm);
     this._applyQueueItem(i);
+    /* _connectSource() disconnects this.sourceGain; clear it first so it
+       leaves the outgoing gain alone. It used to cut the old track dead
+       before the fade-out was even scheduled. */
+    this.sourceGain = null;
     this._connectSource();
     const t = this.ctx.currentTime;
     if (this.sourceGain) {
@@ -885,7 +940,13 @@ export class AudioEngine {
         oldGain.gain.setValueAtTime(oldGain.gain.value, t);
         oldGain.gain.linearRampToValueAtTime(0.0001, t + fadeSec);
       } catch {}
-      setTimeout(() => { try { oldSrc?.stop(); } catch {} try { oldGain?.disconnect(); } catch {} }, fadeSec * 1000 + 100);
+      const fade = { src: oldSrc, gain: oldGain, timer: 0 };
+      fade.timer = setTimeout(() => {
+        try { oldSrc?.stop(); } catch { /* already stopped */ }
+        try { oldGain.disconnect(); } catch { /* already disconnected */ }
+        this._fades.delete(fade);
+      }, fadeSec * 1000 + 100);
+      this._fades.add(fade);
     }
     this.source.start(0, offset);
     this.startedAt = t - offset / this.speed;
@@ -984,14 +1045,20 @@ export class AudioEngine {
 
   async playUrl(url, meta = {}) {
     this._ensureCtx();
+    this._flushFades();
     this.disableMic();
     this.disableCapture();
     if (this.playing && this.source) {
-      try { this.source.stop(); } catch {}
-      this.source = null;
+      /* retire (not raw stop) so the armed onended handler cannot read the
+         stop as end-of-track and auto-advance the file queue underneath
+         the new stream */
+      this._retireSource();
       this.playing = false;
     }
-    this.external = null;
+    if (this.external) {
+      try { this.external.pause?.(); } catch { /* external already stopped */ }
+      this.external = null;
+    }
 
     if (this.mediaEl) {
       try { this.mediaEl.pause(); } catch {}
@@ -1007,6 +1074,7 @@ export class AudioEngine {
       this.mediaNode.connect(this.filter);
     } catch {
       this.streamNoTap = true;
+      this.mediaEl.volume = this.volume;
     }
 
     this.streamTrack = { name: meta.name || 'Stream', url, ext: meta.ext || 'STREAM' };
@@ -1050,7 +1118,8 @@ export class AudioEngine {
     const signal = this._streamAbort.signal;
     this.mediaEl = new Audio();
     this.mediaEl.preload = 'auto';
-    if (!noCors) this.mediaEl.crossOrigin = 'anonymous';
+    if (noCors) this.mediaEl.volume = this.volume;
+    else this.mediaEl.crossOrigin = 'anonymous';
     this.mediaEl.addEventListener('ended', () => {
       if (this.mode === 'stream') {
         this.playing = false;
@@ -1075,6 +1144,7 @@ export class AudioEngine {
       this._streamRetry = true;
       this._resetStreamElement(true);
       this.mediaEl.src = this.streamTrack.url;
+      this.mediaEl.volume = this.volume;
       this._fire('source', this.mode);
       this.mediaEl.play().catch(() => {});
       return;
@@ -1096,11 +1166,23 @@ export class AudioEngine {
   /* ---------- external transport (Spotify / Apple Music) ---------- */
 
   setExternal(controller) {
-    this.external = controller;
     if (controller) {
+      this._flushFades();
+      /* an external controller takes over the transport; leaving a local
+         buffer source or media element running plays two songs at once */
+      if (this.playing) {
+        if (this.mode === 'file') this._retireSource();
+        else if (this.mode === 'stream') {
+          try { this.mediaEl?.pause(); } catch { /* already stopped */ }
+        }
+      }
+      this.external = controller;
       this._setMode(controller.kind || 'spotify');
       this.playing = controller.isPlaying?.() ?? false;
     } else {
+      const wasExternal = this.isExternalMode();
+      this.external = null;
+      if (wasExternal) this.playing = false;
       this._setMode(this.hasTrack ? 'file' : 'none');
     }
     this._emit();
@@ -1151,7 +1233,10 @@ export class AudioEngine {
     if (this.isExternal()) return this.external.getTime();
     if (this.mode === 'stream') {
       if (!this.mediaEl) return 0;
-      return Number.isFinite(this.mediaEl.duration) ? this.mediaEl.currentTime : 0;
+      /* live radio/HLS reports duration Infinity — keying the clock off
+         duration froze it at 0 forever, so the beat grid never advanced */
+      const t = this.mediaEl.currentTime;
+      return Number.isFinite(t) ? t : 0;
     }
     if (!this.buffer) return 0;
     if (!this.playing) return this.offset;
@@ -1251,10 +1336,16 @@ export class AudioEngine {
     const bandKey = `${this.ctx?.sampleRate || 44100}|${n}`;
     if (this._bandKey !== bandKey) {
       const binHz = (this.ctx?.sampleRate || 44100) / 2 / n;
+      /* Guarantee non-empty bands. At 88.2-192 kHz the 120 Hz edge lands
+         at bin 2 or below, and avg(2, 2) returned 0 — the bass band (and
+         the drop detector, and every bass-reactive visual) was permanently
+         silent on high-rate hardware. */
+      const iBass = Math.max(3, Math.floor(120 / binHz));
+      const iMid = Math.max(iBass + 1, Math.floor(2000 / binHz));
       this._band = {
-        iBass: Math.floor(120 / binHz),
-        iMid: Math.floor(2000 / binHz),
-        iTOP: Math.min(n, Math.ceil(16000 / binHz)),
+        iBass,
+        iMid,
+        iTOP: Math.max(iMid + 1, Math.min(n, Math.ceil(16000 / binHz))),
       };
       this._bandKey = bandKey;
     }
@@ -1276,10 +1367,14 @@ export class AudioEngine {
 
     /* beat clock runs on song position + full spectrum, not wall time;
        live inputs have no song clock so use the audio context clock */
-    const beatTime = (this.micActive || this.captureActive)
+    const live = this.micActive || this.captureActive;
+    const beatTime = live
       ? (this.ctx?.currentTime || 0)
       : (this.mode === 'file' && this.loop ? this.getTimeUnwrapped() : (timeSec ?? this.getTime()));
-    this.beat.process(this._beatSpectrum(freq), beatTime, this.outputLatency());
+    /* Live inputs are heard directly, not through this graph's output, so
+       subtracting output latency would delay their pulses by 150-300 ms on
+       Bluetooth for no reason. */
+    this.beat.process(this._beatSpectrum(freq), beatTime, live ? 0 : this.outputLatency());
     const bi = this.beat;
     this._levels.bass = bass;
     this._levels.mid = mid;

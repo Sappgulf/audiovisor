@@ -667,3 +667,164 @@ describe('stereo width', () => {
     expect(lv.width).toBeCloseTo(1, 3);
   });
 });
+
+describe('engine mode transitions', () => {
+  let engine;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    engine = new AudioEngine();
+  });
+
+  it('keeps the bass band non-empty at high sample rates', async () => {
+    /* at 88.2-192kHz the 120Hz edge landed on bin 2, so avg(2,2) returned 0
+       and every bass-reactive visual was dead on that hardware */
+    vi.resetModules();
+    const { AudioEngine } = await import('../src/audio.js');
+    globalThis.window = { AudioContext: FakeAudioContext };
+    const engine = new AudioEngine();
+    engine.ctx = new FakeAudioContext();
+    engine.ctx.sampleRate = 96000;
+    const freq = new Uint8Array(1024).fill(120);
+    const levels = engine.getLevels({ freq, wave: new Uint8Array(2048), stereoL: null, stereoR: null });
+    expect(engine._band.iBass).toBeGreaterThanOrEqual(3);
+    expect(levels.bass).toBeGreaterThan(0);
+    expect(levels.mid).toBeGreaterThan(0);
+  });
+
+  it('reads the stream clock even when duration is Infinity', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.mode = 'stream';
+    engine.mediaEl = { currentTime: 42, duration: Infinity };
+    expect(engine.getTime()).toBe(42);
+  });
+
+  it('does not stop a live stream when the idle file queue is cleared', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.mode = 'stream';
+    engine.playing = true;
+    engine.removeFromQueue(0);
+    expect(engine.queue).toEqual([]);
+    expect(engine.playing).toBe(true);
+    expect(engine.mode).toBe('stream');
+    engine.clearQueue();
+    expect(engine.playing).toBe(true);
+    expect(engine.mode).toBe('stream');
+    expect(engine.hasTrack).toBe(false);
+    expect(engine.track).toBe(null);
+  });
+
+  it('pauses a local stream when an external controller takes over', async () => {
+    await engine.addToQueue([makeFile()]);
+    engine.mode = 'stream';
+    engine.playing = true;
+    engine.mediaEl = { pause: vi.fn() };
+    engine.setExternal({ kind: 'spotify', isPlaying: () => true });
+    expect(engine.mediaEl.pause).toHaveBeenCalled();
+    expect(engine.mode).toBe('spotify');
+    expect(engine.playing).toBe(true);
+    engine.setExternal(null);
+    expect(engine.playing).toBe(false);
+  });
+
+  it('clears playing when an external controller detaches', async () => {
+    engine.setExternal({ kind: 'apple', isPlaying: () => false });
+    engine.playing = true;
+    engine.setExternal(null);
+    expect(engine.playing).toBe(false);
+    expect(engine.isExternal()).toBe(false);
+  });
+
+  it('retires the previous source on playUrl instead of leaving onended armed', async () => {
+    const FakeMedia = class {
+      constructor() { this.volume = 1; this.duration = Infinity; this.currentTime = 0; this.src = ''; }
+      addEventListener() {}
+      removeEventListener() {}
+      play() { return Promise.resolve(); }
+      pause() {}
+      removeAttribute() {}
+      load() {}
+    };
+    globalThis.Audio = FakeMedia;
+    try {
+      await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
+      engine.play();
+      const old = engine.source;
+      expect(typeof old.onended).toBe('function');
+      await engine.playUrl('https://example.com/radio.mp3');
+      expect(old.onended).toBe(null);
+      expect(old.stopped).toBe(true);
+      expect(engine.queueIndex).toBe(0);
+      expect(engine.mode).toBe('stream');
+    } finally {
+      delete globalThis.Audio;
+    }
+  });
+
+  it('applies the volume slider to a CORS fallback element', async () => {
+    const FakeMedia = class {
+      constructor() { this.volume = 1; this.duration = Infinity; this.currentTime = 0; this.src = ''; }
+      addEventListener() {}
+      play() { return Promise.resolve(); }
+      pause() {}
+      removeAttribute() {}
+      load() {}
+    };
+    globalThis.Audio = FakeMedia;
+    try {
+      await engine.addToQueue([makeFile('a.mp3')]);
+      engine.setVolume(0.3);
+      await engine.playUrl('https://example.com/radio.mp3');
+      expect(engine.streamNoTap).toBe(true);
+      expect(engine.mediaEl.volume).toBe(0.3);
+      engine.setVolume(0.15);
+      expect(engine.mediaEl.volume).toBe(0.15);
+    } finally {
+      delete globalThis.Audio;
+    }
+  });
+
+  it('restores FX and EQ saved before the AudioContext existed', async () => {
+    engine.setFx('reverb', true);
+    engine.setEq(2, 6);
+    await engine.addToQueue([makeFile()]);
+    expect(engine.reverbGain.gain.value).toBeCloseTo(0.35, 5);
+    expect(engine.eqFilters[2].gain.value).toBe(6);
+  });
+
+  it('keeps the outgoing gain connected during a crossfade', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
+    engine.play();
+    const oldGain = engine.sourceGain;
+    const oldSrc = engine.source;
+    vi.useFakeTimers();
+    try {
+      engine.crossfadeTo(1, 0.2);
+      expect(oldGain.connections.length).toBeGreaterThan(0);
+      expect(engine.sourceGain).not.toBe(oldGain);
+      vi.runAllTimers();
+      expect(oldSrc.stopped).toBe(true);
+      expect(oldGain.connections.length).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops a fading-out source when playback pauses', async () => {
+    await engine.addToQueue([makeFile('a.mp3'), makeFile('b.mp3')]);
+    engine.play();
+    const oldSrc = engine.source;
+    vi.useFakeTimers();
+    try {
+      engine.crossfadeTo(1, 4);
+      expect(oldSrc.stopped).toBe(false);
+      engine.pause();
+      expect(oldSrc.stopped).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+

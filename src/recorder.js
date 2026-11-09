@@ -48,6 +48,19 @@ export function createRecorder({ engine, getLiveCanvas, download, toast, doc = d
   let startedAt = 0;
   let pausedAt = 0;
   let pausedMs = 0;
+  /* Each recording gets a generation. Its asynchronous onstop/cleanup must
+     only touch that recording — a quick stop->start used to let the previous
+     onstop null the new recorder and stop its capture tracks. */
+  let recGen = 0;
+
+  /** Stop only the canvas tracks; the audio tracks belong to the engine. */
+  function stopCaptureTracks(stream) {
+    if (!stream) return;
+    stream.getTracks().forEach((t) => {
+      if (t.kind !== 'video') return;   // never stop engine.getRecordStream()'s track
+      try { t.stop(); } catch { /* already ended */ }
+    });
+  }
 
   function pickMime() {
     return pickRecorderMime();
@@ -108,6 +121,7 @@ export function createRecorder({ engine, getLiveCanvas, download, toast, doc = d
       toast('<b>Recording unavailable</b> — browser lacks MediaRecorder', { duration: 3000 });
       return;
     }
+    const gen = ++recGen;
     try {
       const stream = getLiveCanvas().captureStream(60);
       recStream = stream;
@@ -123,10 +137,11 @@ export function createRecorder({ engine, getLiveCanvas, download, toast, doc = d
         : undefined);
       recorder._chunks = recChunks;
       recorder._ext = chosen.ext;
+      recorder._gen = gen;
       recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
       recorder.onerror = () => {
         toast('<b>Recording failed</b>', { duration: 2600 });
-        cleanup();
+        cleanup(gen);
       };
       recorder.start(1000);
       startedAt = Date.now();
@@ -137,7 +152,7 @@ export function createRecorder({ engine, getLiveCanvas, download, toast, doc = d
       toast('RECORDING <b>LIVE</b> — press again to save', { duration: 2200 });
     } catch (err) {
       console.error(err);
-      cleanup();
+      cleanup(gen);
       toast('<b>Recording failed to start</b>', { duration: 2600 });
     }
   }
@@ -159,33 +174,42 @@ export function createRecorder({ engine, getLiveCanvas, download, toast, doc = d
     }
   }
 
-  function cleanup() {
+  function cleanup(gen = recGen) {
+    /* a stale recording must not tear down the one that replaced it */
+    if (gen !== recGen) return;
     recorder = null;
     stopTimer();
     setRecUI('idle');
-    if (recStream) {
-      recStream.getTracks().forEach((t) => { try { t.stop(); } catch { /* already ended */ } });
-      recStream = null;
-    }
+    const stream = recStream;
+    recStream = null;
+    stopCaptureTracks(stream);
   }
 
   function stopRecording() {
     const r = recorder;
     if (!r) return;
+    const gen = r._gen ?? recGen;
+    const stream = recStream;
     recorder = null;
+    recStream = null;
     const recChunks = r._chunks || [];
     const ext = r._ext || 'webm';
     setRecUI('idle');
     stopTimer();
     r.onstop = () => {
+      stopCaptureTracks(stream);
       const blob = new Blob(recChunks, { type: r.mimeType || 'video/webm' });
-      cleanup();
+      /* the user may have started another recording while this one was
+         finalising; save this file, but leave the new session's UI alone */
+      const stale = gen !== recGen;
       if (blob.size < 1024) {
-        toast('<b>Recording empty</b> — try again with the stage visible', { duration: 2600 });
+        if (!stale) toast('<b>Recording empty</b> — try again with the stage visible', { duration: 2600 });
         return;
       }
       download(blob, `audiovisor-session-${fmtStamp()}.${ext}`);
-      toast(`SESSION <b>SAVED</b> — ${(blob.size / (1024 * 1024)).toFixed(1)} MB ${ext.toUpperCase()} downloaded`, { duration: 2800 });
+      if (!stale) {
+        toast(`SESSION <b>SAVED</b> — ${(blob.size / (1024 * 1024)).toFixed(1)} MB ${ext.toUpperCase()} downloaded`, { duration: 2800 });
+      }
     };
     if (r.state !== 'inactive') r.stop();
     else r.onstop();

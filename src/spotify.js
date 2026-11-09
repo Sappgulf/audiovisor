@@ -173,6 +173,9 @@ export class SpotifyClient {
   async handleRedirect() {
     const r = parseRedirect(window.location.search);
     if (!r) return false;
+    /* Tell the service-worker update path not to reload this page while the
+       one-time code is exchanged (or afterwards — the token is memory-only). */
+    try { window.__audiovisorOauthHandled = true; } catch {}
     const clean = new URL(window.location.href);
     for (const k of ['code', 'state', 'error', 'error_description']) clean.searchParams.delete(k);
     history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
@@ -195,26 +198,30 @@ export class SpotifyClient {
       client_id: s.clientId,
       code_verifier: s.verifier,
     });
-    const res = await fetch(TOKEN_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body,
-    });
-    if (!res.ok) {
-      if (this.onError) this.onError('Spotify token exchange failed');
+    try {
+      const res = await fetch(TOKEN_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+      if (!res.ok) {
+        if (this.onError) this.onError('Spotify token exchange failed');
+        return true;
+      }
+      const tok = await res.json();
+      this._auth = {
+        clientId: s.clientId || storedClientId(),
+        accessToken: tok.access_token,
+        refreshToken: tok.refresh_token || null,
+        expiresAt: Date.now() + tok.expires_in * 1000,
+      };
+      /* Keep only one-use PKCE state in session storage; auth tokens stay memory-only. */
+      saveStore({ clientId: this._auth.clientId, verifier: null, state: null });
+      this._emitAuth();
       return true;
+    } finally {
+      try { window.sessionStorage.removeItem('audiovisor.oauth.pending'); } catch {}
     }
-    const tok = await res.json();
-    this._auth = {
-      clientId: s.clientId || storedClientId(),
-      accessToken: tok.access_token,
-      refreshToken: tok.refresh_token || null,
-      expiresAt: Date.now() + tok.expires_in * 1000,
-    };
-    /* Keep only one-use PKCE state in session storage; auth tokens stay memory-only. */
-    saveStore({ clientId: this._auth.clientId, verifier: null, state: null });
-    this._emitAuth();
-    return true;
   }
 
   logout() {

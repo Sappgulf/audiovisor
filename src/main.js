@@ -961,6 +961,14 @@ createDrawer({ state });
 /* Opening the drawer is a user gesture. Load only the surface that is
    actually visible: a Source/Studio open must not fetch mode thumbnails. */
 $('drawer-toggle')?.addEventListener('click', ensureVisibleDrawerTab);
+/* The Stage tab is the counterpart to Settings: it closes the drawer and
+   returns focus to the visual stage instead of doing nothing. */
+$('nav-stage')?.addEventListener('click', () => {
+  if (state.drawerOpen) $('drawer-toggle')?.click();
+  /* the drawer queues its own opener-focus restore in a rAF; queue this
+     after it so Stage actually wins */
+  requestAnimationFrame(() => $('stage')?.focus({ preventScroll: true }));
+});
 $('nav-settings')?.addEventListener('click', ensureVisibleDrawerTab);
 
 // The empty state offers a clear path into the mode browser without requiring

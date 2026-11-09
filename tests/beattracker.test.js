@@ -228,6 +228,47 @@ describe('BeatTracker', () => {
     expect(bt.bpm).toBeLessThan(122);
   });
 
+  it('releases every onset when they are closer than the output latency', () => {
+    /* A single pending slot was overwritten by each new onset before it
+       became audible, so 8th-note material over Bluetooth produced no pulses
+       at all even though the tempo locked. */
+    const bt = new BeatTracker();
+    const rest = restSpectrum();
+    const onset = makeOnsetSpectrum();
+    const latency = 0.5;
+    const spacing = 0.35;
+    const step = 1 / 120;
+    let t = 0;
+    let nextOnset = 0.2;
+    let onsets = 0;
+    let pulses = 0;
+    bt.process(rest, t, latency);
+    while (t < 5) {
+      t += step;
+      if (t >= nextOnset) {
+        onsets++;
+        bt.process(onset, t, latency);
+        nextOnset += spacing;
+      } else {
+        bt.process(rest, t, latency);
+      }
+      if (bt.pulse === 1) pulses++;
+    }
+    expect(onsets).toBeGreaterThan(10);
+    expect(pulses).toBeGreaterThanOrEqual(onsets - 2);
+  });
+
+  it('reset clears onsets that have not become audible yet', () => {
+    const bt = new BeatTracker();
+    const rest = restSpectrum();
+    const onset = makeOnsetSpectrum();
+    bt.process(rest, 0, 0.5);
+    bt.process(onset, 0.2, 0.5);
+    bt.reset();
+    for (let t = 0.3; t < 1.2; t += 1 / 120) bt.process(rest, t, 0.5);
+    expect(bt.pulse).toBe(0);
+  });
+
   it('does not lock converter dither or fire a pulse storm on it', () => {
     /* Flat spectrum with ±1 LSB churn: the adaptive floor must stay above
        it, or silence would shimmer with phantom kicks. */

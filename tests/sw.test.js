@@ -100,6 +100,104 @@ describe('offline precache', () => {
     expect(share).toBeLessThan(getGate);
     expect(sw).toContain("caches.match('/__shared_audio__')");
   });
+
+  it('only accepts bounded audio through the share target', () => {
+    /* any site can POST to this origin; taking file.type verbatim let a
+       crafted share park text/html in the app cache */
+    expect(sw).toMatch(/const SHARE_MAX_BYTES = 100 \* 1024 \* 1024/);
+    expect(sw).toMatch(/SHARE_AUDIO_TYPES\.has\(type\)/);
+    expect(sw).toMatch(/isSharedAudio\(file\)/);
+    expect(sw).toMatch(/'X-Content-Type-Options': 'nosniff'/);
+  });
+
+  it('treats a missing precache manifest as an install failure in production', () => {
+    expect(sw).toMatch(/if \(!manifestOk && !local\) throw new Error\('precache manifest unavailable'\)/);
+  });
+});
+
+describe('share target behaviour', () => {
+  function loadWorker() {
+    const listeners = {};
+    const puts = [];
+    const cache = {
+      put: async (request, response) => { puts.push({ url: String(request.url || request), response }); },
+      match: async () => undefined,
+      keys: async () => [],
+      delete: async () => true,
+    };
+    const caches = {
+      open: async () => cache,
+      has: async () => true,
+      keys: async () => [],
+      match: async () => undefined,
+      delete: async () => true,
+    };
+    const self = {
+      addEventListener: (name, fn) => { listeners[name] = fn; },
+      location: { origin: 'https://app.test', hostname: 'app.test' },
+      skipWaiting: async () => {},
+      clients: { claim: async () => {} },
+    };
+    const fetchMock = async () => ({ ok: true, status: 200, json: async () => ({ assets: [] }) });
+    const code = readFileSync('public/sw.js', 'utf8');
+    new Function('self', 'caches', 'location', 'fetch', 'Response', 'Request', 'URL', code)(
+      self, caches, self.location, fetchMock, Response, Request, URL,
+    );
+    return { listeners, puts };
+  }
+
+  function runShare(listeners, request) {
+    let response;
+    listeners.fetch({ request, respondWith: (p) => { response = p; }, waitUntil: () => {} });
+    return response;
+  }
+
+  it('caches a valid audio upload with nosniff', async () => {
+    const { listeners, puts } = loadWorker();
+    const form = new FormData();
+    form.append('audio', new File([new Uint8Array(64)], 'song.mp3', { type: 'audio/mpeg' }));
+    const res = await runShare(listeners, new Request('https://app.test/share-target', { method: 'POST', body: form }));
+    expect(res.status).toBe(303);
+    expect(puts).toHaveLength(1);
+    expect(puts[0].response.headers.get('Content-Type')).toBe('audio/mpeg');
+    expect(puts[0].response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  });
+
+  it('refuses HTML and oversized uploads', async () => {
+    const { listeners, puts } = loadWorker();
+    const html = new FormData();
+    html.append('audio', new File(['<script>'], 'x.html', { type: 'text/html' }));
+    await runShare(listeners, new Request('https://app.test/share-target', { method: 'POST', body: html }));
+    expect(puts).toHaveLength(0);
+
+    const huge = {
+      method: 'POST',
+      url: 'https://app.test/share-target',
+      headers: new Headers(),
+      formData: async () => {
+        const f = new FormData();
+        f.append('audio', { size: 200 * 1024 * 1024, type: 'audio/mpeg', name: 'x.mp3' });
+        return f;
+      },
+    };
+    await runShare(listeners, huge);
+    expect(puts).toHaveLength(0);
+  });
+
+  it('rejects a declared oversized body before parsing it', async () => {
+    const { listeners, puts } = loadWorker();
+    let parsed = false;
+    const request = {
+      method: 'POST',
+      url: 'https://app.test/share-target',
+      headers: new Headers({ 'content-length': String(200 * 1024 * 1024) }),
+      formData: async () => { parsed = true; return new FormData(); },
+    };
+    const res = await runShare(listeners, request);
+    expect(res.status).toBe(303);
+    expect(parsed).toBe(false);
+    expect(puts).toHaveLength(0);
+  });
 });
 
 describe('request handling', () => {
@@ -128,7 +226,8 @@ describe('request handling', () => {
   });
 
   it('bounds cache growth without evicting the precached shell', () => {
-    expect(sw).toMatch(/keys\.filter\(\(key\) => !precached\.has/);
+    expect(sw).toMatch(/!precached\.has\(pathname\) && !isProtectedPath\(pathname\)/);
+    expect(sw).toMatch(/pathname\.startsWith\('\/assets\/'\)/);
     expect(sw).toMatch(/removable\.slice\(0, excess\)/);
     expect(sw).toMatch(/const write = cachePut\(request, response\)/);
     expect(sw).toMatch(/event\.waitUntil\(write\)/);

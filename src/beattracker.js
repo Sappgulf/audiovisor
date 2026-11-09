@@ -38,7 +38,12 @@ export class BeatTracker {
     this._intervalCount = 0;
     this._intervalScratch = new Float32Array(24);
     this._anchor = 0;        /* grid point phase-locked to onsets  */
-    this._pendingOnset = null; /* onset detected, not yet audible    */
+    /* Onsets detected in graph time but not yet audible, in order. A single
+       slot lost pulses whenever the onset spacing was shorter than the
+       output latency (8th-note kicks over Bluetooth): each new onset
+       overwrote the previous one before its release time, so pulse never
+       fired at all. A short FIFO keeps every one. */
+    this._pending = [];
     /* Peak-hold estimate of the ambient flux level. The fixed 0.008 onset
        floor this scales was measured against loud material; on a quiet
        acoustic track the kick flux sits around 0.005 and never fired at
@@ -69,6 +74,7 @@ export class BeatTracker {
     this._intervalCount = 0;
     this._fluxPeak = 0;
     this._floor = 0.008;
+    this._pending.length = 0;
   }
 
   /**
@@ -101,10 +107,10 @@ export class BeatTracker {
     /* decay the onset envelope across audio time */
     if (dt > 0) this.pulse *= Math.pow(0.5, dt / 0.11);
 
-    /* release a detected onset only once the listener reaches it */
-    if (this._pendingOnset !== null && heard >= this._pendingOnset) {
+    /* release every detected onset the listener has reached, in order */
+    while (this._pending.length && heard >= this._pending[0]) {
+      this._pending.shift();
       this.pulse = 1;
-      this._pendingOnset = null;
     }
 
     /* spectral flux — weight the kick region more heavily than cymbal/high
@@ -157,7 +163,7 @@ export class BeatTracker {
     if (this._prev && flux > thresh && rising && tSec - this._lastOnset >= gap) {
       // with no latency to wait out, flash immediately
       if (lat <= 0) this.pulse = 1;
-      else this._pendingOnset = tSec;
+      else if (this._pending.length < 64) this._pending.push(tSec);
       this._onOnset(tSec);
       this._lastOnset = tSec;
     }

@@ -5,7 +5,7 @@ import { modeArt } from './mode-art.js';
 export function modeAssetPath(id, animated = false) {
   // Public previews have a long HTTP cache. A new artwork revision must
   // change their URLs so returning listeners see the upgraded scenes.
-  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.32`;
+  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.33`;
 }
 
 /**
@@ -217,7 +217,20 @@ export function createModePicker({
     modeFilterIndex = -1;
   });
   modeFilter?.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { modeFilter.value = ''; modeFilter.dispatchEvent(new Event('input')); modeFilter.blur(); return; }
+    if (e.key === 'Escape') {
+      /* Clear the filter and keep focus in the field: blurring dropped focus
+         to <body> and left the drawer's own Escape step unreachable. Only
+         consume the key when there was something to clear, so the next
+         Escape still closes the phone sheet. */
+      const hadFilter = modeFilter.value.length > 0;
+      modeFilter.value = '';
+      modeFilter.dispatchEvent(new Event('input'));
+      if (hadFilter) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
     if (e.key === 'Enter') {
       const cards = getModeFilterCards();
       if (!cards.length) return;

@@ -4,7 +4,7 @@
 /* Bump on every release. The old name was pinned at v6.3 across many
    deploys, so returning visitors kept being served whatever assets their
    cache already held. */
-const CACHE = 'audiovisor-v8.32.0';
+const CACHE = 'audiovisor-v8.33.0';
 
 /* The shell plus the optional static assets. Hashed build output is appended
    from the build-time manifest below. */
@@ -13,8 +13,42 @@ const PRECACHE = ['/', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512
    without letting one-off URLs grow the cache forever. */
 const MAX_CACHE_ENTRIES = 80;
 /* Filled during install. Runtime trimming must never evict the shell or a
-   hashed chunk that offline boot depends on. */
+   hashed chunk that offline boot depends on. This set is memory-only, and a
+   service worker is routinely restarted after idle — so trimCache() also
+   protects these paths structurally instead of trusting the set alone. */
 let precached = new Set();
+
+/* Paths that offline boot depends on. Kept as a function, not a captured
+   set, so a restarted worker still protects the shell. */
+function isProtectedPath(pathname) {
+  return pathname === '/'
+    || pathname === '/manifest.json'
+    || pathname === '/precache-manifest.json'
+    || pathname.startsWith('/assets/')
+    || pathname.startsWith('/fonts/')
+    || pathname.startsWith('/icons/');
+}
+
+/* The share_target is a POST any site can send to this origin. Accept only
+   real audio with a bounded body: taking file.type verbatim let a crafted
+   share park text/html (or a multi-GB blob) in the app cache and serve it
+   back from the trusted origin. */
+const SHARE_MAX_BYTES = 100 * 1024 * 1024;
+const SHARE_AUDIO_TYPES = new Set([
+  'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/wave', 'audio/x-wav',
+  'audio/vnd.wave', 'audio/flac', 'audio/x-flac', 'audio/ogg', 'audio/oga',
+  'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/opus', 'audio/webm',
+  'audio/aiff', 'audio/x-aiff', 'audio/x-caf',
+]);
+const SHARE_AUDIO_EXT = /\.(mp3|wav|flac|ogg|oga|m4a|mp4|aac|opus|webm|aiff?|caf)$/i;
+
+function isSharedAudio(file) {
+  if (!file || typeof file === 'string' || !file.size) return false;
+  if (file.size > SHARE_MAX_BYTES) return false;
+  const type = String(file.type || '').toLowerCase();
+  if (type) return SHARE_AUDIO_TYPES.has(type);
+  return SHARE_AUDIO_EXT.test(String(file.name || ''));
+}
 
 /* If one of these cannot be cached, keeping the previous worker is safer than
    activating with a shell that cannot boot offline. */
@@ -32,7 +66,10 @@ async function trimCache(cache) {
   const keys = await cache.keys();
   if (keys.length <= MAX_CACHE_ENTRIES) return;
   const excess = keys.length - MAX_CACHE_ENTRIES;
-  const removable = keys.filter((key) => !precached.has(new URL(key.url).pathname));
+  const removable = keys.filter((key) => {
+    const pathname = new URL(key.url).pathname;
+    return !precached.has(pathname) && !isProtectedPath(pathname);
+  });
   await Promise.all(removable.slice(0, excess).map((key) => cache.delete(key)));
 }
 
@@ -64,13 +101,23 @@ self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     const c = await caches.open(CACHE);
     let assets = [...PRECACHE];
+    let manifestOk = false;
     try {
       const res = await fetch('/precache-manifest.json', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.assets)) assets = [...new Set([...assets, ...data.assets])];
+        if (Array.isArray(data.assets)) {
+          assets = [...new Set([...assets, ...data.assets])];
+          manifestOk = true;
+        }
       }
     } catch { /* dev server or an old build without the manifest */ }
+    /* In production a missing manifest means the shell would install with
+       no hashed JS/CSS, and activate would then delete the previous good
+       cache. Failing install keeps the old worker in control. Localhost
+       keeps the shell-only fallback for development. */
+    const local = self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1';
+    if (!manifestOk && !local) throw new Error('precache manifest unavailable');
     precached = new Set(assets);
     /* reload bypasses the HTTP cache so a new SW never seeds itself from a
        stale copy of a shell that the server has already replaced. */
@@ -107,21 +154,30 @@ self.addEventListener('fetch', (e) => {
      the app. The page takes it out of the cache in src/file-loader.js. */
   if (request.method === 'POST' && url.pathname === '/share-target') {
     e.respondWith((async () => {
+      const toApp = () => Response.redirect(new URL('/?shared=1', self.location.origin).toString(), 303);
+      /* Reject an oversized upload before formData() buffers it in memory.
+         SHARE_MAX_BYTES bounds what is cached; this bounds what is parsed. */
+      const declared = Number(request.headers?.get?.('content-length'));
+      if (Number.isFinite(declared) && declared > SHARE_MAX_BYTES + 1024 * 1024) {
+        return toApp();
+      }
       try {
         const form = await request.formData();
         const file = form.get('audio');
-        if (file && typeof file !== 'string' && file.size) {
+        if (isSharedAudio(file)) {
           const shared = new Request(new URL('/__shared_audio__', self.location.origin));
+          const name = encodeURIComponent(String(file.name || 'shared-audio'));
           await cachePut(shared, new Response(file, {
             headers: {
               'Content-Type': file.type || 'audio/mpeg',
-              'X-File-Name': encodeURIComponent(file.name || 'shared-audio'),
-              'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(file.name || 'shared-audio')}`,
+              'X-Content-Type-Options': 'nosniff',
+              'X-File-Name': name,
+              'Content-Disposition': `attachment; filename*=UTF-8''${name}`,
             },
           }));
         }
       } catch { /* bad payload: still return the app */ }
-      return Response.redirect(new URL('/?shared=1', self.location.origin).toString(), 303);
+      return toApp();
     })());
     return;
   }

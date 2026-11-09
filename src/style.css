@@ -1224,12 +1224,19 @@ input[type="range"].ctrl-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 5px;
+  /* The visual track is a 5px line, but the input box is a real 44px hit
+     target at every pointer size. The previous version only padded the box
+     inside the phone media query, so desktop sliders were 5px tall (axe
+     target-size, serious). Painting the track into the content box keeps
+     the look while the control is easy to grab. */
+  height: 44px;
+  padding-block: 19.5px;
   background: rgba(255,235,205,0.08);
+  background-clip: content-box;
   border-radius: 99px;
   cursor: pointer;
   outline: none;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.22) inset;
+  touch-action: none;
 }
 input[type="range"].ctrl-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -1729,8 +1736,14 @@ input[type="range"].ctrl-slider::-moz-range-thumb {
 .queue-row.is-drop { border-color: var(--accent-line); background: var(--accent-dim); }
 .queue-next, .queue-remove { opacity: 0; transition: opacity 0.16s var(--ease), background 0.16s var(--ease); border-radius: 50%; }
 .queue-row:hover .queue-next, .queue-row:hover .queue-remove,
-.queue-row.is-active .queue-next, .queue-row.is-active .queue-remove { opacity: 1; }
+.queue-row.is-active .queue-next, .queue-row.is-active .queue-remove,
+.queue-row.is-selected .queue-next, .queue-row.is-selected .queue-remove,
+.queue-row:focus-within .queue-next, .queue-row:focus-within .queue-remove { opacity: 1; }
 .queue-next:disabled { opacity: 0.25; }
+/* touch devices have no hover, so the per-row actions must be visible */
+@media (hover: none) {
+  .queue-next, .queue-remove { opacity: 1; }
+}
 
 .queue-empty {
   padding: 32px 16px;
@@ -2682,21 +2695,7 @@ html, body {
   /* iOS zooms the page when a focused input is under 16px */
   input, select, textarea { font-size: 16px; }
 
-  /* ---- range sliders were a 5px-tall target ------------------------------
-     The Sensitivity / Bass / Smoothing / Colour / Bloom controls are native
-     range inputs styled to a 5px track, so the whole hit area was 5px tall —
-     touch worked in principle and was near-impossible with a thumb. Pad the
-     box out to a real target and paint the track into the content box, so
-     the control still *looks* like a 5px line. */
-  input[type="range"].ctrl-slider {
-    height: 44px;
-    padding-block: 19.5px;
-    background-clip: content-box;
-    touch-action: none;
-    /* the inset shadow paints on the border box, so once the box is 44px
-       tall it outlined the whole padded area instead of edging the track */
-    box-shadow: none;
-  }
+  /* the taller hit area lives in the base slider rule now */
   .slider-group { margin-block: -6px; }
 
   /* ---- studio / utility buttons sat at 28px ------------------------------ */

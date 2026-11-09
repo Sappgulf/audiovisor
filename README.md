@@ -1,8 +1,16 @@
-# AUDIOVISOR — v8.32.0
+# AUDIOVISOR — v8.33.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Audit & reliability pass (v8.33)
+- **Audio correctness** — beat pulses now queue instead of overwriting when onsets are closer than the output latency (8th-note kicks over Bluetooth fired nothing); crossfades keep the outgoing gain connected; high-rate (88.2–192 kHz) contexts no longer produce an empty bass band; live streams use `currentTime` when `duration` is `Infinity`; the CORS fallback honours volume/mute; track changes retire the previous source, pause streams/external players and no longer hijack the queue; FX/EQ restored before the AudioContext exists are replayed once it is built.
+- **Transport hardening** — the autoplay guard keeps retrying when `resume()` is rejected or the context stays suspended, wake locks re-acquire after a hidden tab, and Auto DJ crossfades fade both sides instead of cutting the old track.
+- **Rendering & resource lifecycle** — GPU Core advances its analysis clock and VU/beat chrome; Canvas2D follows the same 1.2× judder line as raytrace; frames slower than 200 ms still count as evidence; plugin modes no longer adapt the ray stage; display DPR changes reset the baseline; WebGL2 rebuilds after context restore; recording keeps its audio track across takes and survives a stop→start race; autopilot can no longer create duplicate intervals.
+- **UI & accessibility** — queue/library are mutually exclusive with correct `aria-hidden`; closing either restores focus; phone sheets make the covered page inert; stacked dialogs consume one Escape each; the command palette keeps `aria-activedescendant` on the focused combobox; mode-filter Escape keeps focus; sliders have a 44px hit target at every pointer size; queue row actions are visible on focus/touch; the Stage tab returns to the stage.
+- **Security & PWA** — CSP drops `script-src 'unsafe-inline'` and adds `script-src-attr 'none'`; the share target accepts only bounded audio and serves it with `nosniff`; a missing precache manifest fails install in production instead of deleting a good cache; cache trimming protects the shell structurally after a worker restart; SW updates do not reload an in-progress Spotify OAuth callback; social/comment storage drops malformed entries; shared FX keys are allowlisted.
+- **Tests & gates** — 74 files / 1,109 unit tests; coverage 65.7% statements, 49.9% branches, 53.7% functions, 68.0% lines (CI floors raised); desktop E2E 76/76, mobile E2E 60/60, axe 26 live surfaces (now including WCAG 2.2 AA) and offline first-install checks all pass; bundle stays within budget at 132.8 kB gzipped.
 
 ### Professional polish pass (v8.32)
 - **Canvas2D fallback rebuilt** — all 24 fallback modes were reworked with palette-preserving highlights, better depth, grounding, atmospheric layers and per-mode composition. Worst clipping dropped to 0.2% while saturation rose across terrain, spectrogram and fluid.

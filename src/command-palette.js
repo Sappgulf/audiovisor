@@ -56,8 +56,10 @@ export function createCommandPalette({ commands, doc = document }) {
         .map((c, i) => `<div class="cmd-item ${i === active ? 'is-active' : ''}" id="cmd-item-${i}" role="option" aria-selected="${i === active}" tabindex="-1" data-i="${i}"><span>${esc(c.label)}</span><kbd>↵</kbd></div>`)
         .join('')
       : '<div class="cmd-empty"><strong>No matches</strong><span>Try a mode, theme, or effect name.</span></div>';
-    if (count) list.setAttribute('aria-activedescendant', `cmd-item-${active}`);
-    else list.removeAttribute('aria-activedescendant');
+    /* Focus stays in the combobox; aria-activedescendant belongs on it, not
+       on the listbox, or arrow-key movement is silent to screen readers. */
+    if (count) input?.setAttribute('aria-activedescendant', `cmd-item-${active}`);
+    else input?.removeAttribute('aria-activedescendant');
     status.textContent = count ? `${count} commands available` : 'No matches';
     input?.setAttribute('aria-expanded', String(Boolean(count)));
   }
@@ -103,11 +105,14 @@ export function createCommandPalette({ commands, doc = document }) {
     else if (e.key === 'Home') { e.preventDefault(); active = 0; render(input.value); }
     else if (e.key === 'End') { e.preventDefault(); active = Math.max(visible.length - 1, 0); render(input.value); }
     else if (e.key === 'Enter') { e.preventDefault(); const c = visible[active]; if (c) { c.action(); close(); } }
-    else if (e.key === 'Escape') close();
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
   });
   doc.defaultView?.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); toggle(); }
-    if (e.key === 'Escape' && !palette.classList.contains('is-hidden')) close();
+    if (e.key === 'Escape' && !palette.classList.contains('is-hidden')) {
+      e.preventDefault();
+      close();
+    }
   });
 
   return { open, close, toggle };

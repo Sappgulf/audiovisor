@@ -43,6 +43,16 @@ describe('command palette', () => {
     expect(document.getElementById('cmd-item-0').getAttribute('aria-selected')).toBe('true');
   });
 
+  it('puts aria-activedescendant on the focused combobox, not the listbox', () => {
+    const { palette } = setup();
+    const input = document.getElementById('cmd-input');
+    palette.open();
+    expect(input.getAttribute('aria-activedescendant')).toBe('cmd-item-0');
+    expect(document.getElementById('cmd-list').hasAttribute('aria-activedescendant')).toBe(false);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    expect(input.getAttribute('aria-activedescendant')).toBe('cmd-item-1');
+  });
+
   it('shows an empty state and exposes the command count', () => {
     const { palette } = setup();
     const input = document.getElementById('cmd-input');
