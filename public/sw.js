@@ -4,7 +4,7 @@
 /* Bump on every release. The old name was pinned at v6.3 across many
    deploys, so returning visitors kept being served whatever assets their
    cache already held. */
-const CACHE = 'audiovisor-v8.33.0';
+const CACHE = 'audiovisor-v8.34.0';
 
 /* The shell plus the optional static assets. Hashed build output is appended
    from the build-time manifest below. */

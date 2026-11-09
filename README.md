@@ -1,8 +1,15 @@
-# AUDIOVISOR — v8.33.0
+# AUDIOVISOR — v8.34.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Full-frame mode redesign (v8.34)
+- **The stage is gone** — the room, plinth, table, dais, bezel and pylon dressing was removed from every sculptural mode. Modes now fill the frame as environments or fields instead of sitting as a small object on a set.
+- **Rebuilt as graphic fields** — Scope is a phosphor trace in the dark; Particle Field is an ember vortex; Kaleidoscope is a twelve-fold mandala; Plasma Rings is a full-screen storm; Pulse Orb is a banded gas giant; Tensor Grid is a perspective lattice; Prism Ray is a spectral fan; Bloom Field is a bioluminescent bloom; Fractal Bloom is a Julia-set field; Lava Lamp is a macro wax field; GPU Core is an endless circuit substrate.
+- **Framing pass** — Spectrogram became a terrace landscape; Beat Radar and Vinyl Groove were reframed to fill the frame; Fluid Metal is a mercury sea; Bars, Waves, Radial Tunnel, Aurora Terrain, Neon City, Nebula Clouds, Spiral Galaxy, Void Core and Chladni Field keep their signatures without the shared stage dressing.
+- **Previews regenerated** — all 24 picker stills and hover strips were recaptured from the new scenes (593 kB total, still under the artwork budget).
+- **Tests** — the full unit, E2E, accessibility and offline gates still pass.
 
 ### Audit & reliability pass (v8.33)
 - **Audio correctness** — beat pulses now queue instead of overwriting when onsets are closer than the output latency (8th-note kicks over Bluetooth fired nothing); crossfades keep the outgoing gain connected; high-rate (88.2–192 kHz) contexts no longer produce an empty bass band; live streams use `currentTime` when `duration` is `Infinity`; the CORS fallback honours volume/mute; track changes retire the previous source, pause streams/external players and no longer hijack the queue; FX/EQ restored before the AudioContext exists are replayed once it is built.
