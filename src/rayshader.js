@@ -72,6 +72,13 @@ float hist(float x, float age) {
   float row = fract(uHistRow - age);
   return texture(uHist, vec2(clamp(x, 0.0, 1.0), row)).r;
 }
+float histBlock(float x, float age) {
+  // hard texel fetch, for a crisp spectrogram matrix
+  float row = fract(uHistRow - age);
+  int ci = int(clamp(x, 0.0, 0.9999) * 255.0);
+  int ri = int(clamp(row, 0.0, 0.9999) * 127.0);
+  return texelFetch(uHist, ivec2(ci, ri), 0).r;
+}
 vec3 pal(int i) { return uPal[i % uPalN]; }
 /* Colour flow happens on the CPU: the five uPal entries are re-sampled
    from the theme's ramp every frame at drifting positions (see
@@ -227,25 +234,6 @@ float addRoom(vec3 p, float d, float radius, float halfHeight, float floorY) {
 
 /* ---------------- scenes ---------------- */
 
-/* 2 scope — a full-frame phosphor trace field. The live Lissajous figure
-   hangs in the dark with a wide halo; no housing, panel or bezel. */
-float scScope(vec3 p) {
-  float d = p.z + 0.10;
-  g_id = 27.0; g_aux = 0.0;
-  float rad = 0.020 + uLevel * 0.012 + uBeat * 0.008;
-  for (int i = 0; i < 40; i++) {
-    vec4 A = uScope[i];
-    vec4 B = uScope[i + 1];
-    vec3 a = vec3(A.xy + vec2(A.w, 0.0), 0.0);
-    vec3 b = vec3(B.xy + vec2(B.w, 0.0), 0.0);
-    float s = sdCapsule(p, a, b, rad);
-    if (s < d) { d = s; g_id = 20.0; g_aux = fract(float(i) / 40.0 + uTime * 0.04); }
-    float halo = sdCapsule(p, a, b, rad * 3.6);
-    if (halo < d) { d = halo; g_id = 4.0; g_aux = fract(float(i) / 40.0); }
-  }
-  return d;
-}
-
 /* 6 tunnel — ribbed hyperspace bore */
 float scTunnel(vec3 p) {
   float z = p.z + uTime * 3.2;
@@ -255,15 +243,12 @@ float scTunnel(vec3 p) {
   float r = max(2.3 - band * 0.7 * uSens - uBeat * 0.12 - uDrop * 0.2, 0.9);
   float ang = atan2s(p.y, p.x);
   float wob = sin(ang * 6.0 + cell * 0.7 + uTime) * 0.09 * (0.3 + uMid);
-  float ring = length(vec2(length(p.xy) - r + wob, lz)) - (0.03 + band * 0.05);
+  float rad = length(p.xy);
+  float ring = length(vec2(rad - r + wob, lz)) - (0.03 + band * 0.05);
   float d = ring;
   g_id = 4.0; g_aux = fract(cell * 0.083);
-  float wall = -(length(p.xy) - (r + 0.85));
+  float wall = -(rad - (r + 0.85));
   if (wall < d) { d = wall; g_id = 6.0; g_aux = 0.2; }
-  float sector = floor(ang / (TAU / 4.0) + 0.5) * (TAU / 4.0);
-  vec2 railC = vec2(cos(sector), sin(sector)) * (r - 0.45);
-  float rail = length(p.xy - railC) - 0.010;
-  if (rail < d) { d = rail; g_id = 4.0; g_aux = 0.46; }
   return d;
 }
 
@@ -285,7 +270,7 @@ float scTerrain(vec3 p) {
      the submission. */
   ridge += fbm2a(vec2(p.x * 0.55, p.z * 0.55 + uTime * 0.05)) * 0.9;
   ridge += fbm2b(vec2(p.x * 1.7, p.z * 1.7)) * 0.28;      // crest detail
-  float d = (p.y + 1.2 - ridge) * 0.34;            // conservative slope for the heightfield march
+  float d = (p.y + 1.2 - ridge) * 0.40;            // conservative slope for the heightfield march
   g_id = 7.0; g_aux = clamp(ridge * 0.4, 0.0, 1.0);
   return d;
 }
@@ -304,7 +289,6 @@ float scChladni(vec3 p) {
 
 /* dispatcher */
 float map(vec3 p) {
-  if (uMode == 2)  return scScope(p);
   if (uMode == 6)  return scTunnel(p);
   if (uMode == 8)  return scTerrain(p);
   if (uMode == 23) return scChladni(p);
@@ -796,13 +780,7 @@ void camera(float t, vec2 uv, vec2 dofJitter, out vec3 ro, out vec3 rd) {
   float fov = 1.5;
   float ap = 0.012;
   float sway = sin(t * 0.21) * 0.22;
-  if (uMode == 2) {
-    float aspect = uRes.x / max(uRes.y, 1.0);
-    ro = vec3(sin(t * 0.11) * 0.06, cos(t * 0.09) * 0.05, 4.3);
-    ta = vec3(0.0);
-    ap = 0.006;
-    fov = 1.55 * min(1.0, aspect);
-  } else if (uMode == 6) {
+  if (uMode == 6) {
     ro = vec3(sin(t * 0.4) * 0.3, cos(t * 0.33) * 0.3, 4.0);
     ta = ro + vec3(0.0, 0.0, -1.0);
     ap = 0.02;
@@ -878,9 +856,8 @@ float sdSegment2(vec2 p, vec2 a, vec2 b) {
 }
 
 bool isFieldMode(int m) {
-  /* everything except the tunnel, terrain and chladni signatures is a
-     full-frame graphic field now */
-  return m != 2 && m != 6 && m != 8 && m != 23;
+  /* only the tunnel, terrain and chladni signatures still ray-march */
+  return m != 6 && m != 8 && m != 23;
 }
 
 vec3 fieldScene(vec2 uv, vec3 field) {
@@ -889,7 +866,23 @@ vec3 fieldScene(vec2 uv, vec3 field) {
   float aspect = uRes.x / max(uRes.y, 1.0);
   vec3 col = vec3(0.0);
 
-  if (uMode == 0) {
+  if (uMode == 2) {
+    /* phosphor Lissajous trace */
+    vec2 p = uv * 2.40;
+    float thin = 0.012 + uLevel * 0.008 + uBeat * 0.006;
+    for (int i = 0; i < 40; i++) {
+      vec4 A = uScope[i];
+      vec4 B = uScope[i + 1];
+      vec2 a = A.xy + vec2(A.w, 0.0);
+      vec2 b = B.xy + vec2(B.w, 0.0);
+      float d = sdSegment2(p, a, b);
+      float core = 1.0 - smoothstep(thin, thin * 2.0, d);
+      float halo = exp(-d * 35.0);
+      vec3 cc = palf(fract(float(i) / 40.0 + uTime * 0.04));
+      col += cc * (core * (1.0 + uLevel) + halo * 0.18) * (0.6 + uBeat * 0.4);
+    }
+    col += palf(0.80) * exp(-length(p) * 1.5) * 0.03;
+  } else if (uMode == 0) {
     /* full-frame spectrum equalizer with a mirror finish */
     float x = uv.x / (2.0 * aspect) + 0.5;
     float idx = floor(x * 56.0);
@@ -955,22 +948,22 @@ vec3 fieldScene(vec2 uv, vec3 field) {
     col = cc * pattern * (0.45 + uLevel * 0.9 + uBeat * 0.4)
         + palf(0.92) * pow(pattern, 4.0) * 0.55;
   } else if (uMode == 5) {
-    /* time/frequency waterfall as a coarse scrolling matrix */
+    /* time/frequency waterfall as a crisp matrix */
     float u = clamp(uv.x / (2.0 * aspect) + 0.5, 0.0, 1.0);
-    float cols = 40.0, rows = 18.0;
+    float cols = 48.0, rows = 24.0;
     vec2 g = vec2(u * cols, (0.5 - uv.y * 0.5) * rows + uTime * 3.0);
     vec2 id = floor(g), f = fract(g) - 0.5;
     float age = fract(id.y / rows - uTime * 0.04);
-    float e = hist((id.x + 0.5) / cols, age);
-    float cell = (1.0 - smoothstep(0.30, 0.46, max(abs(f.x), abs(f.y))))
-               * smoothstep(0.12, 0.45, e);
-    vec3 cc = palf(fract(0.55 + (id.x / cols) * 0.30 + (id.y / rows) * 0.10));
-    col = cc * cell * (0.30 + e * 1.4 + uBeat * 0.20)
-        + palf(0.92) * pow(cell, 3.0) * 0.40;
-    float contour = 1.0 - smoothstep(0.02, 0.06, abs(fract(e * 6.0) - 0.5));
-    col += cc * contour * cell * (0.06 + uLevel * 0.10);
-    float newest = 1.0 - smoothstep(0.0, 0.03, abs(uv.y + 1.0));
-    col += palf(0.80) * newest * (0.15 + uLevel * 0.25);
+    float e = histBlock((id.x + 0.5) / cols, age);
+    float lit = smoothstep(0.10, 0.50, e);
+    float cell = (1.0 - smoothstep(0.30, 0.46, max(abs(f.x), abs(f.y)))) * lit;
+    vec3 cc = palf(fract(0.55 + (id.x / cols) * 0.32 + (id.y / rows) * 0.10));
+    col = cc * cell * (0.45 + e * 2.0 + uBeat * 0.25)
+        + palf(0.95) * pow(cell, 3.0) * 0.55;
+    col += cc * cell * (1.0 - smoothstep(0.0, 0.10, abs(f.y))) * 0.20;
+    float se = pow(spec(u), 1.2);
+    float curve = 1.0 - smoothstep(0.0, 0.012, abs(uv.y + 0.86 - se * 0.38));
+    col += palf(0.90) * curve * (0.55 + uBeat * 0.5);
   } else if (uMode == 7) {
     /* plasma storm */
     vec2 p = uv * 1.4;
@@ -988,90 +981,97 @@ vec3 fieldScene(vec2 uv, vec3 field) {
     float x = uv.x / (2.0 * aspect) + 0.5;
     float y = uv.y;
     float horizon = -0.42;
-    col = palf(0.18) * exp(-(y - horizon) * 2.0) * 0.06 + palf(0.30) * 0.01;
+    col = mix(palf(0.04) * 0.01, palf(0.24) * 0.06, smoothstep(horizon, 0.9, y));
     /* moon */
-    vec2 mp = vec2(x - 0.24, y - 0.66);
-    float moon = 1.0 - smoothstep(0.085, 0.110, length(mp));
-    col += palf(0.95) * moon * 0.55
-         + palf(0.65) * exp(-length(mp) * 9.0) * 0.10;
+    vec2 mp = vec2((x - 0.22) * aspect, y - 0.68);
+    float moon = 1.0 - smoothstep(0.055, 0.072, length(mp));
+    col += palf(0.95) * moon * 0.75
+         + palf(0.72) * exp(-length(mp) * 11.0) * 0.12;
     /* stars */
-    vec2 sg = floor(vec2(x, y) * vec2(120.0, 80.0));
-    vec2 sf = fract(vec2(x, y) * vec2(120.0, 80.0)) - 0.5;
+    vec2 sg = floor(vec2(x, y) * vec2(130.0, 90.0));
+    vec2 sf = fract(vec2(x, y) * vec2(130.0, 90.0)) - 0.5;
     float sh = hash11(sg.x * 13.0 + sg.y * 29.0);
     float star = (1.0 - smoothstep(0.0, 0.20, length(sf)))
-               * step(0.985, sh) * step(horizon, y);
-    col += palf(fract(sh * 6.0)) * star * 0.7;
+               * step(0.986, sh) * step(horizon, y);
+    col += palf(fract(sh * 6.0)) * star * 0.8;
     /* far layer */
-    float cellB = floor(x * 34.0);
-    float hB = hash11(cellB * 23.0) * 0.38 + 0.10;
+    float cellB = floor(x * 30.0);
+    float hB = hash11(cellB * 23.0) * 0.34 + 0.08;
     float bodyB = step(horizon, y) * step(y, horizon + hB)
-                * (1.0 - smoothstep(0.40, 0.48, abs(fract(x * 34.0) - 0.5)));
-    col += palf(0.12) * bodyB * 0.035 + palf(0.45) * bodyB * 0.008;
-    /* near layer — varied widths and window grids */
-    float cell = floor(x * 15.0);
-    float fx = fract(x * 15.0) - 0.5;
-    float h = hash11(cell * 17.3) * 0.78 + 0.16;
-    h += spec(fract(hash11(cell * 7.1))) * 0.30 * uSens;
-    float top = horizon + h;
+                * (1.0 - smoothstep(0.38, 0.46, abs(fract(x * 30.0) - 0.5)));
+    col += palf(0.12) * bodyB * 0.045;
+    /* near layer */
+    float cell = floor(x * 14.0);
+    float fx = fract(x * 14.0) - 0.5;
+    float h = hash11(cell * 17.3);
+    float bw = 0.26 + 0.14 * hash11(cell * 3.7);
+    float top = horizon + 0.16 + h * 0.72 + spec(fract(hash11(cell * 7.1))) * 0.22;
     float bodyMask = step(horizon, y) * step(y, top)
-                   * (1.0 - smoothstep(0.30, 0.30 + 0.10 * hash11(cell * 5.1), abs(fx)));
-    vec2 wf = abs(fract(vec2((fx + 0.5) * (3.0 + floor(hash11(cell * 9.1) * 3.0)),
-                             (y - horizon) * (8.0 + floor(hash11(cell * 2.7) * 5.0)))) - 0.5);
-    float win = (1.0 - smoothstep(0.14, 0.24, wf.x))
-              * (1.0 - smoothstep(0.18, 0.30, wf.y))
-              * step(0.28, hash11(cell * 5.7 + floor((y - horizon) * 10.0)));
+                   * (1.0 - smoothstep(bw, bw + 0.05, abs(fx)));
+    float wc = 2.0 + floor(hash11(cell * 9.1) * 2.0);
+    float wr = 8.0 + floor(hash11(cell * 2.7) * 5.0);
+    vec2 wf = abs(fract(vec2((fx + bw) / (bw * 2.0) * wc,
+                             (y - horizon) * wr)) - 0.5);
+    float lit = step(0.55, hash11(cell * 5.7 + floor((y - horizon) * wr)
+                   + floor((fx + bw) * wc * 3.0)));
+    float win = (1.0 - smoothstep(0.12, 0.22, wf.x))
+              * (1.0 - smoothstep(0.18, 0.30, wf.y)) * lit;
     vec3 bc = palf(fract(0.10 + hash11(cell * 3.1) * 0.7));
-    col += bc * bodyMask * (0.07 + win * (0.45 + uLevel * 0.5))
-         + palf(0.92) * win * bodyMask * 0.55;
-    /* neon sign bands on some towers */
-    float signOn = step(0.76, hash11(cell * 11.3));
+    col += bc * bodyMask * (0.08 + win * (0.5 + uLevel * 0.5))
+         + palf(0.92) * win * bodyMask * 0.65;
+    /* neon sign on some towers */
+    float signOn = step(0.72, hash11(cell * 11.3));
     float sign = signOn * (1.0 - smoothstep(0.0, 0.018, abs(y - (top - 0.10))))
-               * (1.0 - smoothstep(0.12, 0.18, abs(fx)));
+               * (1.0 - smoothstep(0.10, 0.16, abs(fx)));
     col += palf(fract(hash11(cell * 4.1))) * sign * (0.8 + uBeat * 0.6);
     /* antenna on the tall towers */
-    float crown = step(0.72, hash11(cell * 9.7))
-                * (1.0 - smoothstep(0.0, 0.012, abs(fx)))
-                * step(top, y) * step(top + 0.20, y + 0.20);
+    float crown = step(0.68, hash11(cell * 9.7))
+                * (1.0 - smoothstep(0.0, 0.010, abs(fx)))
+                * step(top, y) * step(top + 0.22, y + 0.22);
     col += palf(0.85) * crown * (0.5 + uBeat * 0.7);
-    /* reflection */
+    /* reflection with a ripple */
     float ry = horizon - (y - horizon);
-    vec2 mwf = abs(fract(vec2((fx + 0.5) * 3.0, (ry - horizon) * 9.0)) - 0.5);
-    float mwin = (1.0 - smoothstep(0.14, 0.24, mwf.x))
+    float wob = 0.004 * sin(y * 90.0 + uTime * 2.0);
+    vec2 mwf = abs(fract(vec2(((fx + wob) + bw) / (bw * 2.0) * wc,
+                              (ry - horizon) * wr)) - 0.5);
+    float mwin = (1.0 - smoothstep(0.12, 0.22, mwf.x))
                * (1.0 - smoothstep(0.18, 0.30, mwf.y))
-               * step(0.28, hash11(cell * 5.7 + floor((ry - horizon) * 9.0)));
+               * step(0.55, hash11(cell * 5.7 + floor((ry - horizon) * wr)));
     float mirror = step(-1.0, y) * step(y, horizon) * step(ry, top)
-                 * (1.0 - smoothstep(0.30, 0.40, abs(fx)));
-    col += bc * mirror * 0.06 + palf(0.92) * mwin * mirror * 0.12;
+                 * (1.0 - smoothstep(bw, bw + 0.05, abs(fx + wob)));
+    col += bc * mirror * 0.07 + palf(0.92) * mwin * mirror * 0.14;
     col += palf(0.55) * exp(-abs(y - horizon) * 70.0) * (0.10 + uLevel * 0.15);
   } else if (uMode == 10) {
     /* filamented nebula cloud */
-    vec2 p = uv * 1.1;
-    float w1 = fbm2a(p * 2.0 + vec2(uTime * 0.025, -uTime * 0.015));
-    float w2 = fbm2b(p * 4.8 - vec2(uTime * 0.02, uTime * 0.01));
-    float cloud = smoothstep(0.36, 0.72, w1 * 0.70 + w2 * 0.50);
-    float lane = smoothstep(0.52, 0.70, fbm2a(p * 2.8 + vec2(9.0, 3.0)));
-    float filament = pow(1.0 - abs(w2 * 2.0 - 1.0), 7.0);
-    vec3 cc = palf(fract(0.30 + w1 * 0.60 + uv.x * 0.05 + uTime * 0.01));
-    col = cc * cloud * (0.15 + uLevel * 0.75 + uBeat * 0.20) * (1.0 - lane * 0.62)
-        + palf(0.92) * filament * cloud * (0.35 + uHigh * 0.75)
-        + palf(0.95) * exp(-length(uv * vec2(1.0, 1.5)) * 3.2) * (0.12 + uBass * 0.45);
-    vec2 g = floor(uv * 95.0), f = fract(uv * 95.0) - 0.5;
+    vec2 p = uv * 1.2;
+    float n1 = fbm2a(p * 2.2 + vec2(uTime * 0.03, 0.0));
+    float n2 = fbm2b(p * 5.2 - vec2(0.0, uTime * 0.02));
+    float n3 = vnoise2(p * 11.0 + uTime * 0.05);
+    float cloud = smoothstep(0.42, 0.76, n1 * 0.70 + n2 * 0.35 + n3 * 0.15);
+    float rim = pow(clamp(1.0 - abs(n1 * 2.0 - 1.0), 0.0, 1.0), 10.0);
+    float dust = smoothstep(0.55, 0.76, fbm2a(p * 3.2 + vec2(7.0, 2.0)));
+    vec3 cc = palf(fract(0.30 + n1 * 0.55 + uv.x * 0.05));
+    col = cc * cloud * (0.20 + uLevel * 0.90 + uBeat * 0.25) * (1.0 - dust * 0.70)
+        + palf(0.95) * rim * cloud * (0.35 + uHigh * 0.90)
+        + palf(0.95) * exp(-length(uv * vec2(1.0, 1.5)) * 4.0) * (0.18 + uBass * 0.50);
+    vec2 g = floor(uv * 100.0), f = fract(uv * 100.0) - 0.5;
     float h = hash11(g.x * 13.0 + g.y * 29.0);
-    float star = (1.0 - smoothstep(0.0, 0.14, length(f))) * step(0.982, h);
-    col += palf(fract(h * 7.0)) * star * (0.6 + uHigh);
+    float star = (1.0 - smoothstep(0.0, 0.13, length(f))) * step(0.982, h);
+    col += palf(fract(h * 7.0)) * star * (0.7 + uHigh);
   } else if (uMode == 11) {
     /* spiral galaxy */
-    float arms = pow(0.5 + 0.5 * sin(a * 2.0 + log(r + 0.06) * 7.0 - uTime * 0.12), 7.0);
+    float arms = pow(0.5 + 0.5 * sin(a * 2.0 + log(r + 0.06) * 7.0 - uTime * 0.12), 8.0);
+    float arms2 = pow(0.5 + 0.5 * sin(a * 2.0 + log(r + 0.06) * 7.0 - uTime * 0.12 + PI), 10.0) * 0.35;
     float dust = fbm2a(vec2(a * 3.0, log(r + 0.12) * 5.0 + uTime * 0.02));
-    float disc = exp(-r * 1.25) * smoothstep(0.0, 0.10, r);
+    float disc = exp(-r * 1.20) * smoothstep(0.0, 0.10, r);
     vec3 cc = palf(fract(0.12 + r * 0.50 + uTime * 0.01));
-    col = cc * disc * (0.05 + arms * (1.0 + uLevel * 0.9) + dust * 0.12)
-        + palf(0.95) * exp(-r * 10.0) * (0.55 + uBass * 1.3 + uBeat * 0.6);
-    col *= 1.0 - dust * 0.55;
+    col = cc * disc * (0.04 + (arms + arms2) * (1.1 + uLevel * 1.0) + dust * 0.10)
+        + palf(0.95) * exp(-r * 12.0) * (0.70 + uBass * 1.4 + uBeat * 0.6);
+    col *= 1.0 - dust * 0.60;
     vec2 sg = floor(uv * 80.0), sf = fract(uv * 80.0) - 0.5;
     float sh = hash11(sg.x * 17.0 + sg.y * 31.0);
-    float star = (1.0 - smoothstep(0.0, 0.13, length(sf))) * step(0.986, sh) * disc;
-    col += palf(fract(sh * 5.0)) * star * 1.4;
+    float star = (1.0 - smoothstep(0.0, 0.12, length(sf))) * step(0.984, sh) * disc;
+    col += palf(fract(sh * 5.0)) * star * 1.5 * (0.4 + arms);
   } else if (uMode == 12) {
     /* gas-giant orb */
     float rr = length(uv);
@@ -1282,7 +1282,7 @@ vec3 fieldScene(vec2 uv, vec3 field) {
     col += vec3(1.0) * exp(-abs(r - 0.93) * 40.0) * 0.06;
   }
 
-  return col + field * 0.35;
+  return col + field * 0.18;
 }
 
 /* ---------------- main trace ---------------- */

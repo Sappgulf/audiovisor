@@ -66,19 +66,19 @@ describe('ray shaders', () => {
   });
 
   it('keeps 3D scene branches for the signature modes', () => {
-    /* scope, tunnel, terrain and chladni still use the ray marcher */
-    for (const fn of ['scScope', 'scTunnel', 'scTerrain', 'scChladni']) {
+    /* tunnel, terrain and chladni still use the ray marcher */
+    for (const fn of ['scTunnel', 'scTerrain', 'scChladni']) {
       expect(SCENE_FRAG).toContain(`float ${fn}(vec3 p)`);
     }
     const map = SCENE_FRAG.slice(SCENE_FRAG.indexOf('float map('),
       SCENE_FRAG.indexOf('vec3 normalAt'));
-    for (const fn of ['scScope', 'scTunnel', 'scTerrain', 'scChladni']) {
+    for (const fn of ['scTunnel', 'scTerrain', 'scChladni']) {
       expect(map, fn).toContain(`return ${fn}(p)`);
     }
   });
 
   it('routes every non-signature mode through the full-frame field path', () => {
-    const signature = new Set(['scope', 'tunnel', 'terrain', 'chladni']);
+    const signature = new Set(['tunnel', 'terrain', 'chladni']);
     const fn = SCENE_FRAG.slice(SCENE_FRAG.indexOf('bool isFieldMode'),
       SCENE_FRAG.indexOf('bool isFieldMode') + 220);
     MODES.forEach((m, i) => {
@@ -137,7 +137,7 @@ describe('ray shaders', () => {
 
   it('gives every ray-marched mode a camera rig', () => {
     const cam = SCENE_FRAG.slice(SCENE_FRAG.indexOf('void camera('), SCENE_FRAG.indexOf('/* ---------------- main trace'));
-    for (const id of ['scope', 'tunnel', 'terrain', 'chladni']) {
+    for (const id of ['tunnel', 'terrain', 'chladni']) {
       const i = MODES.findIndex((m) => m.id === id);
       expect(cam.includes(`uMode == ${i})`), `camera for ${id}`).toBe(true);
     }

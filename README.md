@@ -1,8 +1,15 @@
-# AUDIOVISOR — v8.35.0
+# AUDIOVISOR — v8.36.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Mode polish & performance (v8.36)
+- **Scope off the ray marcher** — Vectorscope was still a ray-marched 40-segment trace, measured at 101.5 ms/frame in the per-mode sweep. It is now a direct phosphor field, down to roughly 4 ms while keeping the stereo-sheared Lissajous trace.
+- **Tunnel and terrain trimmed** — the tunnel lost its per-step rail geometry and reuses the radial distance; terrain uses a less conservative heightfield step. Sweep cost fell 20.2→11.6 ms and 13.8→9.7 ms respectively. All field modes hold 60 fps at 1440×900 on the reference machine.
+- **Visual polish** — Bars/Waves/Scope now use the same direct-field path; the spectrogram is a crisp texel-fed time/frequency matrix with a live spectrum curve; Neon City gained a moon, varied building widths, smaller windows, neon signs and a rippled street reflection; Nebula gained higher-frequency filaments, dust lanes and a bright core; Spiral gained sharper arms, a second arm pass and star fields.
+- **Shader cleanup** — removed the 3D scenes, volumetric marcher, camera rigs and volume calls no longer used by the field modes. The raystage chunk dropped to ~22 kB gzip and the total bundle to 129.7/136 kB, leaving real headroom again.
+- **Previews** — all 24 picker stills and hover strips recaptured from the current shader.
 
 ### Full-frame mode redesign (v8.35)
 - **One graphic language** — every mode now fills the frame. The staged rooms, plinths, tables, daises, bezels and pylons are gone; Radial Tunnel, Aurora Terrain and Chladni Field keep their 3D signatures, and the other twenty-one modes are direct procedural fields composited through the same bloom/tonemap path.

@@ -68,6 +68,16 @@ const rows = await page.evaluate(({ tier, count, frames, repeats }) => {
   for (let m = 0; m < count; m++) {
     try {
       pin();
+      /* Resolve the specialised program before timing. With parallel link,
+         pump() keeps drawing the previous mode until the new program is
+         ready, which made a field mode's cost appear against the heavy
+         scenes (and vice versa). */
+      for (let tries = 0; tries < 40 && av.ray._drawnMode !== m; tries++) {
+        av.ray._scene(m);
+        av.pump(m, 5, 3);
+        drain();
+      }
+      if (av.ray._drawnMode !== m) throw new Error(`mode ${m} never drew`);
       av.pump(m, frames, 3);
       drain();                                   // warm: shaders, textures, tier
       const runs = [];
