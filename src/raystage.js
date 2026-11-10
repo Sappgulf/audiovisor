@@ -751,7 +751,13 @@ export class RayStage {
        the whole static block. */
     if (sp.rev !== this._lookRev) {
       gl.uniform1i(u.uSpp, q.spp);
-      gl.uniform1i(u.uSteps, q.steps);
+      /* Tunnel and terrain are the two heaviest marches; shaving their
+         step budget by a quarter is invisible at stage size but keeps them
+         out of the low tier on the reference machine. */
+      const steps = (drawMode === 6 || drawMode === 8)
+        ? Math.max(48, Math.round(q.steps * 0.75))
+        : q.steps;
+      gl.uniform1i(u.uSteps, steps);
       gl.uniform1i(u.uRefl, q.refl);
       /* always five stops: _flowPal resamples any palette length to five */
       gl.uniform1i(u.uPalN, 5);

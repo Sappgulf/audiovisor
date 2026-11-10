@@ -1,8 +1,17 @@
-# AUDIOVISOR — v8.36.0
+# AUDIOVISOR — v8.37.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Live feel & control pass (v8.37)
+- **Fields move now** — every direct-field mode breathes with the beat, punches in on drops and adds a tiny drop-only shake. Each mode also gets its own palette hue, so Bars, Waves, City, Nebula, Spiral, Fluid, Orb and the rest no longer read as one colourway.
+- **Mode transitions** — the outgoing canvas is snapshotted and crossfaded over the new mode for ~240 ms, so switching feels like a cut through the same stage instead of a hard flash.
+- **Favourites and categories** — star the current mode, filter the grid to favourites, or narrow it to Spectral / Geometric / Organic / Cosmic / Instrument. Autopilot cycles favourites when any exist.
+- **Performance HUD** — press `` ` `` or open `/?perf=1` for live FPS, frame time, mode, tier, resolution and backend. The Look surface now warms every specialised shader program in the background, so the first switch to a mode no longer pays a compile stall.
+- **Mode upgrades** — Neon City gained rain, car light trails, lightning, a moon and a rippled reflection; Nebula gained god rays and a dense core cluster; Void Core lensed its background stars and added an Einstein ring; Vinyl gained dust, scratches, a raised label ring and a tonearm shadow; Radar gained phosphor trails and live noise.
+- **Real-track test** — `npm run modes:audio` loads a real song through the file picker, cycles every mode, checks live analysis and captures a screenshot per mode. Night Voltage passes 24/24 at 60 fps except the two heaviest ray-marched modes, which adapt down a tier.
+- **Gates** — 77 files / 1,148 unit tests, desktop and mobile E2E, axe (26 live surfaces), offline first install and the real-track sweep all pass. Entry 64.5/66 kB gzip, total 133.1/138 kB.
 
 ### Mode polish & performance (v8.36)
 - **Scope off the ray marcher** — Vectorscope was still a ray-marched 40-segment trace, measured at 101.5 ms/frame in the per-mode sweep. It is now a direct phosphor field, down to roughly 4 ms while keeping the stereo-sheared Lissajous trace.

@@ -1027,6 +1027,46 @@ button:focus-visible, input:focus-visible {
 
 .mode-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 
+/* Mode tools: favorites + categories */
+.mode-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -2px 0 8px;
+}
+.mode-tools .fx-chip { font-size: 9px; padding: 5px 9px; }
+.mode-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.mode-cat {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 4px 8px;
+}
+.mode-fav-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  display: none;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(12, 10, 9, 0.72);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
+  text-shadow: 0 0 8px var(--accent-glow);
+}
+.mode-card.is-favorite .mode-fav-badge { display: flex; }
+.mode-card.is-favorite .mode-preview { border-color: var(--accent-line); }
+
 .mode-card {
   display: flex;
   flex-direction: column;
@@ -3125,6 +3165,7 @@ html, body {
   .mic-btn,
   .toast,
   .data-chip,
+  .perf-hud,
   .sheet-scrim {
     /* prefixed first, standard last: written the other way round the
        minifier collapsed the pair and kept only the -webkit- form, which
@@ -4076,3 +4117,28 @@ input[type="range"].ctrl-slider:focus-visible {
 }
 
 .sheet-scrim:not(.is-visible) { pointer-events: none; }
+
+
+/* ---------- Optional performance HUD ---------- */
+.perf-hud {
+  position: absolute;
+  top: 64px;
+  left: 14px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+  background: rgba(8, 7, 6, 0.78);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-60);
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+.perf-hud[hidden] { display: none; }
+.perf-hud b { color: var(--accent); font-weight: 600; }

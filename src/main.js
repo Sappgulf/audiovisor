@@ -11,6 +11,9 @@ import { createShareCard } from './share-card.js';
 import { createPanels } from './panels.js';
 import { createControls } from './controls.js';
 import { createModePicker } from './mode-picker.js';
+import { createModeTransition } from './mode-transition.js';
+import { isFavorite, toggleFavorite, getCuratedAutopilot } from './favorites.js';
+import { MODE_CATEGORIES } from './mode-categories.js';
 import { createDrawerTabs } from './drawer-tabs.js';
 import { createSleepTimer } from './sleep-timer.js';
 import { createRecorder } from './recorder.js';
@@ -109,6 +112,12 @@ function loadRayStage() {
       refreshRayControls();
       for (const [id, el] of Object.entries(sliderEls)) applySlider(id, parseFloat(el.value));
       if (renderer.w) stage.resize(renderer.w, renderer.h);
+      /* Background-warm the remaining programs so the first mode switch is
+         not the one that pays the compile cost. */
+      setTimeout(() => {
+        if (!ray.ok) return;
+        for (let i = 0; i < MODES.length; i++) ray.prewarm?.(i);
+      }, 900);
       return stage;
     })
     .catch((err) => {
@@ -161,6 +170,9 @@ document.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.
 
 /* ---------- mode & theme pickers ---------- */
 
+let favoritesOnly = false;
+let categoryFilter = null;
+
 const picker = createModePicker({
   modes: MODES,
   themes: THEMES,
@@ -173,7 +185,63 @@ const picker = createModePicker({
     void loadRayStage();
     ray.prewarm?.(MODES.findIndex((m) => m.id === id));
   },
+  isFavorite,
+  favoritesOnly: () => favoritesOnly,
+  categoryFilter: () => categoryFilter,
 });
+
+/* ---------- favorites & category filters ---------- */
+
+function syncFavoriteToggle() {
+  const btn = $('mode-fav-toggle');
+  if (!btn) return;
+  const on = isFavorite(state.modeId);
+  btn.classList.toggle('is-active', on);
+  btn.setAttribute('aria-pressed', String(on));
+  const label = $('mode-fav-label');
+  if (label) label.textContent = on ? '★ Favorited' : '☆ Favorite';
+}
+
+$('mode-fav-toggle')?.addEventListener('click', () => {
+  toggleFavorite(state.modeId);
+  picker.refreshFavorites();
+  syncFavoriteToggle();
+  if (favoritesOnly) picker.applyModeFilter();
+  toast(isFavorite(state.modeId) ? 'Mode <b>favorited</b>' : 'Mode <b>unfavorited</b>', { duration: 1200 });
+});
+
+$('mode-fav-filter')?.addEventListener('click', () => {
+  favoritesOnly = !favoritesOnly;
+  const btn = $('mode-fav-filter');
+  btn?.classList.toggle('is-active', favoritesOnly);
+  btn?.setAttribute('aria-pressed', String(favoritesOnly));
+  picker.applyModeFilter();
+});
+
+{
+  const wrap = $('mode-categories');
+  if (wrap) {
+    for (const cat of MODE_CATEGORIES) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'fx-chip mode-cat';
+      btn.dataset.category = cat.id;
+      btn.textContent = cat.label;
+      btn.setAttribute('aria-pressed', 'false');
+      btn.addEventListener('click', () => {
+        categoryFilter = categoryFilter === cat.id ? null : cat.id;
+        [...wrap.children].forEach((el) => {
+          const on = el.dataset.category === categoryFilter;
+          el.classList.toggle('is-active', on);
+          el.setAttribute('aria-pressed', String(on));
+        });
+        picker.applyModeFilter();
+      });
+      wrap.appendChild(btn);
+    }
+  }
+}
+syncFavoriteToggle();
 
 /* Public plugin API: register a custom Canvas2D visualizer mode. */
 window.AUDIOVISOR = {
@@ -357,6 +425,8 @@ function setModeStory(id) {
 
 function setMode(id, { restore = false } = {}) {
   if (!MODES.some((m) => m.id === id)) return;
+  const changed = state.modeId !== id;
+  if (changed) modeTransition.capture();
   /* Restoring a saved mode alone keeps the first-run stage idle; an active
      audio source or a fresh mode pick reveals it. */
   if (!restore) {
@@ -379,8 +449,10 @@ function setMode(id, { restore = false } = {}) {
   ray.setMode(id);
   picker.setActiveMode(id);
   syncStageContext();
+  syncFavoriteToggle();
   pulseStage();
   saveSettings();
+  if (changed) modeTransition.play(240);
 }
 
 /* ---------- Auto theme — palette from album art ---------- */
@@ -531,7 +603,9 @@ for (const id of ['tab-look', 'stage-context', 'explore-modes']) {
 }
 
 function randomizeLook() {
-  setMode(pickRandom(MODES).id);
+  const ids = getCuratedAutopilot(MODES);
+  const id = ids.length ? ids[Math.floor(Math.random() * ids.length)] : pickRandom(MODES).id;
+  setMode(id);
   setTheme(pickRandom(THEMES).id);
 }
 
@@ -884,6 +958,14 @@ function liveCanvas() {
     : renderer.canvas;
 }
 
+/* A mode switch replaces the live canvas in one frame. Snapshot the outgoing
+   frame and fade it over the new mode so the change reads as a cut through
+   the same stage rather than a hard flash. */
+const modeTransition = createModeTransition({
+  getStage: () => $('stage'),
+  getCanvas: liveCanvas,
+});
+
 /* ---------- share card ---------- */
 
 /* The snapshot used to be the raw stage canvas — a frame of pixels with no
@@ -1069,6 +1151,64 @@ refreshStatus();
 updateFavicon();
 renderLoop.start();
 
+/* ---------- optional performance HUD ---------- */
+
+function createPerfHud() {
+  const stage = $('stage');
+  if (!stage) return { toggle: () => {} };
+  const hud = document.createElement('div');
+  hud.className = 'perf-hud';
+  hud.hidden = true;
+  hud.setAttribute('aria-hidden', 'true');
+  stage.appendChild(hud);
+  let visible = new URLSearchParams(location.search).has('perf');
+  let raf = 0;
+  let frames = 0;
+  let acc = 0;
+  let last = 0;
+  const paint = (fps, ms) => {
+    const mode = MODES.find((m) => m.id === state.modeId);
+    const tier = ray.quality || '—';
+    const res = ray.rw && ray.rh ? `${ray.rw}×${ray.rh}` : '—';
+    const backend = window.__av?.gpuBackend || (state.raytraceWanted ? 'raytrace' : '2d');
+    hud.innerHTML = `<span><b>${fps.toFixed(0)}</b> fps · ${ms.toFixed(1)} ms</span>`
+      + `<span>${esc(mode?.name || state.modeId)} · ${esc(tier)}</span>`
+      + `<span>${esc(res)} · ${esc(backend)}</span>`;
+  };
+  const tick = (now) => {
+    if (!visible) return;
+    if (!last) last = now;
+    frames++;
+    acc += now - last;
+    last = now;
+    if (acc >= 500) {
+      paint(frames / (acc / 1000), acc / frames);
+      frames = 0;
+      acc = 0;
+    }
+    raf = requestAnimationFrame(tick);
+  };
+  const setVisible = (on) => {
+    visible = on;
+    hud.hidden = !on;
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    frames = 0;
+    acc = 0;
+    last = 0;
+    if (on) raf = requestAnimationFrame(tick);
+  };
+  setVisible(visible);
+  return { toggle: () => setVisible(!visible) };
+}
+const perfHud = createPerfHud();
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Backquote' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target instanceof HTMLElement
+    && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+  e.preventDefault();
+  perfHud.toggle();
+});
+
 // Onboarding tour
 createOnboarding({ toast, modeCount: MODES.length, themeCount: THEMES.length });
 
@@ -1093,6 +1233,8 @@ function buildCommands() {
   THEMES.forEach(th => cmds.push({ label: `Theme: ${th.name}`, action: () => setTheme(th.id), keys: th.id }));
   FX.forEach(fx => cmds.push({ label: `FX: ${fx.toUpperCase()}`, action: () => { const btn = fxEls[fx]; if (btn) btn.click(); }, keys: fx }));
   cmds.push({ label: 'Random Look', action: randomizeLook, keys: 'random' });
+  cmds.push({ label: 'Favorite current mode', action: () => document.getElementById('mode-fav-toggle')?.click(), keys: 'favorite star' });
+  cmds.push({ label: 'Show favorites only', action: () => document.getElementById('mode-fav-filter')?.click(), keys: 'favorites filter' });
   for (const slot of [1, 2, 3]) {
     cmds.push({ label: `Save Preset ${slot}`, action: () => savePreset(slot), keys: `save preset ${slot}` });
     cmds.push({ label: `Load Preset ${slot}`, action: () => loadPreset(slot), keys: `load preset ${slot}` });
@@ -1102,6 +1244,7 @@ function buildCommands() {
   cmds.push({ label: 'Toggle Queue', action: () => panels.toggleQueue(), keys: 'queue' });
   cmds.push({ label: 'Clear Queue', action: () => panels.clearQueue(), keys: 'clear queue' });
   cmds.push({ label: 'Toggle Fullscreen', action: () => document.getElementById('fullscreen-btn')?.click(), keys: 'fullscreen' });
+  cmds.push({ label: 'Toggle performance HUD', action: () => perfHud.toggle(), keys: 'perf fps hud' });
   cmds.push({ label: 'Toggle MIDI input', action: () => document.getElementById('midi-chip')?.click(), keys: 'midi' });
   cmds.push({ label: 'Share card (PNG)', action: snapshot, keys: 'snapshot' });
   cmds.push({ label: 'Keyboard Shortcuts', action: () => document.getElementById('help-btn')?.click(), keys: 'shortcuts help keys' });
@@ -1191,7 +1334,13 @@ gpu.whenReady().then((backend) => {
 
 /* ---------- drawer tabs (v8.7) ---------- */
 
-const ensureModeCards = () => picker.ensureModes();
+const ensureModeCards = () => {
+  picker.ensureModes();
+  /* Warm every specialised shader program once the Look surface opens. The
+     picker used to warm only the hovered card, so the first click on any
+     other mode paid a 100ms+ link stall in the middle of the switch. */
+  if (ray.ok) for (let i = 0; i < MODES.length; i++) ray.prewarm?.(i);
+};
 function ensureVisibleDrawerTab() {
   const tab = document.querySelector('.drawer-tab[aria-selected="true"]')?.dataset.tab;
   if (tab === 'look') {

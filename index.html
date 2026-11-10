@@ -247,6 +247,11 @@
               <h3 class="section-title">Stage Mode <span class="section-value mono" id="mode-count">24 modes</span></h3>
 
               <input id="mode-filter" class="connect-input drawer-filter" type="search" placeholder="Filter modes…" aria-label="Filter stage modes" autocomplete="off" />
+              <div class="mode-tools">
+                <button class="fx-chip mode-fav-toggle" id="mode-fav-toggle" type="button" aria-pressed="false" title="Favorite the current mode"><span class="chip-txt" id="mode-fav-label">☆ Favorite</span></button>
+                <button class="fx-chip mode-fav-filter" id="mode-fav-filter" type="button" aria-pressed="false" title="Show favorites only"><span class="chip-txt">Favorites</span></button>
+              </div>
+              <div class="mode-categories" id="mode-categories" role="group" aria-label="Mode categories"></div>
               <div class="mode-list" id="mode-list"></div>
               <p class="drawer-empty is-hidden" id="mode-empty">No modes match that filter. Try a mood, shape, or motion word.</p>
               <div class="fx-row space-top" id="preset-row"></div>

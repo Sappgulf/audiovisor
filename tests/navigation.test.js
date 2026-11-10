@@ -5,6 +5,7 @@ import { createOverflowMenu } from '../src/overflow-menu.js';
 import { createDrawerTabs } from '../src/drawer-tabs.js';
 import { createModePicker } from '../src/mode-picker.js';
 import { createDrawer } from '../src/drawer.js';
+import { categoryOf } from '../src/mode-categories.js';
 import { MODES, THEMES } from '../src/themes.js';
 
 const innerWidthDescriptor = Object.getOwnPropertyDescriptor(window, 'innerWidth');
@@ -104,6 +105,33 @@ describe('visual navigation', () => {
     const ev = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     filter.dispatchEvent(ev);
     expect(ev.defaultPrevented).toBe(false);
+  });
+
+  it('filters the mode grid by favorites and category', () => {
+    let onlyFavorites = true;
+    let category = null;
+    const p = createModePicker({
+      modes: MODES,
+      themes: THEMES,
+      getModeId: () => 'bars',
+      getThemeId: () => 'iris',
+      onPickMode: vi.fn(),
+      onPickTheme: vi.fn(),
+      setToggle: (el, on, cls) => el?.classList.toggle(cls || 'is-on', on),
+      isFavorite: (id) => id === 'bars' || id === 'fractal',
+      favoritesOnly: () => onlyFavorites,
+      categoryFilter: () => category,
+    });
+    p.ensureModes();
+    p.applyModeFilter();
+    expect([...document.querySelectorAll('.mode-card:not(.is-filtered)')]
+      .map((el) => el.dataset.modeId)).toEqual(['bars', 'fractal']);
+    onlyFavorites = false;
+    category = 'cosmic';
+    p.applyModeFilter();
+    expect([...document.querySelectorAll('.mode-card:not(.is-filtered)')]
+      .map((el) => el.dataset.modeId))
+      .toEqual(MODES.filter((m) => categoryOf(m.id) === 'cosmic').map((m) => m.id));
   });
 
   it('scrolls the focused mode into view and moves the tab stop with it', () => {

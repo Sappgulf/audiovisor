@@ -1,11 +1,12 @@
 // @ts-check
 import { setIcon } from './icons.js';
 import { modeArt } from './mode-art.js';
+import { categoryOf } from './mode-categories.js';
 
 export function modeAssetPath(id, animated = false) {
   // Public previews have a long HTTP cache. A new artwork revision must
   // change their URLs so returning listeners see the upgraded scenes.
-  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.36`;
+  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.37`;
 }
 
 /**
@@ -25,11 +26,15 @@ export function modeAssetPath(id, animated = false) {
  * @param {(id: string) => void} deps.onPickTheme
  * @param {(el: HTMLElement | null, on: boolean, cls?: string) => void} deps.setToggle
  * @param {(id: string) => void} [deps.onPreviewMode] warm a mode ahead of click
+ * @param {(id: string) => boolean} [deps.isFavorite] favorite lookup
+ * @param {() => boolean} [deps.favoritesOnly] show only favorites
+ * @param {() => string | null} [deps.categoryFilter] active category id
  * @param {Document} [deps.doc]
  */
 export function createModePicker({
   modes, themes, getModeId, getThemeId, onPickMode, onPickTheme, setToggle,
-  onPreviewMode = null, doc = document,
+  onPreviewMode = null, isFavorite = () => false,
+  favoritesOnly = () => false, categoryFilter = () => null, doc = document,
 }) {
   const modeList = doc.getElementById('mode-list');
   const modeCatalog = [];
@@ -62,8 +67,10 @@ export function createModePicker({
     <img class="mode-thumb" src="${image}" alt="" aria-hidden="true"
            loading="lazy" decoding="async" width="176" height="108">
       <span class="mode-thumb-anim" aria-hidden="true"></span>
+      <span class="mode-fav-badge" aria-hidden="true">★</span>
     </div>
     <span class="mode-name">${m.name}</span>`;
+    btn.classList.toggle('is-favorite', !!isFavorite(m.id));
     const thumb = btn.querySelector('.mode-thumb');
     const anim = /** @type {HTMLElement | null} */ (btn.querySelector('.mode-thumb-anim'));
     thumb.addEventListener('load', () => btn.classList.add('has-thumb'));
@@ -149,9 +156,13 @@ export function createModePicker({
     if (!modesBuilt) return [];
     if (!modeFilter) return [];
     const q = modeFilter.value.trim().toLowerCase();
+    const onlyFavorites = favoritesOnly();
+    const category = categoryFilter();
     let shown = 0;
     modeCatalog.forEach((entry) => {
-      const hit = !q || entry.searchText.includes(q);
+      const hit = (!q || entry.searchText.includes(q))
+        && (!onlyFavorites || isFavorite(entry.id))
+        && (!category || categoryOf(entry.id) === category);
       entry.button.classList.toggle('is-filtered', !hit);
       if (hit) shown++;
     });
@@ -271,6 +282,13 @@ export function createModePicker({
     applyModeFilter();
   }
 
+  /** Re-read favorites after a star toggle and repaint the card badges. */
+  function refreshFavorites() {
+    modeCatalog.forEach(({ id, button }) => {
+      button.classList.toggle('is-favorite', !!isFavorite(id));
+    });
+  }
+
   /** Add or refresh a theme dot after the custom palette changes. */
   function addTheme(t) {
     const existing = /** @type {HTMLElement | null} */ (themeRow.querySelector(`[data-theme="${t.id}"]`));
@@ -283,5 +301,5 @@ export function createModePicker({
     return buildThemeDot(t);
   }
 
-  return { modeCatalog, setActiveMode, setActiveTheme, getModeFilterCards, applyModeFilter, focusModeFilterCard, syncModeFilterTabStops, addMode, addTheme, ensureModes };
+  return { modeCatalog, setActiveMode, setActiveTheme, getModeFilterCards, applyModeFilter, focusModeFilterCard, syncModeFilterTabStops, refreshFavorites, addMode, addTheme, ensureModes };
 }

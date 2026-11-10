@@ -52,7 +52,10 @@ const BUDGETS = {
      starting the next release at 100%. */
   /* v8.32 professional pass: Canvas2D fallback rebuild, UI tokens and
      responsive surfaces add real CSS/JS. Raise deliberately with headroom. */
-  entry: 63 * 1024, // initial JS chunk, gzipped
+  /* v8.37: favorites/category filters, the crossfade transition and the
+     optional performance HUD are boot-path UI, not lazy features. They add
+     ~2.4kB gzip to the entry; raise deliberately and keep the total line. */
+  entry: 66 * 1024, // initial JS chunk, gzipped
   css: 18 * 1024,
   /* v8.10: true-stereo tap, drop detection, the Auto palette reader and the
      share card all ship in the lazy chunks behind the entry. The entry is
@@ -65,7 +68,7 @@ const BUDGETS = {
      still small and main.js went from 3096 to under 900 lines. */
   /* v8.23: shared resonance profiles, GPU filaments and the bounded Canvas
      contour cache add ~2kB in lazy chunks. The entry budget stays fixed. */
-  total: 136 * 1024,   // all JS chunks, gzipped
+  total: 138 * 1024,   // all JS chunks, gzipped
 };
 
 const DIST = 'dist/assets';
