@@ -4142,3 +4142,11 @@ input[type="range"].ctrl-slider:focus-visible {
 }
 .perf-hud[hidden] { display: none; }
 .perf-hud b { color: var(--accent); font-weight: 600; }
+
+/* touch screens cannot drag a file onto the page, so the prompt says what
+   they can do instead */
+.drop-sub-touch { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .drop-sub-fine { display: none; }
+  .drop-sub-touch { display: inline; }
+}

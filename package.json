@@ -1,7 +1,7 @@
 {
   "name": "audiovisor",
   "private": true,
-  "version": "8.42.0",
+  "version": "8.43.0",
   "type": "module",
   "sideEffects": false,
   "engines": {
@@ -33,7 +33,10 @@
     "shots:pwa": "node scripts/make-pwa-shots.mjs",
     "offline": "node scripts/offline.mjs",
     "modes:audio": "node scripts/audio-modes.mjs",
-    "reactivity": "node scripts/reactivity.mjs"
+    "reactivity": "node scripts/reactivity.mjs",
+    "ios:web": "vite build && rm -rf ios/AudioVisor/Web && cp -R dist ios/AudioVisor/Web",
+    "ios:project": "cd ios && xcodegen generate",
+    "ios": "npm run ios:web && npm run ios:project && open ios/AudioVisor.xcodeproj"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

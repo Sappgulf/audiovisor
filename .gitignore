@@ -15,3 +15,8 @@ coverage
 sheet*.png
 sheet*.b64.txt
 /tmp-*
+
+# iOS build products (regenerate with npm run ios:web / ios:project)
+ios/AudioVisor/Web/
+ios/AudioVisor.xcodeproj/
+ios/build/

@@ -927,11 +927,18 @@ const transport = createTransport({
 });
 const { transportToggle, setVolumeUI, updateMediaSession, seekTrack } = transport;
 
+/* Jumping straight into the mode filter suits a keyboard; on a touch screen
+   it raises the on-screen keyboard over the very cards being browsed. */
+const focusModeFilter = () => {
+  if (window.matchMedia?.('(hover: none) and (pointer: coarse)').matches) return;
+  $('mode-filter')?.focus({ preventScroll: true });
+};
+
 $('stage-context')?.addEventListener('click', () => {
   ensureModeCards();
   if ($('drawer').classList.contains('is-closed')) $('drawer-toggle').click();
   $('tab-look').click();
-  $('mode-filter')?.focus({ preventScroll: true });
+  focusModeFilter();
 });
 
 
@@ -1059,7 +1066,7 @@ $('explore-modes')?.addEventListener('click', () => {
   ensureModeCards();
   if (!state.drawerOpen) $('nav-settings')?.click();
   $('tab-look')?.click();
-  requestAnimationFrame(() => $('mode-filter')?.focus({ preventScroll: true }));
+  requestAnimationFrame(focusModeFilter);
 });
 
 /* ---------- keyboard ---------- */

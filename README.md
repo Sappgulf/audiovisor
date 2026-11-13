@@ -1,8 +1,14 @@
-# AUDIOVISOR — v8.42.0
+# AUDIOVISOR — v8.43.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### iOS app (v8.43)
+
+- **Native iPhone and iPad app** in [`ios/`](ios/README.md): an edge-to-edge WebKit stage that loads the live site (every feature, updated with each deploy) and falls back to a bundled build offline. Background audio, the iOS mic prompt for live input, no screen dimming while open, sign-in sheets for MusicKit/OAuth, a branded launch cover and the Blender app icon. `npm run ios` builds the web copy, generates the Xcode project and opens it.
+- **Centred modes fit portrait phones**: Vectorscope, Kaleidoscope, Spiral, Orb, Prism, Void, Radar and Vinyl were framed for wide screens and ran off both sides on a phone; they now scale to the screen width in portrait.
+- **Touch polish**: the empty state says "Pick a track from your files" instead of "Drag a track here" on touch screens, and opening the mode browser no longer raises the on-screen keyboard over the cards.
 
 ### Plain-mode polish (v8.42)
 

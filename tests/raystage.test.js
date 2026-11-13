@@ -36,13 +36,15 @@ describe('RayStage', () => {
 describe('ray shaders', () => {
   const sources = { VERT, SCENE_FRAG, ACCUM_FRAG, BLUR_FRAG, POST_FRAG };
 
+  /* The GLSL parser is slow on the full ray shader (~15s alone, well over
+     30s with the suite running four workers), so these get a long budget. */
   it('all parse as valid GLSL', () => {
     // a syntax slip here compiles to nothing at runtime and silently drops
     // the whole stage to the Canvas2D fallback, so catch it in CI instead
     for (const [name, src] of Object.entries(sources)) {
       expect(() => parser.parse(src.replace('#version 300 es\n', '')), name).not.toThrow();
     }
-  }, 30_000);
+  }, 90_000);
 
   it('still parse after the build strips comments and indentation', () => {
     for (const [name, src] of Object.entries(sources)) {
@@ -51,13 +53,13 @@ describe('ray shaders', () => {
       expect(min.length, name).toBeLessThan(src.length);
       expect(() => parser.parse(min.replace('#version 300 es\n', '')), name).not.toThrow();
     }
-  }, 30_000);
+  }, 90_000);
 
   it('parses with the mode baked in, the way each scene program is built', () => {
     const baked = minifyGlsl(SCENE_FRAG).replace(/uniform int\s+uMode;/, 'const int uMode = 2;');
     expect(baked.includes('const int uMode = 2;')).toBe(true);
     expect(() => parser.parse(baked.replace('#version 300 es\n', ''))).not.toThrow();
-  }, 30_000);
+  }, 90_000);
 
   it('all declare GLSL ES 3.0', () => {
     for (const [name, src] of Object.entries(sources)) {

@@ -934,9 +934,16 @@ vec3 fieldScene(vec2 uv, vec3 field) {
          + 0.018 * drop * sin(uTime * 8.0 + modeSeed)) * uv;
   uv += vec2(sin(uTime * 61.0 + modeSeed), cos(uTime * 57.0 + modeSeed))
       * drop * drop * 0.008;
+  float aspect = uRes.x / max(uRes.y, 1.0);
+  /* Portrait phones: the modes built around one centred object (scope,
+     kaleidoscope, spiral, orb, prism, void, radar, vinyl) were framed for a
+     wide screen and ran off both sides. Scale them so the object fits the
+     width; full-frame fields keep filling the screen. */
+  bool centred = uMode == 2 || uMode == 4 || uMode == 11 || uMode == 12 ||
+                 uMode == 15 || uMode == 16 || uMode == 19 || uMode == 22;
+  if (centred && aspect < 1.0) uv /= max(aspect, 0.5);
   float r = length(uv);
   float a = atan2s(uv.y, uv.x);
-  float aspect = uRes.x / max(uRes.y, 1.0);
   vec3 col = vec3(0.0);
 
   if (uMode == 2) {
