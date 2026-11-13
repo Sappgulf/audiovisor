@@ -132,23 +132,45 @@ final class StageViewController: UIViewController {
     /// fallback stay in the app; any other link opens in Safari.
     private func isInApp(_ url: URL) -> Bool {
         if url.scheme == Stage.localScheme || url.scheme == "about" || url.scheme == "blob" || url.scheme == "data" { return true }
-        guard let host = url.host?.lowercased() else { return false }
+        guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
         let allowed = [Stage.liveHost, "accounts.spotify.com", "authorize.music.apple.com", "idmsa.apple.com", "appleid.apple.com"]
         return allowed.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    /// Frames inside the page: the in-app hosts plus the player SDKs the
+    /// streaming connections embed (Spotify Web Playback, MusicKit).
+    private func isAllowedFrame(_ url: URL) -> Bool {
+        if isInApp(url) { return true }
+        guard url.scheme == "https", let host = url.host?.lowercased() else { return false }
+        return ["sdk.scdn.co", "js-cdn.music.apple.com"].contains(host)
+    }
+
+    /// Non-web links the app will hand to iOS, and only on a real tap.
+    private static let externalSchemes: Set<String> = ["mailto", "spotify", "music", "itms-apps"]
+
+    /// One navigation policy for the stage and its sign-in popups: in-app
+    /// pages load, allowed frames load, tapped web links go to Safari,
+    /// tapped links with a known scheme go to iOS, everything else is dropped.
+    fileprivate func policy(for action: WKNavigationAction) -> WKNavigationActionPolicy {
+        guard let url = action.request.url else { return .cancel }
+        let isMain = action.targetFrame?.isMainFrame ?? true
+        if isMain ? isInApp(url) : isAllowedFrame(url) { return .allow }
+        let tapped = action.navigationType == .linkActivated
+        guard isMain, tapped else { return .cancel }
+        let scheme = url.scheme?.lowercased() ?? ""
+        if scheme == "https" || scheme == "http" {
+            (presentedViewController ?? self).present(SFSafariViewController(url: url), animated: true)
+        } else if Self.externalSchemes.contains(scheme) {
+            UIApplication.shared.open(url)
+        }
+        return .cancel
     }
 }
 
 extension StageViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
-        guard let url = action.request.url else { return decisionHandler(.cancel) }
-        if isInApp(url) || action.targetFrame?.isMainFrame == false { return decisionHandler(.allow) }
-        if ["http", "https"].contains(url.scheme ?? "") {
-            present(SFSafariViewController(url: url), animated: true)
-        } else {
-            UIApplication.shared.open(url)
-        }
-        decisionHandler(.cancel)
+        decisionHandler(policy(for: action))
     }
 
     /// Reveal once the app has booted (it exposes window.__av). Neither
@@ -210,13 +232,17 @@ extension StageViewController: WKUIDelegate {
     /// sheet, not a Safari tab.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url, !isInApp(url), url.absoluteString != "about:blank" {
-            present(SFSafariViewController(url: url), animated: true)
+        // only the stage's own main frame may open a popup
+        guard action.sourceFrame.isMainFrame, isInApp(webView.url ?? Stage.liveURL) else { return nil }
+        if let url = action.request.url, !isInApp(url) {
+            if ["https", "http"].contains(url.scheme?.lowercased() ?? "") {
+                present(SFSafariViewController(url: url), animated: true)
+            }
             return nil
         }
         let child = WKWebView(frame: .zero, configuration: configuration)
         child.uiDelegate = self
-        let sheet = PopupViewController(webView: child)
+        let sheet = PopupViewController(webView: child, policy: { [weak self] in self?.policy(for: $0) ?? .cancel })
         popup = sheet
         present(sheet, animated: true)
         return child
@@ -229,6 +255,7 @@ extension StageViewController: WKUIDelegate {
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor () -> Void) {
+        guard frame.isMainFrame else { return completionHandler() }
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
         (presentedViewController ?? self).present(alert, animated: true)
@@ -236,6 +263,7 @@ extension StageViewController: WKUIDelegate {
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor (Bool) -> Void) {
+        guard frame.isMainFrame else { return completionHandler(false) }
         let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
         alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
@@ -244,12 +272,27 @@ extension StageViewController: WKUIDelegate {
 }
 
 /// Sheet hosting a sign-in popup with a Done button.
-final class PopupViewController: UIViewController {
+final class PopupViewController: UIViewController, WKNavigationDelegate {
     private let webView: WKWebView
-    init(webView: WKWebView) {
+    private let policy: (WKNavigationAction) -> WKNavigationActionPolicy
+    private let item = UINavigationItem(title: "Sign in")
+    private var hostWatch: NSKeyValueObservation?
+
+    init(webView: WKWebView, policy: @escaping (WKNavigationAction) -> WKNavigationActionPolicy) {
         self.webView = webView
+        self.policy = policy
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .pageSheet
+        webView.navigationDelegate = self
+        // show where the sign-in actually is, so a page cannot pose as one
+        hostWatch = webView.observe(\.url, options: [.initial, .new]) { [weak self] view, _ in
+            MainActor.assumeIsolated { self?.item.title = view.url?.host ?? "Sign in" }
+        }
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        decisionHandler(policy(action))
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
@@ -258,7 +301,6 @@ final class PopupViewController: UIViewController {
         view.backgroundColor = .systemBackground
         let bar = UINavigationBar()
         bar.translatesAutoresizingMaskIntoConstraints = false
-        let item = UINavigationItem(title: "Sign in")
         item.rightBarButtonItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in
             self?.dismiss(animated: true)
         })
