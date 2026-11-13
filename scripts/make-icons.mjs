@@ -10,6 +10,10 @@
  * them together.
  *
  * Run with `npm run icons` after changing the mark. Output is committed.
+ *
+ * NOTE (v8.38): the shipped icons are now a Blender render of this same mark
+ * (neon diamond, three bars, ring) in the app palette. Running this script
+ * replaces them with the flat 2D version.
  */
 import { createCanvas } from '@napi-rs/canvas';
 import { writeFileSync, mkdirSync } from 'node:fs';

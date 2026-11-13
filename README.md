@@ -1,8 +1,13 @@
-# AUDIOVISOR — v8.37.0
+# AUDIOVISOR — v8.38.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Blender icon & audit pass (v8.38)
+
+- **New 3D app icon** rendered in Blender: the same diamond + three-bar mark, now in the app's neon palette (magenta diamond, cyan bars, violet ring) on a dark glass tile, with a full-bleed variant for the maskable and Apple touch icons.
+- **Full audit with music**: lint, types, 1148 unit tests, 76 e2e steps, axe a11y on 26 surfaces and all 24 modes played against a real track on desktop and mobile, all passing.
 
 ### Live feel & control pass (v8.37)
 - **Fields move now** — every direct-field mode breathes with the beat, punches in on drops and adds a tiny drop-only shake. Each mode also gets its own palette hue, so Bars, Waves, City, Nebula, Spiral, Fluid, Orb and the rest no longer read as one colourway.
