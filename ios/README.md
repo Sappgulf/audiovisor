@@ -30,8 +30,21 @@ open ios/AudioVisor.xcodeproj
 or `npm run ios` for all three. `AudioVisor/Web` and the `.xcodeproj` are
 generated and git-ignored; `project.yml` is the source of truth.
 
-To run on a device or ship to TestFlight, set your team under Signing &
-Capabilities (the bundle id is `app.audiovisor.ios`).
+Signing uses team `FW6FWBCF5U` with automatic provisioning; the bundle id
+is `app.audiovisor.ios`.
+
+```bash
+# install on a connected iPhone
+xcodebuild -project ios/AudioVisor.xcodeproj -scheme AudioVisor -configuration Release \
+  -destination 'generic/platform=iOS' -derivedDataPath ios/build -allowProvisioningUpdates build
+xcrun devicectl device install app --device <UDID> ios/build/Build/Products/Release-iphoneos/AudioVisor.app
+
+# upload to TestFlight (bump CURRENT_PROJECT_VERSION in project.yml first)
+xcodebuild -project ios/AudioVisor.xcodeproj -scheme AudioVisor -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath ios/build/AudioVisor.xcarchive -allowProvisioningUpdates archive
+xcodebuild -exportArchive -archivePath ios/build/AudioVisor.xcarchive \
+  -exportOptionsPlist ios/ExportOptions.plist -exportPath ios/build/export -allowProvisioningUpdates
+```
 
 ## Debugging
 
