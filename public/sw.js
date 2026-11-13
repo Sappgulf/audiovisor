@@ -4,11 +4,11 @@
 /* Bump on every release. The old name was pinned at v6.3 across many
    deploys, so returning visitors kept being served whatever assets their
    cache already held. */
-const CACHE = 'audiovisor-v8.39.0';
+const CACHE = 'audiovisor-v8.40.0';
 
 /* The shell plus the optional static assets. Hashed build output is appended
    from the build-time manifest below. */
-const PRECACHE = ['/', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
+const PRECACHE = ['/', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png', '/sprites/bead.png'];
 /* Precache is ~30 entries; leave room for lazily viewed mode art and samples
    without letting one-off URLs grow the cache forever. */
 const MAX_CACHE_ENTRIES = 80;
@@ -26,7 +26,8 @@ function isProtectedPath(pathname) {
     || pathname === '/precache-manifest.json'
     || pathname.startsWith('/assets/')
     || pathname.startsWith('/fonts/')
-    || pathname.startsWith('/icons/');
+    || pathname.startsWith('/icons/')
+    || pathname.startsWith('/sprites/');
 }
 
 /* The share_target is a POST any site can send to this origin. Accept only

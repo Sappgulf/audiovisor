@@ -1,8 +1,14 @@
-# AUDIOVISOR — v8.39.0
+# AUDIOVISOR — v8.40.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### 2D stage reactivity & Blender beads (v8.40)
+
+- **Every Canvas2D mode now breathes with the music**: a shared exposure pass settles the frame slightly darker in quiet passages and lifts it on the level and the beat (capped at +30%, scaled down for reduced motion). 2D reactivity scores went from 24–72 to 69–90 (Kaleido 24 → 86, Tunnel 36 → 81, Plasma 36 → 90), still 60 fps in every mode.
+- **Blender-rendered glass bead sprite** (`public/sprites/bead.png`, 2.3 kB) replaces the painted highlight on the 2D dot sprite, tinted per theme colour — particles, stars and blips read as lit glass beads with a real specular and rim glint. The procedural sprite remains as the fallback.
+- `npm run modes:audio -- --2d` and `npm run reactivity -- --2d` test the Canvas2D stage.
 
 ### Music-reactivity pass (v8.39)
 

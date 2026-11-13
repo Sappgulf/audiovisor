@@ -13,6 +13,7 @@
  *   node scripts/audio-modes.mjs
  *   node scripts/audio-modes.mjs --track public/samples/last-seen.mp3 --out /tmp/shots
  *   node scripts/audio-modes.mjs --headed --mobile
+ *   node scripts/audio-modes.mjs --2d            Canvas2D stage (raytrace off)
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
@@ -29,6 +30,7 @@ const flagValue = (flag, fallback) => {
 
 const HEADED = args.includes('--headed');
 const MOBILE = args.includes('--mobile');
+const TWO_D = args.includes('--2d');
 const TRACK = resolve(flagValue('--track', 'public/samples/night-voltage.mp3'));
 const OUT = resolve(flagValue('--out', '/tmp/audiovisor-audio-modes'));
 const SAMPLE_MS = 1200;
@@ -88,6 +90,8 @@ try {
     null,
     { timeout: 25000 },
   ).catch(() => {});
+
+  if (TWO_D) await page.evaluate(() => { window.__av.state.raytraceWanted = false; });
 
   const drawerOpen = () => page.evaluate(() => !document.getElementById('drawer').classList.contains('is-closed'));
   const setDrawer = async (open) => {

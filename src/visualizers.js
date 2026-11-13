@@ -2,6 +2,36 @@ import { THEMES } from './themes.js';
 import { lerp, logSample, hexRgba, clamp } from './utils.js';
 import { beatEnergy } from './beatenergy.js';
 import { sanitizeLevels, usableSpectrum, safeDimension } from './levels.js';
+
+/* Blender-rendered greyscale glass bead, tinted per theme colour for the dot
+   sprites. Loaded once; until it arrives (or anywhere Image is missing, like
+   tests) the procedural highlight is used instead. */
+let beadImg = null;
+let beadOk = false;
+if (typeof Image !== 'undefined' && typeof document !== 'undefined') {
+  beadImg = new Image();
+  beadImg.decoding = 'async';
+  beadImg.onload = () => { beadOk = true; };
+  beadImg.src = `${import.meta.env?.BASE_URL || '/'}sprites/bead.png`;
+}
+const beadReady = () => beadOk;
+function tintBead(color) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  g.drawImage(beadImg, 0, 0, 64, 64);
+  g.globalCompositeOperation = 'multiply';
+  g.fillStyle = color;
+  g.fillRect(0, 0, 64, 64);
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(beadImg, 0, 0, 64, 64);
+  /* keep the white specular: screen a faint untinted copy back on top */
+  g.globalCompositeOperation = 'screen';
+  g.globalAlpha = 0.35;
+  g.drawImage(beadImg, 0, 0, 64, 64);
+  return c;
+}
 import { motionScale, advanceSceneTime } from './motion.js';
 import { isLowPowerDevice } from './adaptive.js';
 import { getPluginMode, isPluginMode } from './plugins.js';
@@ -281,6 +311,7 @@ export class Renderer {
   _buildCache() {
     /* runs every frame; compare references instead of joining the palette
        into a signature string each time */
+    if (this._beadSeen !== beadReady()) { this._beadSeen = beadReady(); this._cacheTheme = null; }
     if (this._cacheTheme === this.theme && this._cacheQ === this.quality && this._dotSprites) return;
     this._cacheTheme = this.theme;
     this._cacheQ = this.quality;
@@ -310,17 +341,25 @@ export class Renderer {
       g.addColorStop(1, hexRgba(c, 0));
       dc.fillStyle = g;
       dc.fillRect(0, 0, 64, 64);
-      // tiny specular highlight
-      dc.fillStyle = this._tintRgba(c, 0.48, 0.34);
-      dc.beginPath();
-      dc.ellipse(26, 24, 5, 3.2, -0.6, 0, Math.PI * 2);
-      dc.fill();
-      // rim light (soft edge ring)
-      dc.strokeStyle = this._tintRgba(c, 0.34, 0.22);
-      dc.lineWidth = 1.4;
-      dc.beginPath();
-      dc.arc(32, 32, 21, 0, Math.PI * 2);
-      dc.stroke();
+      const bead = beadReady() ? tintBead(c) : null;
+      if (bead) {
+        /* Blender-rendered glass bead (public/sprites/bead.png): real key
+           light, specular and rim glint instead of the painted ellipse and
+           ring below, sitting in the same soft bloom */
+        dc.drawImage(bead, 0, 0);
+      } else {
+        // tiny specular highlight
+        dc.fillStyle = this._tintRgba(c, 0.48, 0.34);
+        dc.beginPath();
+        dc.ellipse(26, 24, 5, 3.2, -0.6, 0, Math.PI * 2);
+        dc.fill();
+        // rim light (soft edge ring)
+        dc.strokeStyle = this._tintRgba(c, 0.34, 0.22);
+        dc.lineWidth = 1.4;
+        dc.beginPath();
+        dc.arc(32, 32, 21, 0, Math.PI * 2);
+        dc.stroke();
+      }
       this._dotSprites.set(c, d);
 
       // bar: polished metal with top highlight and inner sheen, 8x256
@@ -582,6 +621,7 @@ export class Renderer {
     }
     this._scene(freq, wave, dt, dt60);
     if (chopGlitch && motion > 0) ctx.restore();
+    this._exposure(motion);
     if (this.beat > 0.45) this._kickFlare();
     if (punched) ctx.restore();
 
@@ -743,6 +783,33 @@ export class Renderer {
     ctx.drawImage(this.glowB, -w * 0.02, -h * 0.02, w * 1.04, h * 1.04);
     ctx.globalAlpha = clamp((0.17 + punch * 0.05) * (0.5 + this.bloomAmount) * modeScale, 0, 0.29);
     ctx.drawImage(this.glowA, 0, 0, w, h);
+    ctx.restore();
+  }
+
+  /* Shared music exposure. Measured with scripts/reactivity.mjs, the 2D
+     modes tracked the beat but their overall brightness barely moved (swing
+     0.03-0.28 against 0.4-1.7 on the raytraced stage, whose field pass
+     breathes with the mix). This is the 2D counterpart: the frame settles a
+     little darker in quiet passages and lifts on the level and the beat.
+     The lift is a self-copy in 'lighter', capped at +30%, and scales with
+     motionScale() so reduced-motion viewers get a gentler response. */
+  _exposure(motion = 1) {
+    const { ctx } = this;
+    const k = clamp(motion, 0, 1);
+    const target = 0.80 + this.sm.level * 0.32 + this.beat * 0.28;
+    const gain = 1 + (clamp(target, 0.80, 1.30) - 1) * k;
+    if (Math.abs(gain - 1) < 0.01) return;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (gain < 1) {
+      ctx.globalAlpha = 1 - gain;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    } else {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = gain - 1;
+      ctx.drawImage(this.canvas, 0, 0);
+    }
     ctx.restore();
   }
 
