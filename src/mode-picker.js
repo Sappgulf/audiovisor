@@ -6,7 +6,7 @@ import { categoryOf } from './mode-categories.js';
 export function modeAssetPath(id, animated = false) {
   // Public previews have a long HTTP cache. A new artwork revision must
   // change their URLs so returning listeners see the upgraded scenes.
-  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.38`;
+  return `/modes/${id}${animated ? '-anim' : ''}.webp?v=8.39`;
 }
 
 /**

@@ -1,7 +1,7 @@
 {
   "name": "audiovisor",
   "private": true,
-  "version": "8.38.1",
+  "version": "8.39.0",
   "type": "module",
   "sideEffects": false,
   "engines": {
@@ -32,7 +32,8 @@
     "version:bump": "node scripts/version.mjs",
     "shots:pwa": "node scripts/make-pwa-shots.mjs",
     "offline": "node scripts/offline.mjs",
-    "modes:audio": "node scripts/audio-modes.mjs"
+    "modes:audio": "node scripts/audio-modes.mjs",
+    "reactivity": "node scripts/reactivity.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

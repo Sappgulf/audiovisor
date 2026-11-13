@@ -1169,7 +1169,8 @@ vec3 fieldScene(vec2 uv, vec3 field) {
     float dust = fbm2a(vec2(a * 3.0, log(r + 0.12) * 5.0 + uTime * 0.02));
     float disc = exp(-r * 1.20) * smoothstep(0.0, 0.10, r);
     vec3 cc = fieldPal(fract(0.12 + r * 0.50 + uTime * 0.01));
-    col = cc * disc * (0.04 + (arms + arms2) * (1.1 + uLevel * 1.0) + dust * 0.10)
+    disc *= 0.85 + uBass * 0.45;
+    col = cc * disc * (0.04 + (arms + arms2) * (1.1 + uLevel * 1.0 + uBeat * 0.9) + dust * 0.10)
         + fieldPal(0.95) * exp(-r * 12.0) * (0.70 + uBass * 1.4 + uBeat * 0.6);
     col *= 1.0 - dust * 0.60;
     vec2 sg = floor(uv * 80.0), sf = fract(uv * 80.0) - 0.5;
@@ -1192,15 +1193,15 @@ vec3 fieldScene(vec2 uv, vec3 field) {
   } else if (uMode == 13) {
     /* liquid chrome */
     vec2 p = uv * 1.2;
-    p += 0.22 * vec2(sin(p.y * 2.1 + uTime * 0.7), cos(p.x * 2.3 - uTime * 0.6));
+    p += (0.22 + uBass * 0.10) * vec2(sin(p.y * 2.1 + uTime * 0.7), cos(p.x * 2.3 - uTime * 0.6));
     float n = fbm2a(p * 1.4 + uTime * 0.05);
     float n2 = fbm2b(p * 3.1 - uTime * 0.03);
     float h = n * 0.7 + n2 * 0.3;
     float bands = 0.5 + 0.5 * sin(h * 12.0 - uTime * 1.4 + uv.x * 3.0);
     float shine = pow(0.5 + 0.5 * cos(h * 18.0 + uv.y * 5.0 - uTime * 1.8), 14.0);
     vec3 cc = fieldPal(fract(0.24 + h * 0.52 + uTime * 0.01));
-    col = cc * (0.10 + bands * 0.30 + shine * (0.8 + uLevel * 1.2))
-        + fieldPal(0.99) * shine * 0.35;
+    col = cc * (0.10 + bands * (0.30 + uBass * 0.35) + shine * (0.8 + uLevel * 1.2 + uBeat * 1.1))
+        + fieldPal(0.99) * shine * (0.35 + uBeat * 0.4);
     col *= 0.55 + 0.8 * smoothstep(0.15, 0.85, h);
   } else if (uMode == 14) {
     /* tensor lattice in perspective */
@@ -1312,7 +1313,7 @@ vec3 fieldScene(vec2 uv, vec3 field) {
     float wedge = pow(1.0 - sweep, 5.0) * disc;
     float sweepLine = 1.0 - smoothstep(0.0, 0.018, min(sweep, 1.0 - sweep));
     vec3 cc = mix(vec3(0.15, 1.0, 0.55), fieldPal(0.42), 0.35);
-    col = disc * (cc * (rings * 0.18 + spokes * 0.05 + wedge * 0.42)
+    col = disc * (cc * (rings * (0.12 + uBass * 0.30) + spokes * 0.05 + wedge * (0.30 + uLevel * 0.45))
                 + fieldPal(0.90) * sweepLine * 0.55
                 + cc * (exp(-abs(uv.x) * 90.0) + exp(-abs(uv.y) * 90.0)) * 0.04);
     for (int i = 0; i < 6; i++) {
@@ -1320,17 +1321,23 @@ vec3 fieldScene(vec2 uv, vec3 field) {
       float ang = hash11(fi * 3.1) * TAU;
       float rr = 0.18 + 0.68 * hash11(fi * 7.7);
       vec2 c = vec2(cos(ang), sin(ang)) * rr;
-      float dot = 1.0 - smoothstep(0.0, 0.018, length(uv - c));
+      float band = spec(fract(fi / 6.0 * 0.8 + 0.04));
+      float dot = 1.0 - smoothstep(0.0, 0.012 + band * 0.022, length(uv - c));
       float fresh = pow(1.0 - fract(ang / TAU - uTime * 0.25), 6.0);
-      col += fieldPal(fract(fi * 0.19)) * dot * (0.5 + fresh * 0.9);
+      col += fieldPal(fract(fi * 0.19)) * dot * (0.25 + band * 0.9 + fresh * 0.9);
     }
-    col += cc * exp(-r * 26.0) * 0.5;
+    col += cc * exp(-r * 26.0) * (0.35 + uBass * 0.6);
+    /* sonar ping: each beat launches a ring that runs out to the rim */
+    float pingR = (1.0 - uBeat) * 0.95;
+    col += fieldPal(0.90) * disc * uBeat * (1.0 - smoothstep(0.0, 0.03, abs(r - pingR))) * 0.9;
     float trail = 0.0;
     for (int i = 0; i < 4; i++) {
       float s = fract(a / TAU - uTime * 0.25 + float(i) * 0.022);
       trail += pow(1.0 - s, 8.0) * (1.0 - float(i) * 0.22);
     }
     col += cc * trail * 0.22 * disc;
+    /* the phosphor breathes with the mix: dim in a breakdown, flaring on hits */
+    col *= 0.62 + uLevel * 0.65 + uBeat * 0.35;
     col += cc * (hash11(dot(floor(uv * 420.0), vec2(12.9, 78.2)) + floor(uTime * 60.0)) - 0.5) * 0.012 * disc;
   } else if (uMode == 20) {
     /* macro wax field */

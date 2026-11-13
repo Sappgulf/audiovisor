@@ -1,8 +1,15 @@
-# AUDIOVISOR — v8.38.1
+# AUDIOVISOR — v8.39.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Music-reactivity pass (v8.39)
+
+- **New `npm run reactivity` scorer**: plays a real track, samples every mode's frames ~30×/s and correlates brightness and motion with the bass, beat and spectral activity, so "does this mode answer the music" is a number, not a vibe.
+- **Radar** used to be a clock: it now fires a sonar ping out from the centre on every beat, sizes its blips by frequency band, lifts its rings with the bass and breathes with the mix (score 72 → 87).
+- **Liquid Chrome (fluid)** swells with the bass and flashes its highlights on the beat; it previously ignored both (66 → 80).
+- **Spiral Galaxy** arms flare on the beat and the disc swells with the bass (74 → 86).
 
 ### Tunnel performance (v8.38.1)
 
