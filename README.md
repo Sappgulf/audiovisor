@@ -1,8 +1,12 @@
-# AUDIOVISOR — v8.38.0
+# AUDIOVISOR — v8.38.1
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Tunnel performance (v8.38.1)
+
+- **Radial Tunnel is 25% cheaper on the GPU** (10.5 → 7.9 ms a frame) and now holds 60 fps at the medium tier with no long frames (was ~56 fps on the low tier with 83 ms spikes). Profiling showed the wall reflection was half the frame: rays bounced off the bore skim along it at grazing angles. The tunnel's bounce now jumps analytically to the cylinder wall, is capped at 20 steps, and shades its hit from emission only.
 
 ### Blender icon & audit pass (v8.38)
 

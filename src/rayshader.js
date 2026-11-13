@@ -668,17 +668,52 @@ vec3 envColor(vec3 rd) {
   return sky + palf(0.35) * b1 * 0.55 + palf(0.85) * b2 * 0.3;
 }
 
+/* Tunnel wall is a cylinder per 1.1-long cell, so when the wall is the
+   nearest surface the march can jump straight to it analytically instead of
+   creeping along it: rays bounced off the wall skim the tube at grazing
+   angles, and with the radial gap as the step they burned the whole step
+   budget. The jump stops at the next cell boundary, where the radius can
+   change, and at the own-cell ring, the nearest ring inside a cell. */
+float tunnelStep(vec3 p, vec3 rd, float d) {
+  float z = p.z + uTime * 3.2;
+  float cell = floor(z / 1.1);
+  float band = spec(fract(cell * 0.083));
+  float r = max(2.3 - band * 0.7 * uSens - uBeat * 0.12 - uDrop * 0.2, 0.9);
+  float R = r + 0.85;
+  float rad = length(p.xy);
+  float mz = mod(z, 1.1);
+  float ring = length(vec2(rad - r, mz - 0.55)) - 0.12;
+  float a = dot(rd.xy, rd.xy);
+  float wallS = 1e3;
+  if (a > 1e-6) {
+    float b = dot(p.xy, rd.xy);
+    float c = dot(p.xy, p.xy) - R * R;
+    float disc = b * b - a * c;
+    if (disc > 0.0) wallS = (-b + sqrt(disc)) / a;
+  }
+  float cellS = rd.z > 1e-4 ? (1.1 - mz) / rd.z + 0.002
+              : rd.z < -1e-4 ? mz / -rd.z + 0.002 : 1e3;
+  return max(d, min(min(wallS * 0.97, cellS), max(ring, d)));
+}
+
 /* ---------------- march ---------------- */
 
 float march(vec3 ro, vec3 rd, float tmax, out float id, out float aux) {
   float t = 0.02;
   id = -1.0; aux = 0.0;
+  /* The tunnel's reflection bounce (the only tunnel march with tmax < 20)
+     gets 20 steps: the long tail of rays skimming the bore past that cost
+     ~3ms a frame. A ray that runs out of steps still reports a miss: taking
+     the nearest surface instead picked up ring emission and lit the whole
+     bore magenta. */
+  bool tunnelBounce = uMode == 6 && tmax < 20.0;
+  int cap = tunnelBounce ? min(uSteps, 20) : uSteps;
   for (int i = 0; i < 256; i++) {
-    if (i >= uSteps) break;
+    if (i >= cap) break;
     vec3 p = ro + rd * t;
     float d = map(p);
     if (d < 0.0012 * t + 0.0006) { id = g_id; aux = g_aux; return t; }
-    t += d * 0.72;
+    t += (uMode == 6 && g_id == 6.0) ? tunnelStep(p, rd, d * 0.72) : d * 0.72;
     if (t > tmax) break;
   }
   return -1.0;
@@ -1413,10 +1448,18 @@ vec3 trace(vec3 ro, vec3 rd, vec3 field) {
   } else if (uRefl == 1 && m.metal > 0.35 && m.rough < 0.34) {
     vec3 rr = reflect(rd, n);
     float id2, aux2;
-    float t2 = march(p + n * 0.02, rr, 26.0, id2, aux2);
+    /* Inside the tunnel every wall pixel reflects the tube itself, so a full
+       26-unit bounce plus a full shade() was half the mode's frame (10.5ms ->
+       5.4ms with it off, sweep at 896x514). What the bore reflects is almost
+       all ring emission, so its bounce is shorter and emission-shaded, with
+       no normal or light evaluation at the hit. */
+    float t2 = march(p + n * 0.02, rr, uMode == 6 ? 12.0 : 26.0, id2, aux2);
     vec3 rc;
     if (t2 < 0.0) rc = envColor(rr);
-    else {
+    else if (uMode == 6) {
+      Mat m2 = matOf(id2, aux2, p + n * 0.02 + rr * t2);
+      rc = m2.emis + m2.alb * envColor(rr) * 0.5;
+    } else {
       vec3 p2 = p + n * 0.02 + rr * t2;
       vec3 n2 = normalAt(p2);
       Mat m2 = matOf(id2, aux2, p2);
