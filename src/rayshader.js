@@ -955,6 +955,24 @@ vec3 fieldScene(vec2 uv, vec3 field) {
       col += cc * (core * (1.0 + uLevel) + halo * 0.18) * (0.6 + uBeat * 0.4);
     }
     col += fieldPal(0.80) * exp(-length(p) * 1.5) * 0.03;
+    /* CRT graticule: the trace used to float on pure black. An 8x8 division
+       grid with minor ticks on the axes, a round bezel and a faint phosphor
+       floor give it an instrument to live in; the grid glows with the level. */
+    vec2 gq = uv * 4.0;
+    vec2 gd = abs(fract(gq) - 0.5);
+    float grid = max(1.0 - smoothstep(0.004, 0.016, 0.5 - gd.x),
+                     1.0 - smoothstep(0.004, 0.016, 0.5 - gd.y));
+    float axes = max(1.0 - smoothstep(0.0015, 0.006, abs(uv.x)),
+                     1.0 - smoothstep(0.0015, 0.006, abs(uv.y)));
+    vec2 tq = abs(fract(uv * 20.0) - 0.5);
+    float ticks = (1.0 - smoothstep(0.0, 0.02, abs(uv.y)) ) * (1.0 - smoothstep(0.30, 0.42, tq.x))
+                + (1.0 - smoothstep(0.0, 0.02, abs(uv.x)) ) * (1.0 - smoothstep(0.30, 0.42, tq.y));
+    float face = 1.0 - smoothstep(0.92, 0.94, r);
+    float bezel = 1.0 - smoothstep(0.0, 0.010, abs(r - 0.945));
+    vec3 phos = fieldPal(0.42);
+    col += phos * face * (grid * (0.030 + uLevel * 0.035) + axes * 0.05 + ticks * 0.06);
+    col += phos * face * exp(-r * 2.2) * (0.020 + uBass * 0.035);
+    col += fieldPal(0.88) * bezel * (0.22 + uBeat * 0.30);
   } else if (uMode == 0) {
     /* full-frame spectrum equalizer with a mirror finish */
     float x = uv.x / (2.0 * aspect) + 0.5;
@@ -985,11 +1003,18 @@ vec3 fieldScene(vec2 uv, vec3 field) {
       float amp = (0.32 - fi * 0.018) * (1.0 + uLevel * 1.1);
       float w = wav(uv.x * 0.32 + fi * 0.11 + uTime * 0.05) * amp;
       w += sin(uv.x * 1.6 + fi * 0.8 + uTime * 0.7) * (0.035 + uMid * 0.05);
-      float d = abs(uv.y - off - w);
+      float y0 = off + w;
+      float d = abs(uv.y - y0);
       float line = 1.0 - smoothstep(0.006, 0.020 + fi * 0.002, d);
       vec3 cc = fieldPal(fract(0.12 + fi * 0.135 + uTime * 0.01));
-      col += cc * (line * (0.5 + uLevel * 1.2 + uBeat * 0.45)
-             + exp(-d * 50.0) * 0.08 * (0.4 + uLevel));
+      /* depth: the outer ribbons sit further back and dimmer, and each
+         ribbon drops a translucent curtain beneath it that swells with the
+         bass, so the stack reads as layered surfaces instead of seven wires */
+      float depth = 1.0 - abs(fi - 3.0) * 0.16;
+      float below = uv.y < y0 ? exp(-(y0 - uv.y) * 7.0) : 0.0;
+      col += cc * depth * (line * (0.5 + uLevel * 1.2 + uBeat * 0.45)
+             + exp(-d * 50.0) * 0.08 * (0.4 + uLevel)
+             + below * (0.030 + uBass * 0.045));
     }
     col += fieldPal(0.10) * exp(-abs(uv.y) * 2.5) * 0.02;
   } else if (uMode == 3) {
@@ -1378,7 +1403,14 @@ vec3 fieldScene(vec2 uv, vec3 field) {
     vec2 f2 = fract(p * 2.2) - 0.5;
     float h2 = hash11(id2.x * 19.0 + id2.y * 23.0);
     float chip = (1.0 - smoothstep(0.16, 0.21, max(abs(f2.x), abs(f2.y)))) * step(0.55, h2);
-    float pulse = pow(0.5 + 0.5 * sin(p.x * 7.0 + p.y * 5.0 - uTime * 2.4), 12.0);
+    /* data packets run along each trace, one band per trace, so busy bands
+       carry visibly faster traffic (was one diagonal sine over the board) */
+    float bandH = spec(fract(h * 0.8 + 0.05));
+    float bandV = spec(fract(hash11(id.y * 13.0 + id.x * 7.0) * 0.8 + 0.05));
+    float pktH = pow(fract(g.x * 0.5 - uTime * (0.6 + bandH * 2.4) + h * 7.0), 18.0) * traceH * (0.3 + bandH);
+    float pktV = pow(fract(g.y * 0.5 - uTime * (0.6 + bandV * 2.4) + h * 3.0), 18.0) * traceV * (0.3 + bandV);
+    float pulse = max(pktH, pktV) / max(traces, 1e-3);
+    float chipGlow = exp(-max(abs(f2.x), abs(f2.y)) * 9.0) * step(0.55, h2);
     vec3 cc = fieldPal(fract(h2 * 2.0 + uTime * 0.02));
     float dieR = max(abs(uv.x), abs(uv.y));
     float dieInner = 1.0 - smoothstep(0.27, 0.30, dieR);
@@ -1387,9 +1419,12 @@ vec3 fieldScene(vec2 uv, vec3 field) {
     float dieGrid = max(1.0 - smoothstep(0.02, 0.05, dg.x),
                         1.0 - smoothstep(0.02, 0.05, dg.y)) * dieInner;
     col = cc * (traces * 0.14 + chip * (0.45 + spec(fract(h2)) * 1.2 + uBeat * 0.30))
-        + fieldPal(0.90) * pulse * traces * (0.08 + uLevel * 0.20)
+        + fieldPal(0.90) * pulse * traces * (0.45 + uLevel * 0.60)
         + fieldPal(0.60) * (dieInner * 0.10 + dieEdge * (0.70 + uBass * 1.0))
         + fieldPal(0.75) * dieGrid * (0.04 + uLevel * 0.10);
+    col += cc * chipGlow * (0.05 + spec(fract(h2)) * 0.12 + uBeat * 0.06);
+    /* the die runs hot with the bass */
+    col += fieldPal(0.05) * dieInner * exp(-dieR * 6.0) * (0.04 + uBass * 0.22);
   } else if (uMode == 22) {
     /* full-frame vinyl groove */
     float disc = 1.0 - smoothstep(0.92, 0.94, r);

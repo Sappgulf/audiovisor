@@ -1,8 +1,14 @@
-# AUDIOVISOR — v8.41.0
+# AUDIOVISOR — v8.42.0
 
 A hifi, real-time music visualizer for the browser. Drop in a track or use a permitted live input to drive twenty-four stage modes, thirty-two built-in themes and a custom palette slot. Direct URLs can drive the stage when the browser can analyze their audio. Spotify and Apple Music account connections provide in-app playback without beat-driven visuals.
 
 ## Features
+
+### Plain-mode polish (v8.42)
+
+- **Vectorscope** now lives in an instrument: an 8×8 CRT graticule with axis ticks, a round bezel that flashes on the beat and a phosphor floor that warms with the bass.
+- **Linear Wave** ribbons have depth: the outer ribbons sit further back, and each drops a translucent curtain that swells with the bass.
+- **GPU Core** carries real traffic: data packets run along each trace at a speed set by its frequency band, chips glow, and the die runs hot with the bass.
 
 ### Spectrogram leading edge (v8.41)
 
