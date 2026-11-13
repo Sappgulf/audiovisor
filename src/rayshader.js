@@ -1028,12 +1028,18 @@ vec3 fieldScene(vec2 uv, vec3 field) {
     vec2 id = floor(g), f = fract(g) - 0.5;
     float age = fract(id.y / rows - uTime * 0.04);
     float e = histBlock((id.x + 0.5) / cols, age);
+    /* the newest row is the leading edge: it shows the live spectrum, not
+       the last stored history row, so the matrix answers the instant a hit
+       lands instead of a row later */
+    float front = step(age, 1.0 / rows);
+    e = mix(e, spec((id.x + 0.5) / cols), front);
     float lit = smoothstep(0.10, 0.50, e);
     float cell = (1.0 - smoothstep(0.30, 0.46, max(abs(f.x), abs(f.y)))) * lit;
     vec3 cc = fieldPal(fract(0.55 + (id.x / cols) * 0.32 + (id.y / rows) * 0.10));
     col = cc * cell * (0.45 + e * 2.0 + uBeat * 0.25)
         + fieldPal(0.95) * pow(cell, 3.0) * 0.55;
     col += cc * cell * (1.0 - smoothstep(0.0, 0.10, abs(f.y))) * 0.20;
+    col += fieldPal(0.95) * cell * front * (0.18 + uBeat * 0.55 + uBass * 0.25);
     float se = pow(spec(u), 1.2);
     float curve = 1.0 - smoothstep(0.0, 0.012, abs(uv.y + 0.86 - se * 0.38));
     col += fieldPal(0.90) * curve * (0.55 + uBeat * 0.5);
