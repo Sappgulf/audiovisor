@@ -109,6 +109,19 @@ describe('settings orientation', () => {
     expect(document.querySelector('.mode-name').classList.contains('sr-only')).toBe(false);
   });
 
+  it('counts category and favorite results even with an empty search', () => {
+    let favorites = false;
+    const picker = createModePicker({ modes: MODES, themes: THEMES, getModeId: () => 'bars',
+      getThemeId: () => 'iris', onPickMode: vi.fn(), onPickTheme: vi.fn(), setToggle, doc: document,
+      categoryFilter: () => 'spectral', favoritesOnly: () => favorites, isFavorite: () => false });
+    picker.ensureModes();
+    expect(document.getElementById('mode-count').textContent).toBe('4 / 24');
+    favorites = true;
+    picker.applyModeFilter();
+    expect(document.getElementById('mode-count').textContent).toBe('0 / 24');
+    expect(document.getElementById('mode-empty').textContent).toContain('Turn off Favorites');
+  });
+
   it('leaves Space activation to a focused button instead of playing audio', () => {
     const toggle = vi.fn();
     createKeyboardShortcuts({ engine: {}, setVolumeUI: vi.fn(), transportToggle: toggle,

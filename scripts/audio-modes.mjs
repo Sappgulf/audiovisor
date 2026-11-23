@@ -83,6 +83,9 @@ try {
       && Math.max(levels.bass, levels.mid, levels.high) > 0.001;
   }, null, { timeout: 20000 });
 
+  // Keep the analyser live when the full sweep outlasts the fixture.
+  await page.evaluate(() => window.__av.engine.setLoop(true));
+
   /* The raytrace chunk loads lazily once playback starts. Give it a chance,
      but let a browser without WebGL2 continue on the Canvas2D fallback. */
   await page.waitForFunction(

@@ -402,7 +402,7 @@ function armStudioAction(id) {
     el.click();
   }, { once: true, capture: true });
 }
-['voice-btn', 'midi-chip', 'party-btn', 'tab-studio'].forEach(armStudioAction);
+['voice-btn', 'midi-chip', 'party-btn'].forEach(armStudioAction);
 if (location.hash.startsWith('#share=')) void loadStudioExtras();
 
 

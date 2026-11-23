@@ -47,7 +47,7 @@ export function createModePicker({
     const art = modeArt(m.id);
     const image = art.image || modeAssetPath(m.id);
     const animation = art.animation || modeAssetPath(m.id, true);
-    const searchText = `${m.name} ${m.id} ${art.chapter} ${art.title} ${art.story}`.toLowerCase();
+    const searchText = `${m.name} ${m.id} ${categoryOf(m.id)} ${art.chapter} ${art.title} ${art.story}`.toLowerCase();
     const active = m.id === getModeId();
     btn.className = 'mode-card' + (active ? ' is-active' : '');
     btn.setAttribute('aria-label', `${m.name} mode`);
@@ -166,9 +166,14 @@ export function createModePicker({
       entry.button.classList.toggle('is-filtered', !hit);
       if (hit) shown++;
     });
-    modeEmpty?.classList.toggle('is-hidden', shown > 0);
+    if (modeEmpty) {
+      modeEmpty.classList.toggle('is-hidden', shown > 0);
+      if (!shown) modeEmpty.textContent = onlyFavorites
+        ? 'No favorites match. Turn off Favorites to browse more modes.'
+        : 'No modes match. Try another category or search term.';
+    }
     const count = doc.getElementById('mode-count');
-    if (count) count.textContent = q ? `${shown} / ${modeCatalog.length}` : `${modeCatalog.length} modes`;
+    if (count) count.textContent = q || onlyFavorites || category ? `${shown} / ${modeCatalog.length}` : `${modeCatalog.length} modes`;
     const cards = getModeFilterCards();
     if (!cards.length) modeFilterIndex = -1;
     else if (modeFilterIndex < 0 || modeFilterIndex >= cards.length) modeFilterIndex = cards.findIndex((c) => c.dataset.modeId === getModeId());
