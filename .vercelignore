@@ -1,0 +1,5 @@
+ios/
+coverage/
+.playwright-mcp/
+.claude/
+.env*

@@ -4150,3 +4150,26 @@ input[type="range"].ctrl-slider:focus-visible {
   .drop-sub-fine { display: none; }
   .drop-sub-touch { display: inline; }
 }
+
+/* The bundled iOS instrument has its own native studio and file library. */
+.is-native { --bg: #09090e; --panel: #14141e; --surface: #14141e; --surface-raised: #1a1a26; --text: #f5f4ff; --text-strong: #fff; }
+.is-native .shell { width: 100%; height: 100dvh; margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+.is-native .topbar { width: 100%; margin: 0; padding: calc(var(--sat) + 4px) max(20px, var(--sar)) 4px max(20px, var(--sal)); height: calc(60px + var(--sat)); border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.is-native .workspace { padding: 0; }
+.is-native .stage { border: 0; border-radius: 0; min-height: 0; }
+.is-native .app-root::before, .is-native .app-root::after, .is-native .noise-overlay, .is-native .glow-sphere { display: none; }
+.native-home { min-width: 90px; min-height: 44px; text-align: left; font-size: 17px; font-weight: 500; color: #b8a6ff; }
+.is-native .topbar-right { margin-left: auto; }
+.is-native .native-home { visibility: hidden; }
+.is-native #capture-btn, .is-native #mic-btn, .is-native #voice-btn, .is-native #help-btn,
+.is-native .pill-nav, .is-native #tab-source, .is-native #tab-studio,
+.is-native #library-btn, .is-native #save-library-btn, .is-native #record-btn,
+.is-native #snapshot-btn, .is-native #export-remix-btn { display: none; }
+.is-native .transport { width: calc(100% - 24px); border-radius: 24px; margin: 0 auto calc(10px + var(--sab)); background: #16161f; border-color: #ffffff12; box-shadow: none; }
+.is-native .stage-context { border-color: #ffffff18; background: #14141e; }
+.is-native .drawer { background: #14141e; }
+.is-native .drawer-tab { font-size: 14px; }
+.is-native .mode-name { font-size: 12px; }
+.is-native .stage-overlays { top: 16px; }
+.is-native .dropzone { border: 0; background: transparent; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .is-native * { scroll-behavior: auto; } }
