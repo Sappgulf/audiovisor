@@ -6,8 +6,7 @@ struct VisualLook: Identifiable, Sendable {
     let category: String
 
     var image: UIImage? {
-        guard let url = Bundle.main.url(forResource: id, withExtension: "jpg", subdirectory: "VisualPreviews") else { return nil }
-        return UIImage(contentsOfFile: url.path)
+        UIImage(named: "VisualPreviews/\(id).jpg")
     }
     static let all: [VisualLook] = [
         .init(id: "bars", name: "Spectrum Bars", category: "Spectral"),
@@ -44,12 +43,21 @@ final class StudioModel: ObservableObject {
     @Published var busy = false
     @Published var error: String?
     @Published var tracks: [LibraryTrack] = []
+    @Published private(set) var completedImports = 0
     @Published var title = ""
     @Published var playing = false
     @Published var hasTrack = false
     @Published var selectedLook = VisualLook.all.first { $0.id == UserDefaults.standard.string(forKey: "selectedLook") } ?? VisualLook.all[10] {
         didSet { UserDefaults.standard.set(selectedLook.id, forKey: "selectedLook") }
     }
+    @Published private(set) var favorites = Set(UserDefaults.standard.stringArray(forKey: "favoriteVisuals") ?? [])
+
+    func toggleFavorite(_ look: VisualLook) {
+        if favorites.contains(look.id) { favorites.remove(look.id) }
+        else { favorites.insert(look.id) }
+        UserDefaults.standard.set(favorites.sorted(), forKey: "favoriteVisuals")
+    }
+
     @Published var showLooks = false
     @Published var showInfo = false
     let library = MusicLibrary()
@@ -88,7 +96,10 @@ final class StudioModel: ObservableObject {
         busy = true
         Task {
             defer { busy = false }
-            do { tracks = try await library.add(urls) }
+            do {
+                tracks = try await library.add(urls)
+                completedImports += 1
+            }
             catch { self.error = "Couldn’t import music. \(error.localizedDescription)" }
         }
     }

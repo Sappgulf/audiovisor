@@ -3,6 +3,10 @@ import XCTest
 
 @MainActor
 final class MusicLibraryTests: XCTestCase {
+    func testAllVisualPreviewsResolveFromTheApplicationBundle() {
+        for look in VisualLook.all { XCTAssertNotNil(look.image, look.id) }
+    }
+
     func testImportPersistsAndRemovingCopyPreservesOriginal() async throws {
         let fixture = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: fixture) }

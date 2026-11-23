@@ -1,4 +1,4 @@
-# Audiovisor for iOS 9.0
+# Audiovisor for iOS 9.1
 
 A native SwiftUI studio for iPhone and iPad, backed by the bundled WebKit audio and visual engine. Minimum iOS 17; Swift 6; XcodeGen owns the project configuration.
 
@@ -6,7 +6,7 @@ A native SwiftUI studio for iPhone and iPad, backed by the bundled WebKit audio 
 
 - Discover offers a visual preview, an immediately available synthesized demo, an audio import action and featured visuals.
 - My music keeps private, persistent copies of tracks selected through the native Files picker. Imports support common unprotected audio formats, up to 100 MB per file and 30 files per selection. Decoding support depends on the codec. Originals are never removed.
-- All 24 visual worlds have native, searchable previews rendered from the actual stage programs. The selected visual persists.
+- All 24 visual worlds have native, searchable previews rendered from the actual stage programs. Save a visual with the heart on Discover or its preview menu. Favorites and the selected visual persist. Category and text filters can be combined. My Music supports title search and remembers the selected sort order.
 - The stage keeps its visual, palette, EQ and effects controls. Studio returns to the native home without interrupting playback. The native mini player reflects the same engine state.
 - The shipped engine is self-contained. No network, account or website deployment is needed for core playback and visuals. Streaming account integrations and browser-only capture/export tools remain in the separate web app.
 - Slow startup exposes progress and retry. Fatal load errors are explicit; a terminated WebKit process recovers to the studio while preserving the library. Reduced Motion, Dynamic Type, native accessibility labels and safe areas are supported.

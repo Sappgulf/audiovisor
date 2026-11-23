@@ -2,6 +2,23 @@ import XCTest
 
 @MainActor
 final class StudioUITests: XCTestCase {
+    func testSavedVisualIsAvailableAfterRelaunch() {
+        let app = XCUIApplication()
+        app.launch()
+        app.buttons["Discover"].tap()
+        let save = app.buttons["Save visual to favorites"]
+        let remove = app.buttons["Remove visual from favorites"]
+        if remove.exists { remove.tap() }
+        save.tap()
+        app.terminate()
+        app.launch()
+        app.buttons["Discover"].tap()
+        XCTAssertTrue(remove.waitForExistence(timeout: 10))
+        app.buttons["Browse all 24 visuals"].tap()
+        app.switches["Favorites"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Select '")).firstMatch.exists)
+    }
+
     func testPrivacyPolicyIsAccessibleFromNativeAppInformation() {
         let app = XCUIApplication()
         app.launch()
@@ -57,7 +74,7 @@ final class StudioUITests: XCTestCase {
         app.launchArguments = ["-uitest-seed-library"]
         app.launch()
         let music = app.buttons["Play night-voltage"]
-        if !music.waitForExistence(timeout: 30) { app.buttons["My music"].tap() }
+        app.buttons["My music"].tap()
         XCTAssertTrue(music.waitForExistence(timeout: 30))
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: music)
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 120), .completed)
@@ -67,6 +84,12 @@ final class StudioUITests: XCTestCase {
         XCTAssertTrue(music.waitForExistence(timeout: 30))
         let reenabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: music)
         XCTAssertEqual(XCTWaiter.wait(for: [reenabled], timeout: 60), .completed)
+        let search = app.textFields["Search your music"]
+        search.tap()
+        search.typeText("unmatched-title")
+        XCTAssertFalse(music.exists)
+        app.buttons["Clear music search"].tap()
+        XCTAssertTrue(music.exists)
         music.tap()
         XCTAssertTrue(app.webViews.buttons["Pause"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.webViews.staticTexts["night-voltage"].exists)

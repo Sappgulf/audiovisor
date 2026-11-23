@@ -6,6 +6,8 @@ private let studioBackground = Color(red: 0.035, green: 0.035, blue: 0.055)
 struct StudioView: View {
     @ObservedObject var model: StudioModel
     @State private var section = 0
+    @State private var musicQuery = ""
+    @AppStorage("sortLibraryByName") private var sortByName = false
     @State private var removing: LibraryTrack?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .largeTitle) private var heroTitleSize = 35.0
@@ -45,7 +47,7 @@ struct StudioView: View {
             Button("Remove from library", role: .destructive) { if let removing { model.remove(removing) }; removing = nil }
         }
         .task { await model.loadLibrary() }
-        .onChange(of: model.tracks.count) { old, new in if new > old { section = 1 } }
+        .onChange(of: model.completedImports) { section = 1; musicQuery = "" }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: section)
     }
 
@@ -55,7 +57,7 @@ struct StudioView: View {
             Text("Audiovisor").font(.system(.title2, design: .rounded, weight: .bold)).tracking(-0.7)
             Spacer()
             Button { model.showInfo = true } label: {
-                Image(systemName: "slider.horizontal.3").font(.body.weight(.medium)).frame(width: 44, height: 44)
+                Image(systemName: "info.circle").font(.body.weight(.medium)).frame(width: 44, height: 44)
                     .background(.white.opacity(0.06), in: Circle())
             }.accessibilityLabel("App information and help")
         }
@@ -64,7 +66,7 @@ struct StudioView: View {
     private func discover(wide: Bool) -> some View {
         VStack(alignment: .leading, spacing: 26) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("SOUND, IN ANOTHER DIMENSION").font(.system(.caption2, design: .monospaced, weight: .medium)).tracking(1.7).foregroundStyle(studioAccent)
+                Text("DISCOVER").font(.system(.caption2, design: .monospaced, weight: .medium)).tracking(1.7).foregroundStyle(studioAccent)
                 Text("See what you hear.").font(.system(size: wide ? heroTitleSize * 1.48 : heroTitleSize, weight: .semibold, design: .rounded)).tracking(-1.8).fixedSize(horizontal: false, vertical: true)
             }
             ZStack(alignment: .bottomLeading) {
@@ -78,6 +80,10 @@ struct StudioView: View {
                         Text(model.selectedLook.name).font(.title2.weight(.semibold))
                     }
                     Spacer()
+                    Button { model.toggleFavorite(model.selectedLook) } label: {
+                        Image(systemName: model.favorites.contains(model.selectedLook.id) ? "heart.fill" : "heart")
+                            .frame(width: 48, height: 48).background(.ultraThinMaterial, in: Circle())
+                    }.accessibilityLabel(model.favorites.contains(model.selectedLook.id) ? "Remove visual from favorites" : "Save visual to favorites")
                     Button { model.showLooks = true } label: {
                         Image(systemName: "square.grid.2x2").frame(width: 48, height: 48).background(.ultraThinMaterial, in: Circle())
                     }.accessibilityLabel("Browse all 24 visuals")
@@ -102,10 +108,10 @@ struct StudioView: View {
             }
             HStack(spacing: 7) {
                 Image(systemName: "lock.shield")
-                Text("On your device. In your own world.")
+                Text("Imported music stays on this device.")
             }.font(.caption).foregroundStyle(.white.opacity(0.55)).frame(maxWidth: .infinity)
             HStack {
-                Text("Find your frequency").font(.title3.weight(.semibold))
+                Text("Featured visuals").font(.title3.weight(.semibold))
                 Spacer()
                 Button("View all") { model.showLooks = true }.font(.subheadline.weight(.medium)).frame(minHeight: 44)
             }
@@ -147,8 +153,24 @@ struct StudioView: View {
                     Text("MP3 · M4A · WAV · FLAC · up to 100 MB per track").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }.padding(.vertical, 65).frame(maxWidth: .infinity)
             } else {
+                HStack {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Search your music", text: $musicQuery).textInputAutocapitalization(.never)
+                    if !musicQuery.isEmpty {
+                        Button { musicQuery = "" } label: { Image(systemName: "xmark.circle.fill") }
+                            .accessibilityLabel("Clear music search")
+                    }
+                    Menu {
+                        Picker("Library order", selection: $sortByName) {
+                            Text("Recently imported").tag(false)
+                            Text("Title A–Z").tag(true)
+                        }
+                    } label: { Image(systemName: "arrow.up.arrow.down").frame(width: 44, height: 44) }
+                        .accessibilityLabel("Sort your music")
+                }.padding(.horizontal, 12).background(.white.opacity(0.07), in: .rect(cornerRadius: 12))
+                if visibleTracks.isEmpty { ContentUnavailableView.search(text: musicQuery) }
                 LazyVStack(spacing: 0) {
-                    ForEach(model.tracks) { track in
+                    ForEach(visibleTracks) { track in
                         HStack(spacing: 13) {
                             Button { model.start(track: track) } label: {
                                 HStack(spacing: 13) {
@@ -171,6 +193,12 @@ struct StudioView: View {
             }
             if model.busy { HStack { ProgressView(); Text("Preparing your music…").font(.subheadline) }.frame(maxWidth: .infinity) }
         }
+    }
+
+    private var visibleTracks: [LibraryTrack] {
+        let query = musicQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matches = model.tracks.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+        return sortByName ? matches.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending } : matches
     }
 
     @ViewBuilder private var footer: some View {
@@ -239,11 +267,38 @@ private struct LookArtwork: View {
 private struct LooksView: View {
     @ObservedObject var model: StudioModel
     @State private var query = ""
-    private var filtered: [VisualLook] { VisualLook.all.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query) } }
+    @State private var category: String?
+    @State private var savedOnly = false
+    private var filtered: [VisualLook] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return VisualLook.all.filter { look in
+            (!savedOnly || model.favorites.contains(look.id)) && (category == nil || category == look.category)
+                && (term.isEmpty || look.name.localizedCaseInsensitiveContains(term) || look.category.localizedCaseInsensitiveContains(term))
+        }
+    }
     var body: some View {
         NavigationStack {
             ScrollView {
-                if filtered.isEmpty { ContentUnavailableView.search(text: query) }
+                HStack {
+                    Toggle(isOn: $savedOnly) { Label("Favorites", systemImage: savedOnly ? "heart.fill" : "heart") }
+                        .toggleStyle(.button)
+                    Spacer()
+                    Menu {
+                        Picker("Category", selection: $category) {
+                            Text("All categories").tag(nil as String?)
+                            ForEach(Set(VisualLook.all.map(\.category)).sorted(), id: \.self) { Text($0).tag(Optional($0)) }
+                        }
+                    } label: { Label(category ?? "All categories", systemImage: "line.3.horizontal.decrease") }
+                }.padding(.horizontal, 20)
+                if filtered.isEmpty {
+                    ContentUnavailableView {
+                        Label("No matching visuals", systemImage: savedOnly ? "heart" : "magnifyingglass")
+                    } description: {
+                        Text(savedOnly ? "Save a visual with the heart on Discover or hold its preview." : "Try a different search or category.")
+                    } actions: {
+                        Button("Show all visuals") { query = ""; category = nil; savedOnly = false }
+                    }
+                }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 22) {
                     ForEach(filtered) { look in
                         Button { model.select(look) } label: {
@@ -253,6 +308,10 @@ private struct LooksView: View {
                                 Text(look.name).font(.subheadline.weight(.medium)).foregroundStyle(.white)
                                 Text(look.category).font(.caption).foregroundStyle(.secondary)
                             }.frame(maxWidth: .infinity, alignment: .leading)
+                        }.contextMenu {
+                            Button { model.toggleFavorite(look) } label: {
+                                Label(model.favorites.contains(look.id) ? "Remove from favorites" : "Save to favorites", systemImage: "heart")
+                            }
                         }.buttonStyle(.plain).accessibilityLabel("Select \(look.name)").accessibilityAddTraits(model.selectedLook.id == look.id ? .isSelected : [])
                     }
                 }.padding(20)
