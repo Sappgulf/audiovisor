@@ -6,8 +6,8 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "8.43.0"
-    CURRENT_PROJECT_VERSION: "2"
+    MARKETING_VERSION: "9.0.0"
+    CURRENT_PROJECT_VERSION: "7"
     SWIFT_VERSION: "6.0"
     TARGETED_DEVICE_FAMILY: "1,2"
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -19,7 +19,10 @@ targets:
     platform: iOS
     sources:
       - path: AudioVisor
-        excludes: ["Web/**"]
+        excludes: ["Web/**", "VisualPreviews/**"]
+      - path: AudioVisor/VisualPreviews
+        type: folder
+        buildPhase: resources
       - path: AudioVisor/Web
         type: folder
         optional: true
@@ -27,12 +30,17 @@ targets:
     info:
       path: AudioVisor/Info.plist
       properties:
-        CFBundleDisplayName: AUDIOVISOR
+        CFBundleDisplayName: Audiovisor
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UILaunchScreen:
           UIColorName: LaunchBackground
         UIApplicationSupportsIndirectInputEvents: true
+        UIUserInterfaceStyle: Dark
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         UIRequiresFullScreen: false
         UIStatusBarHidden: true
         UIViewControllerBasedStatusBarAppearance: true
@@ -47,3 +55,32 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.audiovisor.ios
         INFOPLIST_KEY_UIStatusBarHidden: YES
+  AudioVisorTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [AudioVisorTests]
+    dependencies:
+      - target: AudioVisor
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: app.audiovisor.ios.tests
+  AudioVisorUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [AudioVisorUITests]
+    dependencies:
+      - target: AudioVisor
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: app.audiovisor.ios.uitests
+schemes:
+  AudioVisor:
+    build:
+      targets:
+        AudioVisor: all
+        AudioVisorTests: [test]
+        AudioVisorUITests: [test]
+    test:
+      targets: [AudioVisorTests, AudioVisorUITests]

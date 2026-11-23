@@ -1,59 +1,51 @@
-# AUDIOVISOR for iOS
+# Audiovisor for iOS 9.0
 
-A native iPhone and iPad shell around the AUDIOVISOR stage.
+A native SwiftUI studio for iPhone and iPad, backed by the bundled WebKit audio and visual engine. Minimum iOS 17; Swift 6; XcodeGen owns the project configuration.
 
-## How it works
+## Experience
 
-- **Live site first.** The app loads `https://audiovisor-one.vercel.app/` in
-  an edge-to-edge WebKit view, so every feature works and each Vercel deploy
-  updates the app without an App Store release. Spotify sign-in returns to its
-  registered web address, and the Apple Music token comes from the site's
-  `/api/apple-music-token` function, so both need the live origin.
-- **Offline fallback.** A copy of the web build ships inside the app
-  (`AudioVisor/Web`) and is served from `audiovisor-local://app/` when the
-  network is unavailable. Local files, samples, every mode and the live mic
-  work offline; streaming connections need a network.
-- **Native touches.** Background audio (playback continues with the screen
-  locked), the iOS microphone prompt for live input, no screen dimming while
-  the app is open, hidden status bar and home indicator, sign-in popups
-  (MusicKit, OAuth) as sheets, other links in Safari, a branded launch cover
-  that lifts once the stage has booted, and the Blender-rendered app icon.
+- Discover offers a visual preview, an immediately available synthesized demo, an audio import action and featured visuals.
+- My music keeps private, persistent copies of tracks selected through the native Files picker. Imports support common unprotected audio formats, up to 100 MB per file and 30 files per selection. Decoding support depends on the codec. Originals are never removed.
+- All 24 visual worlds have native, searchable previews rendered from the actual stage programs. The selected visual persists.
+- The stage keeps its visual, palette, EQ and effects controls. Studio returns to the native home without interrupting playback. The native mini player reflects the same engine state.
+- The shipped engine is self-contained. No network, account or website deployment is needed for core playback and visuals. Streaming account integrations and browser-only capture/export tools remain in the separate web app.
+- Slow startup exposes progress and retry. Fatal load errors are explicit; a terminated WebKit process recovers to the studio while preserving the library. Reduced Motion, Dynamic Type, native accessibility labels and safe areas are supported.
 
-## Build
+## Architecture
 
-```bash
-npm run ios:web        # vite build, copy dist/ into ios/AudioVisor/Web
-npm run ios:project    # generate AudioVisor.xcodeproj with xcodegen
+`StageViewController` owns the WebKit stage and a SwiftUI `StudioView` overlay. `StudioModel` coordinates the native UI and typed command names. `MusicLibrary` serializes file operations and atomically commits its manifest. A failed import batch rolls back copied files.
+
+`LocalWebScheme` serves bundled assets and UUID-named imported audio from the app container. WebKit tasks stay on the main actor; only file URLs and data cross to the IO task. `src/native.js` installs only at the trusted bundled origin and exposes a narrow bridge. Imports never leave the device. Covered rendering pauses while the native studio is visible.
+
+The native logo source is in `Brand/`; generated store and launch assets live in the asset catalog. `VisualPreviews/` contains native-resolution scene captures. Regenerate them with `node scripts/make-ios-previews.mjs` when the renderer changes.
+
+## Build and check
+
+```sh
+npm run ios:web
+npm run ios:project
 open ios/AudioVisor.xcodeproj
+npm run ci
+xcodebuild -project ios/AudioVisor.xcodeproj -scheme AudioVisor \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' test
 ```
 
-or `npm run ios` for all three. `AudioVisor/Web` and the `.xcodeproj` are
-generated and git-ignored; `project.yml` is the source of truth.
+The web copy, Xcode project and `build/` are generated and ignored. `project.yml` is the source of truth. Marketing and build versions are embedded through `$(MARKETING_VERSION)` and `$(CURRENT_PROJECT_VERSION)`.
 
-Signing uses team `FW6FWBCF5U` with automatic provisioning; the bundle id
-is `app.audiovisor.ios`.
+## Release
 
-```bash
-# install on a connected iPhone
+Bundle ID: `app.audiovisor.ios`; team: `FW6FWBCF5U`; App Store Connect app: `6835754116`.
+
+```sh
 xcodebuild -project ios/AudioVisor.xcodeproj -scheme AudioVisor -configuration Release \
-  -destination 'generic/platform=iOS' -derivedDataPath ios/build -allowProvisioningUpdates build
-xcrun devicectl device install app --device <UDID> ios/build/Build/Products/Release-iphoneos/AudioVisor.app
-
-# upload to TestFlight (bump CURRENT_PROJECT_VERSION in project.yml first)
-xcodebuild -project ios/AudioVisor.xcodeproj -scheme AudioVisor -configuration Release \
-  -destination 'generic/platform=iOS' -archivePath ios/build/AudioVisor.xcarchive -allowProvisioningUpdates archive
+  -destination 'generic/platform=iOS' -archivePath ios/build/AudioVisor.xcarchive \
+  -allowProvisioningUpdates archive
 xcodebuild -exportArchive -archivePath ios/build/AudioVisor.xcarchive \
-  -exportOptionsPlist ios/ExportOptions.plist -exportPath ios/build/export -allowProvisioningUpdates
+  -exportOptionsPlist ios/ExportOptions.plist -exportPath ios/build/export \
+  -allowProvisioningUpdates
 ```
 
-## Debugging
+`ExportOptions.plist` uploads to App Store Connect. Check runtime behavior, embedded version, privacy manifest and final artwork before exporting. The listing uses manual release after review, free pricing, and no collected app data. The owner confirmed distribution rights to the four bundled sample tracks on November 17, 2026.
 
-Debug builds make the web view inspectable in Safari (Develop menu) and
-forward page console output to the unified log:
-
-```bash
-xcrun simctl spawn booted log stream --predicate 'subsystem == "app.audiovisor.web"'
-```
-
-Launch with `-offline` (Scheme > Arguments) to test the bundled fallback
-without cutting the network.
+Support: https://audiovisor-one.vercel.app/support.html
+Privacy: https://audiovisor-one.vercel.app/privacy.html

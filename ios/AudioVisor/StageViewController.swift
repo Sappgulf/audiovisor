@@ -1,20 +1,20 @@
 import UIKit
 import SafariServices
+import SwiftUI
+import UniformTypeIdentifiers
 @preconcurrency import WebKit
 
-/// The whole app is one edge-to-edge stage. It loads the live site so every
-/// feature works and updates with each deploy — Spotify sign-in returns to
-/// its registered web address, and Apple Music's developer token comes from
-/// the site's /api function — and falls back to the bundled build offline.
+/// Owns the bundled stage and a persistent native studio above it.
 final class StageViewController: UIViewController {
     private var webView: WKWebView!
     private var popup: PopupViewController?
-    private var usingLocal = false
-    /// Branded cover shown until the stage's first page finishes loading.
-    private let cover = UIView()
+    private let studio = StudioModel()
+    private var home: UIHostingController<StudioView>!
+    private var bootTimeout: Task<Void, Never>?
+    private let studioButton = UIButton(type: .system)
 
     override var prefersStatusBarHidden: Bool { true }
-    override var prefersHomeIndicatorAutoHidden: Bool { true }
+    override var prefersHomeIndicatorAutoHidden: Bool { home?.view.isHidden == true }
     override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { .bottom }
 
     override func loadView() {
@@ -22,12 +22,15 @@ final class StageViewController: UIViewController {
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsAirPlayForMediaPlayback = true
-        config.preferences.isElementFullscreenEnabled = true
+        // The stage uses its in-window cinema mode so native navigation stays reachable.
+        config.preferences.isElementFullscreenEnabled = false
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
         // keeps Safari's UA (feature detection stays honest) and lets the
         // page know it is inside the native shell
         config.applicationNameForUserAgent = "Version/18.0 Mobile/15E148 Safari/604.1 AudioVisorApp/1.0"
         config.setURLSchemeHandler(LocalWebScheme(), forURLScheme: Stage.localScheme)
+        config.userContentController.add(StudioMessageHandler(owner: self), name: "studio")
+        config.userContentController.addUserScript(WKUserScript(source: "document.documentElement.classList.add('is-native', 'native-home-visible')", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         #if DEBUG
         // Debug builds forward page errors to the unified log
         // (log stream --predicate 'subsystem == "app.audiovisor.web"').
@@ -56,76 +59,149 @@ final class StageViewController: UIViewController {
         #if DEBUG
         webView.isInspectable = true
         #endif
-        view = webView
+        view = UIView()
+        view.backgroundColor = Stage.background
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.topAnchor.constraint(equalTo: view.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        buildCover()
-        #if DEBUG
-        // `-offline` exercises the bundled fallback without cutting the network
-        if ProcessInfo.processInfo.arguments.contains("-offline") { usingLocal = false; fallBackToLocal(); return }
-        #endif
-        var request = URLRequest(url: Stage.liveURL)
-        // a slow network should not hold the stage hostage
-        request.timeoutInterval = 8
-        webView.load(request)
-    }
-
-    private func buildCover() {
-        cover.backgroundColor = Stage.background
-        cover.translatesAutoresizingMaskIntoConstraints = false
-        let mark = UIImageView(image: UIImage(named: "LaunchMark"))
-        mark.contentMode = .scaleAspectFit
-        mark.layer.cornerRadius = 30
-        mark.layer.cornerCurve = .continuous
-        mark.clipsToBounds = true
-        let name = UILabel()
-        name.text = "AUDIOVISOR"
-        name.textColor = UIColor(white: 1, alpha: 0.92)
-        name.font = .systemFont(ofSize: 22, weight: .heavy)
-        let tag = UILabel()
-        tag.text = "Tuning the stage…"
-        tag.textColor = UIColor(white: 1, alpha: 0.45)
-        tag.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
-        let stack = UIStackView(arrangedSubviews: [mark, name, tag])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 14
-        stack.setCustomSpacing(6, after: name)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        cover.addSubview(stack)
-        view.addSubview(cover)
+        overrideUserInterfaceStyle = .dark
+        studio.command = { [weak self] method, arguments in
+            guard let self else { throw URLError(.cancelled) }
+            try await self.perform(method, arguments: arguments)
+        }
+        studio.importMusic = { [weak self] in self?.importMusic() }
+        studio.openStage = { [weak self] in self?.showHome(false) }
+        studio.retry = { [weak self] in self?.loadStage() }
+        home = UIHostingController(rootView: StudioView(model: studio))
+        addChild(home)
+        home.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(home.view)
         NSLayoutConstraint.activate([
-            cover.topAnchor.constraint(equalTo: view.topAnchor),
-            cover.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            cover.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            cover.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            mark.widthAnchor.constraint(equalToConstant: 112),
-            mark.heightAnchor.constraint(equalToConstant: 112),
-            stack.centerXAnchor.constraint(equalTo: cover.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: cover.centerYAnchor),
+            home.view.topAnchor.constraint(equalTo: view.topAnchor),
+            home.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            home.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            home.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
-        // a slow breath on the mark while the page loads
-        UIView.animate(withDuration: 1.1, delay: 0, options: [.autoreverse, .repeat, .allowUserInteraction]) {
-            mark.alpha = 0.55
-            mark.transform = CGAffineTransform(scaleX: 0.94, y: 0.94)
+        home.didMove(toParent: self)
+        var returnStyle = UIButton.Configuration.plain()
+        returnStyle.title = "Studio"
+        returnStyle.image = UIImage(systemName: "chevron.left")
+        returnStyle.imagePadding = 6
+        returnStyle.baseForegroundColor = UIColor(red: 0.72, green: 0.65, blue: 1, alpha: 1)
+        returnStyle.background.backgroundColor = Stage.background.withAlphaComponent(0.95)
+        returnStyle.background.cornerRadius = 22
+        returnStyle.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 16)
+        studioButton.configuration = returnStyle
+        studioButton.accessibilityLabel = "Return to studio"
+        studioButton.addAction(UIAction { [weak self] _ in self?.showHome(true) }, for: .touchUpInside)
+        studioButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(studioButton)
+        NSLayoutConstraint.activate([
+            studioButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            studioButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
+            studioButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+        ])
+        loadStage()
+        #if DEBUG
+        // A real bundled track exercises persistent import/playback in UI tests.
+        if ProcessInfo.processInfo.arguments.contains("-uitest-seed-library") {
+            Task {
+                if (try? await studio.library.load())?.isEmpty == true,
+                   let source = Bundle.main.url(forResource: "night-voltage", withExtension: "mp3", subdirectory: "Web/samples") {
+                    studio.add([source])
+                }
+            }
         }
+        #endif
     }
 
-    private func revealStage() {
-        guard cover.superview != nil else { return }
-        UIView.animate(withDuration: 0.45, delay: 0.15, options: [.curveEaseOut]) {
-            self.cover.alpha = 0
-        } completion: { _ in
-            self.cover.removeFromSuperview()
+    private func loadStage() {
+        bootTimeout?.cancel()
+        studio.ready = false
+        studio.startupSlow = false
+        studio.playing = false
+        studio.hasTrack = false
+        showHome(true)
+        guard LocalWebScheme.isAvailable else {
+            studio.error = "The visual engine is missing from this installation. Reinstall the app to restore it."
+            return
         }
-    }
-
-    private func fallBackToLocal() {
-        guard !usingLocal, LocalWebScheme.isAvailable else { return }
-        usingLocal = true
         webView.load(URLRequest(url: Stage.localURL))
+        bootTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            guard !Task.isCancelled, let self, !self.studio.ready else { return }
+            self.studio.startupSlow = true
+        }
+    }
+
+    private func perform(_ method: String, arguments: [String: Any]) async throws {
+        let scripts = [
+            "mode": "window.AudioVisorNative.mode(id)",
+            "demo": "window.AudioVisorNative.demo()",
+            "open": "await window.AudioVisorNative.open(tracks)",
+            "toggle": "window.AudioVisorNative.toggle()",
+            "pause": "window.AudioVisorNative.pause()",
+        ]
+        guard let script = scripts[method], studio.ready else { throw URLError(.cannotLoadFromNetwork) }
+        _ = try await webView.callAsyncJavaScript(script, arguments: arguments, in: nil, contentWorld: .page)
+    }
+
+    private func showHome(_ visible: Bool) {
+        home?.view.isHidden = !visible
+        studioButton.isHidden = visible
+        webView.accessibilityElementsHidden = visible
+        if studio.ready {
+            webView.evaluateJavaScript("document.documentElement.classList.toggle('native-home-visible', \(visible ? "true" : "false"))", completionHandler: nil)
+        }
+        refreshActivity()
+        setNeedsUpdateOfHomeIndicatorAutoHidden()
+    }
+
+    func refreshActivity() {
+        UIApplication.shared.isIdleTimerDisabled = home?.view.isHidden == true && studio.playing
+    }
+
+    private func importMusic() {
+        guard presentedViewController == nil else { return }
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.audio], asCopy: false)
+        picker.allowsMultipleSelection = true
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+
+    fileprivate func receive(_ message: WKScriptMessage) {
+        #if DEBUG
+        NSLog("Studio message: %@ origin %@ %@ frame %@", String(describing: message.body), message.frameInfo.securityOrigin.protocol, message.frameInfo.securityOrigin.host, String(describing: message.frameInfo.request.url))
+        #endif
+        guard message.frameInfo.isMainFrame,
+              message.frameInfo.securityOrigin.protocol == Stage.localScheme,
+              message.frameInfo.securityOrigin.host == "app",
+              let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+        switch type {
+        case "ready":
+            bootTimeout?.cancel()
+            studio.ready = true
+            studio.startupSlow = false
+        case "state":
+            studio.playing = body["playing"] as? Bool ?? false
+            studio.hasTrack = body["hasTrack"] as? Bool ?? false
+            studio.title = body["title"] as? String ?? ""
+            refreshActivity()
+        case "home": showHome(true)
+        case "look":
+            if let id = body["id"] as? String, let look = VisualLook.all.first(where: { $0.id == id }) { studio.selectedLook = look }
+        case "import": showHome(true); importMusic()
+        default: break
+        }
     }
 
     /// The stage itself, the auth providers it signs in with, and the local
@@ -168,52 +244,36 @@ final class StageViewController: UIViewController {
 }
 
 extension StageViewController: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        #if DEBUG
+        webView.evaluateJavaScript("JSON.stringify({url: location.href, boot: !!window.__av, native: !!window.AudioVisorNative, handlers: !!window.webkit?.messageHandlers?.studio})") { result, error in
+            NSLog("Studio boot: %@ %@", String(describing: result), String(describing: error))
+        }
+        #endif
+    }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
         decisionHandler(policy(for: action))
     }
 
-    /// Reveal once the app has booted (it exposes window.__av). Neither
-    /// navigation event is the right signal: `didFinish` waits for every
-    /// preview image and font, many seconds after the stage is usable, and
-    /// the page paints unstyled before its modules run. Polling starts when
-    /// the page commits, capped so a slow device is never left covered.
-    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        waitForBoot(deadline: Date().addingTimeInterval(8))
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        revealStage()
-    }
-
-    private func waitForBoot(deadline: Date) {
-        guard cover.superview != nil else { return }
-        webView.evaluateJavaScript("!!window.__av") { [weak self] value, error in
-            guard let self else { return }
-            #if DEBUG
-            NSLog("AV boot check: %@ %@", String(describing: value), String(describing: error))
-            #endif
-            if (value as? Bool) == true || Date() > deadline {
-                self.revealStage()
-            } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.waitForBoot(deadline: deadline) }
-            }
-        }
-    }
-
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
-        if usingLocal || !LocalWebScheme.isAvailable { revealStage() } else { fallBackToLocal() }
+        guard (error as NSError).code != NSURLErrorCancelled else { return }
+        studio.ready = false
+        showHome(true)
+        studio.error = "The visual engine couldn’t load. \(error.localizedDescription)"
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
-        revealStage()
+        self.webView(webView, didFailProvisionalNavigation: navigation, withError: error)
     }
 
-    /// WebKit can kill a backgrounded content process to reclaim memory;
-    /// reload instead of leaving a blank stage.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        webView.reload()
+        studio.playing = false
+        studio.hasTrack = false
+        loadStage()
+        studio.error = "iOS stopped the visual engine to reclaim memory. Your imported music is still in My music."
     }
+
 }
 
 extension StageViewController: WKUIDelegate {
@@ -330,3 +390,20 @@ final class WebLog: NSObject, WKScriptMessageHandler {
     }
 }
 #endif
+
+
+extension StageViewController: UIDocumentPickerDelegate {
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard urls.count <= 30 else { studio.error = "Import up to 30 tracks at a time."; return }
+        studio.add(urls)
+    }
+}
+
+/// WebKit retains its handlers; a weak adapter avoids retaining the controller.
+private final class StudioMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var owner: StageViewController?
+    init(owner: StageViewController) { self.owner = owner }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        owner?.receive(message)
+    }
+}

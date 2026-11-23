@@ -4,6 +4,10 @@ A hifi, real-time music visualizer for the browser. Drop in a track or use a per
 
 ## Features
 
+### iOS 9.0 native studio
+
+The iPhone and iPad app now has a native Discover screen, a persistent Files library, searchable visual previews, a shared mini player and a new lavender waveform icon. Its audio and visual engine ships in the app and works offline; website deployments no longer change the installed app. See [the iOS guide](ios/README.md) for build, test and release details.
+
 ### iOS app (v8.43)
 
 - **Native iPhone and iPad app** in [`ios/`](ios/README.md): an edge-to-edge WebKit stage that loads the live site (every feature, updated with each deploy) and falls back to a bundled build offline. Background audio, the iOS mic prompt for live input, no screen dimming while open, sign-in sheets for MusicKit/OAuth, a branded launch cover and the Blender app icon. `npm run ios` builds the web copy, generates the Xcode project and opens it.

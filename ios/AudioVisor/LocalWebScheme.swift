@@ -1,52 +1,50 @@
 @preconcurrency import WebKit
 import UniformTypeIdentifiers
 
-/// Serves the bundled web build (AudioVisor/Web, copied from dist/ by
-/// `npm run ios:web`) under audiovisor-local://app/ so the app still opens
-/// with no network. Vite emits root-absolute asset paths (/assets/...),
-/// which resolve against this scheme's root exactly like they do on Vercel.
-///
-/// Files are read off the main thread: reading them inline blocked the UI
-/// thread for every sample, font and preview, which stalled the page's own
-/// boot and pushed the offline launch to ~10s.
+/// WebKit tasks stay on the main actor; only URL and Data cross executors.
+@MainActor
 final class LocalWebScheme: NSObject, WKURLSchemeHandler {
-    private let root: URL? = Bundle.main.url(forResource: "Web", withExtension: nil)
-    private let io = DispatchQueue(label: "app.audiovisor.local-web", qos: .userInitiated, attributes: .concurrent)
-    /// Tasks WebKit has cancelled; answering one of those raises an exception.
-    private var stopped = Set<ObjectIdentifier>()
+    private var active: [ObjectIdentifier: any WKURLSchemeTask] = [:]
 
     static var isAvailable: Bool {
         Bundle.main.url(forResource: "Web/index", withExtension: "html") != nil
     }
 
     func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
-        guard let root, let url = task.request.url else {
+        #if DEBUG
+        NSLog("Local resource start: %@", task.request.url?.absoluteString ?? "missing")
+        #endif
+        guard let url = task.request.url, url.host == "app",
+              let bundleRoot = Bundle.main.url(forResource: "Web", withExtension: nil) else {
             task.didFailWithError(URLError(.fileDoesNotExist)); return
         }
-        var path = url.path
-        if path.isEmpty || path == "/" { path = "/index.html" }
-        let file = root.appendingPathComponent(String(path.dropFirst())).standardizedFileURL
-        let id = ObjectIdentifier(task)
-        // never serve anything outside the bundled folder
-        guard file.path.hasPrefix(root.standardizedFileURL.path) else {
+        let imported = url.path.hasPrefix("/imports/")
+        let root = imported ? MusicLibrary.directory : bundleRoot
+        let path = imported ? String(url.path.dropFirst("/imports/".count)) : String(url.path.dropFirst())
+        let file = root.appendingPathComponent(path.isEmpty ? "index.html" : path).standardizedFileURL
+        guard file.path.hasPrefix(root.standardizedFileURL.path + "/"),
+              !imported || UUID(uuidString: file.deletingPathExtension().lastPathComponent) != nil else {
             task.didFailWithError(URLError(.noPermissionsToReadFile)); return
         }
-        io.async { [weak self] in
-            let data = try? Data(contentsOf: file, options: .mappedIfSafe)
-            DispatchQueue.main.async {
-                guard let self, self.stopped.remove(id) == nil else { return }
-                guard let data else { task.didFailWithError(URLError(.fileDoesNotExist)); return }
-                let ext = file.pathExtension
-                let mime = UTType(filenameExtension: ext)?.preferredMIMEType
-                    ?? (ext == "js" || ext == "mjs" ? "text/javascript" : "application/octet-stream")
-                let response = HTTPURLResponse(
-                    url: url, statusCode: 200, httpVersion: "HTTP/1.1",
-                    headerFields: [
-                        "Content-Type": mime, "Content-Length": "\(data.count)", "Cache-Control": "no-cache",
-                        // Vite tags module scripts crossorigin; WebKit drops them without this
-                        "Access-Control-Allow-Origin": "*",
-                    ]
-                )!
+        let id = ObjectIdentifier(task)
+        active[id] = task
+        Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<Data, any Error> in
+                Result { try Data(contentsOf: file, options: .mappedIfSafe) }
+            }.value
+            guard let task = self?.active.removeValue(forKey: id) else { return }
+            #if DEBUG
+            NSLog("Local resource result: %@", file.lastPathComponent)
+            #endif
+            switch result {
+            case .failure(let error): task.didFailWithError(error)
+            case .success(let data):
+                let ext = file.pathExtension.lowercased()
+                let mime = ["js", "mjs"].contains(ext) ? "text/javascript" : UTType(filenameExtension: ext)?.preferredMIMEType ?? "application/octet-stream"
+                guard let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [
+                    "Content-Type": mime, "Content-Length": "\(data.count)",
+                    "Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache",
+                ]) else { task.didFailWithError(URLError(.badServerResponse)); return }
                 task.didReceive(response)
                 task.didReceive(data)
                 task.didFinish()
@@ -55,6 +53,6 @@ final class LocalWebScheme: NSObject, WKURLSchemeHandler {
     }
 
     func webView(_ webView: WKWebView, stop task: any WKURLSchemeTask) {
-        stopped.insert(ObjectIdentifier(task))
+        active.removeValue(forKey: ObjectIdentifier(task))
     }
 }

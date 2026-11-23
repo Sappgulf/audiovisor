@@ -25,7 +25,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default, options: [])
-        try? session.setActive(true)
+        // Activate on playback; launch must not interrupt another app’s music.
     }
 
 }
@@ -43,8 +43,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.window = window
     }
 
-    // A visualizer is watched, not touched: don't let the screen dim mid-song.
-    func sceneDidBecomeActive(_ scene: UIScene) { UIApplication.shared.isIdleTimerDisabled = true }
+    // Keep only a playing, visible stage awake, including after returning.
+    func sceneDidBecomeActive(_ scene: UIScene) { (window?.rootViewController as? StageViewController)?.refreshActivity() }
     func sceneWillResignActive(_ scene: UIScene) { UIApplication.shared.isIdleTimerDisabled = false }
 }
 

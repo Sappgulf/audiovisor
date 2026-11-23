@@ -887,7 +887,7 @@ const { closeMore } = createOverflowMenu();
 
 /* ---------- file loading ---------- */
 
-const { openFilePicker, dropzone } = createFileLoader({
+const { openFilePicker, dropzone, loadFiles } = createFileLoader({
   engine,
   toast,
   updateTrackUI,
@@ -895,7 +895,7 @@ const { openFilePicker, dropzone } = createFileLoader({
   closeMore,
 });
 
-$('play-demo')?.addEventListener('click', async () => {
+async function playDemo() {
   const { renderDemoTrack, DEMO_META } = await import('./demo-track.js');
   if (engine.captureActive) await engine.toggleCapture();
   if (engine.micActive) engine.disableMic();
@@ -912,7 +912,11 @@ $('play-demo')?.addEventListener('click', async () => {
   engine.play();
   ensureAudible();
   toast('Playing <b>Night Circuit</b> — drop your own track any time');
-});
+}
+$('play-demo')?.addEventListener('click', () => playDemo().catch((error) => {
+  console.error('Demo playback failed', error);
+  toast('Couldn’t play the demo — try again', { duration: 3000 });
+}));
 
 
 /* ---------- media session & transport ---------- */
@@ -1412,6 +1416,10 @@ window.__av = {
   get ray() { return ray; },
   get connect() { return connectLoader.getConnect(); },
 };
+
+if (window.webkit?.messageHandlers?.studio) {
+  import('./native.js').then(({ installNativeBridge }) => installNativeBridge({ engine, setMode, loadFiles, playDemo }));
+}
 
 /* Dev-only: drive the ray stage with a synthetic track so scenes can be
    inspected (and screenshotted) without loading audio. */

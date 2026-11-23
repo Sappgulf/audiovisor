@@ -168,7 +168,7 @@ export function createRenderLoop({
     /* The ray stage stays idle until an audio source starts or the user picks
        a mode. Drawing behind the first-run card would waste GPU and battery;
        the frame clock restarts cleanly when either path reveals the stage. */
-    if (rootEl.classList.contains('mode-unchosen')) {
+    if (rootEl.classList.contains('mode-unchosen') || rootEl.classList.contains('native-home-visible')) {
       lastFrameTs = now;
       return;
     }
