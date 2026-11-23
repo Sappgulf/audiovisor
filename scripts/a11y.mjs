@@ -74,6 +74,7 @@ async function drive(viewport, label, mobile) {
     await tap('#play-demo');
     await page.waitForTimeout(800);
   }
+  await page.mouse.move(10, 10);
   await tap('#more-btn');
   await page.waitForTimeout(300);
   await audit(page, `${label} more menu`);

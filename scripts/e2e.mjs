@@ -148,11 +148,13 @@ await step('raytrace stage loads after the first mode interaction', async () => 
 await step('stage mode button opens the named visual picker', async () => {
   await tap('#drawer-close');
   await tap('#stage-context');
+  // Touch opens the sheet on its selected tab so the keyboard leaves the cards visible.
+  await page.waitForFunction((id) => document.activeElement.id === id, MOBILE ? 'tab-look' : 'mode-filter');
   const state = await page.evaluate(() => ({ open: !document.getElementById('drawer').classList.contains('is-closed'),
     title: document.getElementById('drawer-title').textContent,
     named: document.querySelector('.mode-name').getBoundingClientRect().height > 0,
-    focused: document.activeElement.id === 'mode-filter' }));
-  if (!state.open || !state.named || !state.focused || state.title !== 'Shape the scene') throw new Error(JSON.stringify(state));
+  }));
+  if (!state.open || !state.named || state.title !== 'Shape the scene') throw new Error(JSON.stringify(state));
 });
 await step('look presets row', async () => { const b = await page.$$('#preset-row button'); if (!b.length) return 'none'; await (MOBILE ? b[0].tap() : b[0].click()); await page.waitForTimeout(300); return b.length + ' presets, clicked first'; });
 await step('theme swatches (click 4)', async () => { const b = await page.$$('#theme-row [data-theme]'); for (const i of [1, 5, 9, 0]) { await (MOBILE ? b[i].tap() : b[i].click()); await page.waitForTimeout(200); } return b.length + ' swatches, now ' + await page.evaluate(() => window.__av.state.themeId); });
